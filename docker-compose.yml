@@ -1,0 +1,40 @@
+services:
+  parser:
+    build: ./parser
+    ports:
+      - "5000:5000"
+    depends_on:
+      - database
+    environment:
+      - DATABASE_URL=postgresql://myuser:mypassword@database:5432/mydatabase
+
+
+  metadata_processor:
+    build: ./metadata_processor
+    ports:
+      - "5001:5001"
+    depends_on:
+      - database
+    volumes:
+      - ./metadata_processor:/app
+
+  database:
+    build: ./database
+    ports:
+      - "5432:5432"
+
+  processor:
+    build: ./processor
+    ports:
+      - "5002:5002"
+    depends_on:
+      - database
+    environment:
+      - DATABASE_URL=postgresql://myuser:mypassword@database:5432/mydatabase
+
+  visualization:
+    build: ./visualization
+    ports:
+      - "5003:5003"
+    depends_on:
+      - database
