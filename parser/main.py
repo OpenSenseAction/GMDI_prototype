@@ -1,6 +1,10 @@
 import requests
 import psycopg2
 import os
+import time
+
+time.sleep(5)
+
 
 
 # Function to parse CSV files and write to the TimescaleDB container
@@ -18,8 +22,8 @@ def parse_csv_and_write_to_db():
     # Iterate through the DataFrame and insert the data into the database
     for tup in df.itertuples():
         cur.execute(
-            "INSERT INTO mydata (time, sensor_id, RSL, TSL) VALUES (%s, %s, %s, %s)",
-            (tup.time, tup.sensor_id, tup.rsl, tup.tsl)
+            "INSERT INTO cml_data (time, cml_id, RSL, TSL) VALUES (%s, %s, %s, %s)",
+            (tup.time, tup.cml_id, tup.rsl, tup.tsl)
         )
     conn.commit()
     
@@ -38,18 +42,18 @@ def _create_dummy_data():
     from datetime import datetime, timedelta
 
     # Create dummy data
-    sensor_ids = range(1, 11)
+    cml_ids = [f"cml_{i:03d}" for i in range(1, 11)]
     timestamps = pd.date_range(start=datetime.now() - timedelta(hours=1), periods=60, freq='min')
 
     # Create a list to hold the DataFrames for each sensor_id
     dfs = []
 
     # Loop through each sensor_id and create a DataFrame for it
-    for i, sensor_id in enumerate(sensor_ids):
+    for i, cml_id in enumerate(cml_ids):
         df = pd.DataFrame(index=timestamps)
         df['rsl'] = np.random.randn(len(df.index)) + i
         df['tsl'] = np.random.randn(len(df.index)) + i
-        df['sensor_id'] = sensor_id
+        df['cml_id'] = cml_id
         dfs.append(df)
 
     # Concatenate the DataFrames into one long DataFrame
