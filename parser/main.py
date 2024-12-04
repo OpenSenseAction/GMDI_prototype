@@ -3,8 +3,47 @@ import psycopg2
 import os
 import time
 
-time.sleep(5)
 
+def get_dataframe_from_cml_dataset(ds):
+    """Return data as DataFrame from a CML xarray.Dataset
+    
+    Parameters
+    ----------
+    ds : CMLDataset
+        The CML dataset to convert.
+    
+    Returns
+    -------
+    pandas.DataFrame
+        A DataFrame containing the 'tsl' and 'rsl' columns.
+    
+    Notes
+    -----
+        This function assumes that the CML dataset has a 'time' index and columns 'cml_id' and 'sublink_id'.
+        The 'time' index is reordered to 'time', 'cml_id', and 'sublink_id', and the DataFrame is sorted
+        by these columns. The 'tsl' and 'rsl' columns are extracted from the DataFrame.
+    """
+    df = ds.to_dataframe() 
+    df = df.reorder_levels(order=['time', 'cml_id', 'sublink_id'])
+    df = df.sort_values(by=['time', 'cml_id'])
+    return df.loc[:, ['tsl', 'rsl']]
+
+
+def get_metadata_dataframe_from_cml_dataset(ds):
+    """Return a DataFrame containing metadata from a CML xarray.Dataset
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        The CML dataset to retrieve metadata from, assuming that the
+        OpenSense naming conventions and structure are used.
+
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame containing the metadata from the CML dataset.
+    """
+    return ds.drop_vars(ds.data_vars).drop_dims('time').to_dataframe()
 
 
 # Function to parse CSV files and write to the TimescaleDB container
@@ -66,4 +105,6 @@ def _create_dummy_data():
 
 
 if __name__ == "__main__":
+    # Currently required so that the DB container is ready before we start parsing
+    time.sleep(5)
     parse_csv_and_write_to_db()
