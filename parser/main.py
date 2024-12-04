@@ -46,12 +46,7 @@ def get_metadata_dataframe_from_cml_dataset(ds):
     return ds.drop_vars(ds.data_vars).drop_dims('time').to_dataframe()
 
 
-# Function to parse CSV files and write to the TimescaleDB container
-def parse_csv_and_write_to_db():
-    # Define a function to create dummy data
-
-    df = _create_dummy_data()
-
+def write_data_to_db(df):
     # Connect to the database
     conn = psycopg2.connect(os.getenv('DATABASE_URL'))
     
@@ -107,4 +102,5 @@ def _create_dummy_data():
 if __name__ == "__main__":
     # Currently required so that the DB container is ready before we start parsing
     time.sleep(5)
-    parse_csv_and_write_to_db()
+    df = _create_dummy_data()
+    write_data_to_db(df)
