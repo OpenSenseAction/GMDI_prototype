@@ -46,28 +46,44 @@ def get_metadata_dataframe_from_cml_dataset(ds):
     return ds.drop_vars(ds.data_vars).drop_dims('time').to_dataframe()
 
 
-def write_data_to_db(df):
+def _write_to_db(df, table_name, df_columns, table_columns):
     # Connect to the database
     conn = psycopg2.connect(os.getenv('DATABASE_URL'))
     
     # Create a cursor object
     cur = conn.cursor()
+
+    if len(df_columns) != len(table_columns):
+        raise ValueError("The number of DataFrame columns and table columns must be the same.")
+
+    # Prepare the SQL query
+    placeholders = ', '.join(['%s'] * len(df_columns))
+    table_columns_str = ', '.join(table_columns)
+    sql_query = f"INSERT INTO {table_name} ({table_columns_str}) VALUES ({placeholders})"
     
     # Iterate through the DataFrame and insert the data into the database
-    for tup in df.itertuples():
-        cur.execute(
-            "INSERT INTO cml_data (time, cml_id, RSL, TSL) VALUES (%s, %s, %s, %s)",
-            (tup.time, tup.cml_id, tup.rsl, tup.tsl)
-        )
+    for tup in df.reset_index().itertuples():
+        cur.execute(sql_query, tuple(getattr(tup, col) for col in df_columns))
     conn.commit()
     
-    
-    # Commit the changes to the database
-    conn.commit()
-    
-    # Close the cursor and connection
     cur.close()
     conn.close()
+
+def write_cml_data_to_db(df):
+    _write_to_db(
+        df=df,
+        table_name='cml_data',
+        df_columns=['time', 'cml_id', 'sublink_id', 'rsl', 'tsl'],
+        table_columns=['time', 'cml_id', 'sublink_id', 'rsl', 'tsl'],
+    )
+
+def write_cml_metadata_to_db(df):
+    _write_to_db(
+        df=df,
+        table_name='cml_metadata',
+        df_columns=['cml_id', 'site_0_lon', 'site_0_lat', 'site_1_lon', 'site_1_lat'],
+        table_columns=['cml_id', 'site_0_lon', 'site_0_lat', 'site_1_lon', 'site_1_lat']
+    )
 
 
 def _create_dummy_data():
@@ -102,5 +118,9 @@ def _create_dummy_data():
 if __name__ == "__main__":
     # Currently required so that the DB container is ready before we start parsing
     time.sleep(5)
-    df = _create_dummy_data()
-    write_data_to_db(df)
+    import xarray as xr
+    ds = xr.open_dataset('openMRG_cmls_20150827_12hours.nc')
+    df = get_dataframe_from_cml_dataset(ds)
+    df_metadata = get_metadata_dataframe_from_cml_dataset(ds.isel(sublink_id=0))
+    write_cml_data_to_db(df.head(10000))
+    write_cml_metadata_to_db(df_metadata)

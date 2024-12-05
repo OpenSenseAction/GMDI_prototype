@@ -7,9 +7,6 @@ database_url = os.getenv('DATABASE_URL')
 
 import sys
 
-import time
-time.sleep(7)
-
 
 def read_timescaledb_data():
     print(database_url, file=sys.stdout)
@@ -25,6 +22,9 @@ def process_data():
     pass
 
 if __name__ == "__main__":
+    import time
+    time.sleep(10)
+
     df = read_timescaledb_data()
     print(df)
     process_data()
