@@ -111,15 +111,21 @@ def generate_cml_map():
             site_0_lat = row[2]
             site_1_lon = row[3]
             site_1_lat = row[4]
-            folium.PolyLine(
+
+            # Create polyline with data attribute to store CML ID
+            line = folium.PolyLine(
                 [[site_0_lat, site_0_lon], [site_1_lat, site_1_lon]],
                 color="blue",
                 weight=2.5,
                 opacity=0.8,
-                popup=f"CML ID: {cml_id}",
-            ).add_to(m)
+                popup=folium.Popup(f"CML ID: {cml_id}", max_width=200),
+            )
+            # Store CML ID in the feature's properties for JavaScript access
+            line.options["cml_id"] = cml_id
+            line.add_to(m)
 
         return m._repr_html_()
+
     except Exception as e:
         print(f"Error generating map: {e}")
         return None
@@ -198,11 +204,49 @@ def realtime():
     )
 
 
+@app.route("/api/cml-metadata")
+def api_cml_metadata():
+    """API endpoint for fetching CML metadata"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"cmls": []})
+
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT cml_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat FROM cml_metadata ORDER BY cml_id"
+        )
+        data = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        cmls = [
+            {
+                "id": row[0],
+                "site_0_lon": row[1],
+                "site_0_lat": row[2],
+                "site_1_lon": row[3],
+                "site_1_lat": row[4],
+            }
+            for row in data
+        ]
+        return jsonify({"cmls": cmls})
+    except Exception as e:
+        print(f"Error fetching CML metadata: {e}")
+        return jsonify({"cmls": []})
+
+
 @app.route("/api/timeseries/<cml_id>")
 def api_timeseries(cml_id):
     """API endpoint for fetching time series data"""
     hours = request.args.get("hours", 24, type=int)
     plot_html = generate_time_series_plot(cml_id, hours=hours)
+    if not plot_html:
+        return jsonify(
+            {
+                "html": "<div class='alert alert-info'><i class='fas fa-info-circle'></i> No data available for this CML</div>"
+            }
+        )
     return jsonify({"html": plot_html})
 
 

@@ -13,6 +13,32 @@
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
 
+    #mapClickPlot {
+        height: 180px;
+        border-radius: 0.5rem;
+        border: 1px solid #e5e7eb;
+        background-color: #f9fafb;
+        display: none;
+        overflow: auto;
+    }
+
+    #mapClickPlot.active {
+        display: block;
+    }
+
+    .map-plot-info {
+        padding: 1rem;
+        background-color: #f0f7ff;
+        border-left: 4px solid #0066cc;
+        margin-bottom: 1rem;
+        border-radius: 0.5rem;
+        display: none;
+    }
+
+    .map-plot-info.active {
+        display: block;
+    }
+
     .cml-selector {
         margin-bottom: 1.5rem;
     }
@@ -59,6 +85,12 @@
         <h2 class="mb-3">
             <i class="fas fa-map"></i> Network Coverage Map
         </h2>
+
+        <div class="map-plot-info" id="mapPlotInfo">
+            <i class="fas fa-info-circle"></i>
+            <strong id="selectedCmlInfo">CML selected</strong> — Displaying time series data below
+        </div>
+
         {% if map_html %}
         <div id="map">
             {{ map_html | safe }}
@@ -69,6 +101,9 @@
             <strong>Unable to load map.</strong> Please ensure the database is running.
         </div>
         {% endif %}
+
+        <!-- Interactive plot from map click -->
+        <div id="mapClickPlot"></div>
     </section>
 
     <!-- Time Series Data -->
@@ -149,30 +184,168 @@
 {% block extra_js %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
-    document.getElementById('loadButton').addEventListener('click', function () {
-        const cmlId = document.getElementById('cmlSelect').value;
-        const loadButton = document.getElementById('loadButton');
+    // Store CML list from template
+    const cmlList = {{ cmls | tojson }};
+    let cmlMetadata = {};
+
+    console.log('Page initialized with CML list:', cmlList);
+
+    // Load CML metadata on page load
+    async function loadCMLMetadata() {
+        try {
+            const response = await fetch('/api/cml-metadata');
+            const data = await response.json();
+            data.cmls.forEach(cml => {
+                cmlMetadata[cml.id] = cml;
+            });
+            console.log('CML Metadata loaded:', cmlMetadata);
+            // Setup map interactivity after metadata is loaded
+            setTimeout(setupMapInteractivity, 1000);
+        } catch (error) {
+            console.error('Error loading CML metadata:', error);
+            setTimeout(setupMapInteractivity, 1000);
+        }
+    }
+
+    // Setup interactive map - attach click handlers to SVG paths
+    function setupMapInteractivity() {
+        const mapElement = document.querySelector('#map');
+
+        if (!mapElement) {
+            console.warn('Map element not found');
+            return;
+        }
+
+        // Find the Leaflet container and SVG
+        const svgContainer = mapElement.querySelector('svg');
+
+        if (!svgContainer) {
+            console.warn('SVG container not found, retrying...');
+            setTimeout(setupMapInteractivity, 500);
+            return;
+        }
+
+        // Get all polyline paths (blue lines)
+        const paths = svgContainer.querySelectorAll('path');
+        console.log('Found', paths.length, 'paths in map');
+
+        let cmlIndex = 0;
+        let pathsAttached = 0;
+
+        paths.forEach((path, index) => {
+            // Skip paths that are not polylines (like grid lines, etc)
+            const stroke = path.getAttribute('stroke');
+            const fill = path.getAttribute('fill');
+
+            // Check if this is a blue polyline (stroke is blue, no fill)
+            if ((stroke === 'blue' || stroke === '#0000ff') && !fill) {
+                // Get the CML ID from our list
+                if (cmlIndex < cmlList.length) {
+                    const cmlId = cmlList[cmlIndex];
+                    cmlIndex++;
+
+                    // Store reference
+                    path.dataset.cmlId = cmlId;
+                    path.style.cursor = 'pointer';
+
+                    // Add click event
+                    path.addEventListener('click', function (e) {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        console.log('Clicked CML:', this.dataset.cmlId);
+                        loadMapClickPlot(this.dataset.cmlId);
+                    });
+
+                    // Add hover effects
+                    path.addEventListener('mouseover', function () {
+                        this.style.strokeWidth = '4px';
+                        this.style.opacity = '1';
+                    });
+
+                    path.addEventListener('mouseout', function () {
+                        this.style.strokeWidth = '2.5px';
+                        this.style.opacity = '0.8';
+                    });
+
+                    pathsAttached++;
+                }
+            }
+        });
+
+        console.log('Attached click handlers to', pathsAttached, 'paths');
+    }
+
+    // Load and display plot from map click
+    async function loadMapClickPlot(cmlId) {
+        const plotContainer = document.getElementById('mapClickPlot');
+        const infoBox = document.getElementById('mapPlotInfo');
+        const selectedCmlInfo = document.getElementById('selectedCmlInfo');
+
+        if (!plotContainer) {
+            console.error('Plot container not found');
+            return;
+        }
+
+        console.log('Loading plot for CML:', cmlId);
 
         // Show loading state
-        loadButton.disabled = true;
-        loadButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+        plotContainer.innerHTML = '<div style="padding: 2rem; text-align: center; color: #6b7280;"><i class="fas fa-spinner fa-spin"></i> Loading data for CML ' + cmlId + '...</div>';
+        plotContainer.classList.add('active');
+        infoBox.classList.add('active');
+        selectedCmlInfo.textContent = 'CML ' + cmlId + ' selected';
 
-        // Fetch new data
-        fetch(`/api/timeseries/${cmlId}`)
-            .then(response => response.json())
-            .then(data => {
-                document.getElementById('timeSeriesChart').innerHTML = data.html;
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                document.getElementById('timeSeriesChart').innerHTML =
-                    '<div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> Error loading data. Please try again.</div>';
-            })
-            .finally(() => {
-                // Reset button state
-                loadButton.disabled = false;
-                loadButton.innerHTML = '<i class="fas fa-sync-alt"></i> Load';
-            });
+        try {
+            const response = await fetch(`/api/timeseries/${cmlId}?hours=24`);
+            const data = await response.json();
+
+            console.log('Response received for CML', cmlId, ':', data);
+
+            if (data.html) {
+                plotContainer.innerHTML = data.html;
+            } else {
+                plotContainer.innerHTML = '<div class="alert alert-warning" style="margin: 1rem;"><i class="fas fa-exclamation-triangle"></i> No data available for this CML</div>';
+            }
+        } catch (error) {
+            console.error('Error loading plot:', error);
+            plotContainer.innerHTML = '<div class="alert alert-danger" style="margin: 1rem;"><i class="fas fa-exclamation-circle"></i> Error loading data. Please try again.</div>';
+        }
+    }
+
+    // Handle manual CML selection from dropdown
+    if (document.getElementById('loadButton')) {
+        document.getElementById('loadButton').addEventListener('click', function () {
+            const cmlId = document.getElementById('cmlSelect').value;
+            const loadButton = document.getElementById('loadButton');
+
+            console.log('Manual load for CML:', cmlId);
+
+            // Show loading state
+            loadButton.disabled = true;
+            loadButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+
+            // Fetch new data
+            fetch(`/api/timeseries/${cmlId}`)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('timeSeriesChart').innerHTML = data.html;
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('timeSeriesChart').innerHTML =
+                        '<div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> Error loading data. Please try again.</div>';
+                })
+                .finally(() => {
+                    // Reset button state
+                    loadButton.disabled = false;
+                    loadButton.innerHTML = '<i class="fas fa-sync-alt"></i> Load';
+                });
+        });
+    }
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', function () {
+        console.log('Page loaded, initializing...');
+        loadCMLMetadata();
     });
 </script>
 {% endblock %}
