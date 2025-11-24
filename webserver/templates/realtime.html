@@ -7,105 +7,142 @@
 <style>
     #map {
         height: 500px;
-        border-radius: 0.375rem;
+        border-radius: 0.5rem;
         margin-bottom: 1rem;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
 
     .cml-selector {
         margin-bottom: 1.5rem;
     }
 
+    .cml-selector label {
+        font-weight: 600;
+        color: #0066cc;
+        margin-bottom: 0.75rem;
+        display: block;
+        font-size: 0.9rem;
+        letter-spacing: 0.3px;
+        text-transform: uppercase;
+    }
+
     .chart-container {
-        background-color: #f8f9fa;
-        padding: 1rem;
-        border-radius: 0.375rem;
+        background-color: transparent;
+        padding: 0;
+        border-radius: 0.5rem;
+    }
+
+    .selector-group {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .selector-group .form-select {
+        flex: 1;
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-lg-10 mx-auto">
-        <h1 class="mb-4">
-            <i class="fas fa-map-location-dot"></i> Real-Time Data
+<div class="container">
+    <!-- Header -->
+    <section class="mb-5 pb-4 border-bottom">
+        <h1 class="mb-2">
+            <i class="fas fa-globe"></i> Real-Time Data Visualization
         </h1>
+        <p class="text-secondary mb-0">Live CML network map and signal measurements</p>
+    </section>
 
-        <!-- CML Network Map -->
-        <section class="mb-5">
-            <h2 class="h4 mb-3">
-                <i class="fas fa-globe"></i> CML Network Map
-            </h2>
-            {% if map_html %}
-            <div id="map">
-                {{ map_html | safe }}
+    <!-- CML Network Map -->
+    <section class="mb-5">
+        <h2 class="mb-3">
+            <i class="fas fa-map"></i> Network Coverage Map
+        </h2>
+        {% if map_html %}
+        <div id="map">
+            {{ map_html | safe }}
+        </div>
+        {% else %}
+        <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle"></i>
+            <strong>Unable to load map.</strong> Please ensure the database is running.
+        </div>
+        {% endif %}
+    </section>
+
+    <!-- Time Series Data -->
+    <section class="mb-5">
+        <h2 class="mb-3">
+            <i class="fas fa-chart-line"></i> Signal Measurements
+        </h2>
+
+        <!-- CML Selector -->
+        <div class="cml-selector">
+            <label for="cmlSelect">Select CML Link</label>
+            <div class="selector-group">
+                <select id="cmlSelect" class="form-select">
+                    {% for cml in cmls %}
+                    <option value="{{ cml }}" {% if cml==selected_cml %}selected{% endif %}>
+                        CML {{ cml }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <button class="btn btn-primary" id="loadButton" type="button">
+                    <i class="fas fa-sync-alt"></i> Load
+                </button>
             </div>
-            {% else %}
-            <div class="alert alert-warning">
-                <i class="fas fa-exclamation-triangle"></i> Unable to load map. Please ensure the database is running.
-            </div>
-            {% endif %}
-        </section>
+        </div>
 
-        <!-- Time Series Data -->
-        <section class="mb-5">
-            <h2 class="h4 mb-3">
-                <i class="fas fa-chart-line"></i> Time Series Data
-            </h2>
-
-            <!-- CML Selector -->
-            <div class="cml-selector">
-                <label for="cmlSelect" class="form-label">
-                    <strong>Select CML:</strong>
-                </label>
-                <div class="input-group">
-                    <select id="cmlSelect" class="form-select">
-                        {% for cml in cmls %}
-                        <option value="{{ cml }}" {% if cml==selected_cml %}selected{% endif %}>
-                            CML {{ cml }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                    <button class="btn btn-primary" id="loadButton" type="button">
-                        <i class="fas fa-sync-alt"></i> Load Data
-                    </button>
-                </div>
-            </div>
-
-            <!-- Time Series Chart -->
-            <div class="chart-container">
-                {% if plot_html %}
-                <div id="timeSeriesChart">
-                    {{ plot_html | safe }}
-                </div>
-                {% else %}
-                <div class="alert alert-info mb-0">
-                    <i class="fas fa-info-circle"></i> No data available for the selected CML
-                </div>
-                {% endif %}
-            </div>
-        </section>
-
-        <!-- Information Section -->
-        <section class="mb-5">
-            <h2 class="h4 mb-3">
-                <i class="fas fa-info-circle"></i> About Real-Time Data
-            </h2>
+        <!-- Time Series Chart -->
+        <div class="chart-container">
             <div class="card">
                 <div class="card-body">
-                    <p class="mb-2">
-                        <strong>Received Signal Level (RSL):</strong>
-                        The strength of the radio signal at the receiver end of each CML. Changes in signal
-                        strength correlate with atmospheric phenomena, particularly rainfall.
-                    </p>
-                    <p class="mb-0">
-                        <strong>Update Frequency:</strong>
-                        Data is updated regularly as new measurements arrive from the CML network. Select a CML
-                        from the dropdown above to view its recent signal measurements.
-                    </p>
+                    {% if plot_html %}
+                    <div id="timeSeriesChart">
+                        {{ plot_html | safe }}
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info mb-0">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>No data available</strong> for the selected CML
+                    </div>
+                    {% endif %}
                 </div>
             </div>
-        </section>
-    </div>
+        </div>
+    </section>
+
+    <!-- Data Info -->
+    <section class="mb-5">
+        <h2 class="mb-3">
+            <i class="fas fa-info-circle"></i> About This Data
+        </h2>
+        <div class="card">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <h5 style="color: #0066cc; font-weight: 600; margin-bottom: 0.5rem;">
+                            <i class="fas fa-signal"></i> Received Signal Level (RSL)
+                        </h5>
+                        <p class="text-secondary mb-0" style="font-size: 0.9rem;">
+                            The strength of the radio signal at the receiver. Changes in RSL correlate with atmospheric
+                            phenomena, particularly rainfall.
+                        </p>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <h5 style="color: #0066cc; font-weight: 600; margin-bottom: 0.5rem;">
+                            <i class="fas fa-clock"></i> Update Frequency
+                        </h5>
+                        <p class="text-secondary mb-0" style="font-size: 0.9rem;">
+                            Data is updated regularly as new measurements arrive from the CML network. Select a link
+                            above to view recent measurements.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
 </div>
 {% endblock %}
 
@@ -129,12 +166,12 @@
             .catch(error => {
                 console.error('Error:', error);
                 document.getElementById('timeSeriesChart').innerHTML =
-                    '<div class="alert alert-danger">Error loading data. Please try again.</div>';
+                    '<div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> Error loading data. Please try again.</div>';
             })
             .finally(() => {
                 // Reset button state
                 loadButton.disabled = false;
-                loadButton.innerHTML = '<i class="fas fa-sync-alt"></i> Load Data';
+                loadButton.innerHTML = '<i class="fas fa-sync-alt"></i> Load';
             });
     });
 </script>
