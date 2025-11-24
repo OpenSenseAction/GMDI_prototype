@@ -394,9 +394,12 @@ def upload_file():
 
 @app.route("/api/files", methods=["GET"])
 def get_files():
-    """Get list of files in data_incoming directory"""
+    """Get list of files in data_incoming and data_staged_for_parsing directories"""
     try:
-        files = []
+        incoming_files = []
+        staged_files = []
+
+        # Get incoming files
         if os.path.exists(DATA_INCOMING_DIR):
             for filename in os.listdir(DATA_INCOMING_DIR):
                 filepath = os.path.join(DATA_INCOMING_DIR, filename)
@@ -405,7 +408,24 @@ def get_files():
                     upload_time = datetime.fromtimestamp(
                         os.path.getctime(filepath)
                     ).strftime("%Y-%m-%d %H:%M:%S")
-                    files.append(
+                    incoming_files.append(
+                        {
+                            "filename": filename,
+                            "size_mb": round(file_size_mb, 2),
+                            "upload_time": upload_time,
+                        }
+                    )
+
+        # Get staged files
+        if os.path.exists(DATA_STAGED_FOR_PARSING_DIR):
+            for filename in os.listdir(DATA_STAGED_FOR_PARSING_DIR):
+                filepath = os.path.join(DATA_STAGED_FOR_PARSING_DIR, filename)
+                if os.path.isfile(filepath):
+                    file_size_mb = get_file_size_mb(filepath)
+                    upload_time = datetime.fromtimestamp(
+                        os.path.getctime(filepath)
+                    ).strftime("%Y-%m-%d %H:%M:%S")
+                    staged_files.append(
                         {
                             "filename": filename,
                             "size_mb": round(file_size_mb, 2),
@@ -414,8 +434,13 @@ def get_files():
                     )
 
         # Sort by upload time (newest first)
-        files.sort(key=lambda x: x["upload_time"], reverse=True)
-        return jsonify({"files": files}), 200
+        incoming_files.sort(key=lambda x: x["upload_time"], reverse=True)
+        staged_files.sort(key=lambda x: x["upload_time"], reverse=True)
+
+        return (
+            jsonify({"incoming_files": incoming_files, "staged_files": staged_files}),
+            200,
+        )
 
     except Exception as e:
         print(f"Error getting files: {e}")
