@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block title %}Landing - GMDI Platform{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <!-- Hero Section -->
+        <section class="mb-5">
+            <div class="jumbotron bg-light p-5 rounded-lg">
+                <h1 class="display-4 mb-4">
+                    <i class="fas fa-cloud-rain-sun"></i> German Meteorological Data Initiative
+                </h1>
+                <p class="lead">
+                    Real-time and historical rainfall data from Commercial Microwave Links (CMLs) across Germany.
+                    Our network provides innovative precipitation measurements that complement traditional weather
+                    stations.
+                </p>
+                <hr class="my-4">
+                <p>
+                    The GMDI platform aggregates and visualizes electromagnetic signal measurements from
+                    microwave communication networks to estimate rainfall rates with high spatial and temporal
+                    resolution.
+                </p>
+            </div>
+        </section>
+
+        <!-- Statistics Section -->
+        <section class="mb-5">
+            <h2 class="mb-4">
+                <i class="fas fa-chart-bar"></i> Current Data Overview
+            </h2>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <div class="card">
+                        <div class="card-body text-center">
+                            <h5 class="card-title">
+                                <i class="fas fa-link text-primary"></i> Active CMLs
+                            </h5>
+                            <h3 class="card-text text-primary">{{ stats.total_cmls }}</h3>
+                            <p class="text-muted small">Microwave links being monitored</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <div class="card">
+                        <div class="card-body text-center">
+                            <h5 class="card-title">
+                                <i class="fas fa-database text-success"></i> Data Records
+                            </h5>
+                            <h3 class="card-text text-success">{{ "{:,}".format(stats.total_records) }}</h3>
+                            <p class="text-muted small">Measurements in database</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mt-3">
+                <div class="col-md-12">
+                    <div class="card">
+                        <div class="card-body">
+                            <h5 class="card-title">
+                                <i class="fas fa-calendar-alt"></i> Data Availability
+                            </h5>
+                            {% if stats.data_start_date and stats.data_end_date %}
+                            <p class="mb-2">
+                                <strong>From:</strong> {{ stats.data_start_date.strftime('%Y-%m-%d %H:%M:%S') }}
+                            </p>
+                            <p class="mb-0">
+                                <strong>To:</strong> {{ stats.data_end_date.strftime('%Y-%m-%d %H:%M:%S') }}
+                            </p>
+                            {% else %}
+                            <p class="text-muted">No data available yet</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Processing Status Section -->
+        <section class="mb-5">
+            <h2 class="mb-4">
+                <i class="fas fa-cogs"></i> Processing Status
+            </h2>
+            <div class="card border-warning">
+                <div class="card-body">
+                    <div class="alert alert-info mb-0">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>Status:</strong> {{ stats.processing_status }}
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Quick Links Section -->
+        <section class="mb-5">
+            <h2 class="mb-4">
+                <i class="fas fa-link"></i> Quick Navigation
+            </h2>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <div class="card h-100">
+                        <div class="card-body text-center">
+                            <i class="fas fa-map text-primary fa-3x mb-3"></i>
+                            <h5 class="card-title">Real-Time Data</h5>
+                            <p class="card-text">View live measurements and interactive maps of the CML network</p>
+                            <a href="/realtime" class="btn btn-primary btn-sm">View Real-Time Data</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <div class="card h-100">
+                        <div class="card-body text-center">
+                            <i class="fas fa-chart-line text-success fa-3x mb-3"></i>
+                            <h5 class="card-title">Archive Statistics</h5>
+                            <p class="card-text">Explore historical data and aggregate statistics from our archive</p>
+                            <a href="/archive" class="btn btn-success btn-sm">View Archive</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+
+{% block title %}Real-Time Data - GMDI Platform{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+    #map {
+        height: 500px;
+        border-radius: 0.375rem;
+        margin-bottom: 1rem;
+    }
+
+    .cml-selector {
+        margin-bottom: 1.5rem;
+    }
+
+    .chart-container {
+        background-color: #f8f9fa;
+        padding: 1rem;
+        border-radius: 0.375rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-10 mx-auto">
+        <h1 class="mb-4">
+            <i class="fas fa-map-location-dot"></i> Real-Time Data
+        </h1>
+
+        <!-- CML Network Map -->
+        <section class="mb-5">
+            <h2 class="h4 mb-3">
+                <i class="fas fa-globe"></i> CML Network Map
+            </h2>
+            {% if map_html %}
+            <div id="map">
+                {{ map_html | safe }}
+            </div>
+            {% else %}
+            <div class="alert alert-warning">
+                <i class="fas fa-exclamation-triangle"></i> Unable to load map. Please ensure the database is running.
+            </div>
+            {% endif %}
+        </section>
+
+        <!-- Time Series Data -->
+        <section class="mb-5">
+            <h2 class="h4 mb-3">
+                <i class="fas fa-chart-line"></i> Time Series Data
+            </h2>
+
+            <!-- CML Selector -->
+            <div class="cml-selector">
+                <label for="cmlSelect" class="form-label">
+                    <strong>Select CML:</strong>
+                </label>
+                <div class="input-group">
+                    <select id="cmlSelect" class="form-select">
+                        {% for cml in cmls %}
+                        <option value="{{ cml }}" {% if cml==selected_cml %}selected{% endif %}>
+                            CML {{ cml }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <button class="btn btn-primary" id="loadButton" type="button">
+                        <i class="fas fa-sync-alt"></i> Load Data
+                    </button>
+                </div>
+            </div>
+
+            <!-- Time Series Chart -->
+            <div class="chart-container">
+                {% if plot_html %}
+                <div id="timeSeriesChart">
+                    {{ plot_html | safe }}
+                </div>
+                {% else %}
+                <div class="alert alert-info mb-0">
+                    <i class="fas fa-info-circle"></i> No data available for the selected CML
+                </div>
+                {% endif %}
+            </div>
+        </section>
+
+        <!-- Information Section -->
+        <section class="mb-5">
+            <h2 class="h4 mb-3">
+                <i class="fas fa-info-circle"></i> About Real-Time Data
+            </h2>
+            <div class="card">
+                <div class="card-body">
+                    <p class="mb-2">
+                        <strong>Received Signal Level (RSL):</strong>
+                        The strength of the radio signal at the receiver end of each CML. Changes in signal
+                        strength correlate with atmospheric phenomena, particularly rainfall.
+                    </p>
+                    <p class="mb-0">
+                        <strong>Update Frequency:</strong>
+                        Data is updated regularly as new measurements arrive from the CML network. Select a CML
+                        from the dropdown above to view its recent signal measurements.
+                    </p>
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+    document.getElementById('loadButton').addEventListener('click', function () {
+        const cmlId = document.getElementById('cmlSelect').value;
+        const loadButton = document.getElementById('loadButton');
+
+        // Show loading state
+        loadButton.disabled = true;
+        loadButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+
+        // Fetch new data
+        fetch(`/api/timeseries/${cmlId}`)
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('timeSeriesChart').innerHTML = data.html;
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('timeSeriesChart').innerHTML =
+                    '<div class="alert alert-danger">Error loading data. Please try again.</div>';
+            })
+            .finally(() => {
+                // Reset button state
+                loadButton.disabled = false;
+                loadButton.innerHTML = '<i class="fas fa-sync-alt"></i> Load Data';
+            });
+    });
+</script>
+{% endblock %}
