@@ -301,6 +301,15 @@ def archive():
     )
 
 
+# ==================== DATA UPLOADS ROUTES ====================
+
+
+@app.route("/data-uploads")
+def data_uploads():
+    """Data uploads page"""
+    return render_template("data_uploads.html")
+
+
 # ==================== ERROR HANDLERS ====================
 
 
