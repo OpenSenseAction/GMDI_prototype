@@ -36,7 +36,7 @@ def get_db_connection():
 
 
 @app.route("/")
-def landing():
+def overview():
     """Landing page with overview and processing status"""
     stats = {
         "total_cmls": 0,
