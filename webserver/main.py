@@ -259,13 +259,12 @@ def generate_archive_charts():
         if not conn:
             return {"data_distribution": None}
 
-        # Get data distribution by CML
+        # Get data distribution by minute
         query = """
-            SELECT cml_id, COUNT(*) as count 
+            SELECT DATE_TRUNC('minute', time) as minute, COUNT(*) as count 
             FROM cml_data 
-            GROUP BY cml_id 
-            ORDER BY count DESC 
-            LIMIT 15
+            GROUP BY DATE_TRUNC('minute', time)
+            ORDER BY minute
         """
         df = pd.read_sql_query(query, conn)
         conn.close()
@@ -273,12 +272,15 @@ def generate_archive_charts():
         if df.empty:
             return {"data_distribution": None}
 
+        # Convert minute column to datetime for proper sorting
+        df["minute"] = pd.to_datetime(df["minute"])
+
         # Create bar chart
         chart = (
             alt.Chart(df)
             .mark_bar()
-            .encode(x="cml_id:N", y="count:Q", tooltip=["cml_id:N", "count:Q"])
-            .properties(width=900, height=400, title="Data Records per CML (Top 15)")
+            .encode(x="minute:T", y="count:Q", tooltip=["minute:T", "count:Q"])
+            .properties(width=900, height=400, title="Data Records per Minute")
             .interactive()
         )
 
