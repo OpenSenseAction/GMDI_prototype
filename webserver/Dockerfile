@@ -9,6 +9,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Create data directories
+RUN mkdir -p /app/data_incoming /app/data_staged_for_parsing /app/data_archived
+
 # Expose port
 EXPOSE 5000
 

@@ -6,8 +6,19 @@ import folium
 import altair as alt
 from flask import Flask, render_template, request, jsonify
 from datetime import datetime, timedelta
+from pathlib import Path
+import uuid
 
 app = Flask(__name__)
+
+# Data directories
+DATA_INCOMING_DIR = "/app/data_incoming"
+DATA_STAGED_FOR_PARSING_DIR = "/app/data_staged_for_parsing"
+DATA_ARCHIVED_DIR = "/app/data_archived"
+
+# Create directories if they don't exist
+for directory in [DATA_INCOMING_DIR, DATA_STAGED_FOR_PARSING_DIR, DATA_ARCHIVED_DIR]:
+    Path(directory).mkdir(parents=True, exist_ok=True)
 
 
 # Database connection helper
@@ -308,6 +319,107 @@ def archive():
 def data_uploads():
     """Data uploads page"""
     return render_template("data_uploads.html")
+
+
+# ==================== DATA UPLOAD API ====================
+
+ALLOWED_EXTENSIONS = {"nc", "csv", "h5", "hdf5"}
+MAX_FILE_SIZE = 500 * 1024 * 1024  # 500 MB
+
+
+def allowed_file(filename):
+    """Check if file extension is allowed"""
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def get_file_size_mb(filepath):
+    """Get file size in MB"""
+    return os.path.getsize(filepath) / (1024 * 1024)
+
+
+@app.route("/api/upload", methods=["POST"])
+def upload_file():
+    """Handle file upload via drag and drop"""
+    try:
+        # Check if file is in request
+        if "file" not in request.files:
+            return jsonify({"error": "No file provided"}), 400
+
+        file = request.files["file"]
+
+        if file.filename == "":
+            return jsonify({"error": "No file selected"}), 400
+
+        if not allowed_file(file.filename):
+            return (
+                jsonify({"error": "File type not allowed. Allowed: nc, csv, h5, hdf5"}),
+                400,
+            )
+
+        # Generate unique filename to avoid collisions
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        unique_id = str(uuid.uuid4())[:8]
+        original_name = file.filename.rsplit(".", 1)[0]
+        extension = file.filename.rsplit(".", 1)[1]
+        new_filename = f"{original_name}_{timestamp}_{unique_id}.{extension}"
+
+        filepath = os.path.join(DATA_INCOMING_DIR, new_filename)
+
+        # Save file
+        file.save(filepath)
+
+        # Check file size
+        file_size_mb = get_file_size_mb(filepath)
+        if file_size_mb > 500:
+            os.remove(filepath)
+            return jsonify({"error": "File size exceeds 500 MB limit"}), 400
+
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "filename": new_filename,
+                    "original_filename": file.filename,
+                    "size_mb": round(file_size_mb, 2),
+                    "upload_time": timestamp,
+                }
+            ),
+            200,
+        )
+
+    except Exception as e:
+        print(f"Error uploading file: {e}")
+        return jsonify({"error": "Failed to upload file"}), 500
+
+
+@app.route("/api/files", methods=["GET"])
+def get_files():
+    """Get list of files in data_incoming directory"""
+    try:
+        files = []
+        if os.path.exists(DATA_INCOMING_DIR):
+            for filename in os.listdir(DATA_INCOMING_DIR):
+                filepath = os.path.join(DATA_INCOMING_DIR, filename)
+                if os.path.isfile(filepath):
+                    file_size_mb = get_file_size_mb(filepath)
+                    upload_time = datetime.fromtimestamp(
+                        os.path.getctime(filepath)
+                    ).strftime("%Y-%m-%d %H:%M:%S")
+                    files.append(
+                        {
+                            "filename": filename,
+                            "size_mb": round(file_size_mb, 2),
+                            "upload_time": upload_time,
+                        }
+                    )
+
+        # Sort by upload time (newest first)
+        files.sort(key=lambda x: x["upload_time"], reverse=True)
+        return jsonify({"files": files}), 200
+
+    except Exception as e:
+        print(f"Error getting files: {e}")
+        return jsonify({"error": "Failed to retrieve files"}), 500
 
 
 # ==================== ERROR HANDLERS ====================
