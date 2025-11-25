@@ -3,13 +3,45 @@
 {% block title %}Real-Time Data - GMDI Platform{% endblock %}
 
 {% block extra_css %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
+    #cml-map {
+        width: 100%;
+        height: 500px;
+        border-radius: 0.5rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        margin-bottom: 1rem;
+    }
+
     .grafana-container {
         width: 100%;
-        height: 800px;
+        height: 600px;
         border: none;
         border-radius: 0.5rem;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    .map-info {
+        background-color: #f0f7ff;
+        border-left: 4px solid #0066cc;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+        display: none;
+    }
+
+    .map-info.active {
+        display: block;
+    }
+
+    .selected-cml-badge {
+        display: inline-block;
+        background-color: #0066cc;
+        color: white;
+        padding: 0.25rem 0.75rem;
+        border-radius: 1rem;
+        font-weight: 600;
+        margin-left: 0.5rem;
     }
 </style>
 {% endblock %}
@@ -24,18 +56,51 @@
         <p class="text-secondary mb-0">Live CML network time series measurements</p>
     </section>
 
-    <!-- Grafana Dashboard -->
+    <!-- CML Network Map -->
     <section class="mb-5">
-        <div class="alert alert-info">
-            <i class="fas fa-external-link-alt"></i>
-            <strong>Grafana Dashboard:</strong>
-            <a href="http://localhost:3000/d/cml-realtime/cml-real-time-data" target="_blank" class="alert-link">
-                Open CML Real-Time Data Dashboard
-            </a>
-            <br>
-            <small class="text-secondary">The dashboard includes a CML ID selector. Username: admin | Password:
-                admin</small>
+        <h2 class="mb-3">
+            <i class="fas fa-map"></i> CML Network Map
+        </h2>
+
+        <div class="mb-3">
+            <label for="coloringOption" class="form-label">Color CML lines by:</label>
+            <select id="coloringOption" class="form-select">
+                <option value="completeness">Data Completeness (%)</option>
+                <option value="last_rsl">Last RSL Value (dBm)</option>
+                <option value="std_dev">RSL Std Deviation - Last 60 min</option>
+            </select>
         </div>
+
+        <div class="map-info" id="mapInfo">
+            <i class="fas fa-info-circle"></i>
+            <strong>CML Selected:</strong>
+            <span class="selected-cml-badge" id="selectedCmlBadge">-</span>
+        </div>
+
+        <div id="cml-map"></div>
+        <!-- Debug panel (visible) to help diagnose client-side loading issues -->
+        <div id="mapDebug"
+            style="margin-top:0.5rem;padding:0.5rem;background:#fffbe6;border:1px solid #f5e0a8;border-radius:6px;font-size:0.9rem;color:#333;">
+            <strong>Debug:</strong>
+            <span id="debugStats">stats=N/A</span>
+            &nbsp;|&nbsp;
+            <span id="debugMap">mapData=N/A</span>
+            &nbsp;|&nbsp;
+            <span id="debugError">lastError=none</span>
+        </div>
+    </section>
+
+    <!-- Time Series Panel -->
+    <section class="mb-5">
+        <h2 class="mb-3">
+            <i class="fas fa-chart-line"></i> Time Series Data
+        </h2>
+        <p class="text-secondary mb-3">Click on a CML line in the map above to select it and view its time series data
+            below.</p>
+
+        <iframe class="grafana-container" id="grafana-panel"
+            src="http://localhost:3000/d-solo/cml-realtime/cml-real-time-data?orgId=1&panelId=2&var-cml_id=10001&refresh=10s"
+            allowfullscreen></iframe>
     </section>
 
     <!-- Info -->
@@ -46,13 +111,235 @@
         <div class="card">
             <div class="card-body">
                 <p class="text-secondary mb-0">
-                    Use the CML ID dropdown in the dashboard above to select a specific Commercial Microwave Link
-                    and view its received signal level (RSL) measurements over the past 7 days. The dashboard
-                    automatically
-                    refreshes every 10 seconds.
+                    Click on any CML line in the network map to select it and view its received signal level (RSL)
+                    measurements.
+                    The time series panel updates automatically. The dashboard refreshes every 10 seconds.
                 </p>
             </div>
         </div>
     </section>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+    let map;
+    let cmlLayers = {};
+    let cmlStats = {};
+    let selectedCmlId = '10001';
+    let currentColoringOption = 'completeness';
+
+    // Color functions for each option
+    const colorFunctions = {
+        completeness: function (stat) {
+            if (!stat) return '#0066cc';
+            const completeness = stat.completeness_percent || 0;
+            if (completeness >= 90) return '#22c55e'; // green
+            if (completeness >= 70) return '#eab308'; // yellow
+            if (completeness >= 50) return '#f97316'; // orange
+            return '#ef4444'; // red
+        },
+        last_rsl: function (stat) {
+            if (!stat) return '#0066cc';
+            const rsl = stat.last_rsl;
+            if (rsl === null) return '#808080'; // gray for missing data
+            if (rsl >= -40) return '#22c55e'; // green
+            if (rsl >= -45) return '#eab308'; // yellow
+            if (rsl >= -50) return '#f97316'; // orange
+            return '#ef4444'; // red
+        },
+        std_dev: function (stat) {
+            if (!stat) return '#0066cc';
+            const stddev = stat.stddev_last_60min;
+            if (stddev === null) return '#808080'; // gray for missing data
+            if (stddev <= 1) return '#22c55e'; // green (very stable)
+            if (stddev <= 2) return '#eab308'; // yellow (moderate)
+            if (stddev <= 3) return '#f97316'; // orange (variable)
+            return '#ef4444'; // red (very unstable)
+        }
+    };
+
+    function getColor(stat, option) {
+        if (colorFunctions[option]) {
+            return colorFunctions[option](stat);
+        }
+        return '#0066cc';
+    }
+
+    // Initialize map
+    function initializeMap() {
+        console.log('Initializing map...');
+        try {
+            map = L.map('cml-map').setView([57.705, 11.97], 11);
+            L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap contributors &copy; Stadia Maps',
+                maxZoom: 20
+            }).addTo(map);
+            console.log('Map created');
+
+            // Fetch stats first
+            console.log('Fetching CML stats...');
+            try {
+                fetch('/api/cml-stats')
+                    .then(function (response) {
+                        console.log('Stats response received:', response.status);
+                        var el = document.getElementById('debugStats');
+                        if (el) el.textContent = 'stats=status:' + response.status;
+                        return response.json();
+                    })
+                    .then(function (stats) {
+                        console.log('Received stats for ' + stats.length + ' CMLs');
+                        stats.forEach(function (stat) {
+                            cmlStats[stat.cml_id] = stat;
+                        });
+                        var el2 = document.getElementById('debugStats');
+                        if (el2) el2.textContent = 'stats=ok:' + stats.length;
+                        loadCmlData();
+                    })
+                    .catch(function (error) {
+                        console.error('Error loading stats:', error);
+                        var errEl = document.getElementById('debugError');
+                        if (errEl) errEl.textContent = 'lastError=stats:' + (error && error.message ? error.message : String(error));
+                        var el3 = document.getElementById('debugStats');
+                        if (el3) el3.textContent = 'stats=error';
+                        loadCmlData(); // Try loading without stats
+                    });
+            } catch (e) {
+                console.error('Exception when fetching stats:', e);
+                var errEl = document.getElementById('debugError');
+                if (errEl) errEl.textContent = 'lastError=stats-ex:' + String(e);
+                loadCmlData();
+            }
+        } catch (e) {
+            console.error('Error in initializeMap:', e);
+        }
+
+        // Add event listener for coloring option change
+        var coloringSelect = document.getElementById('coloringOption');
+        if (coloringSelect) {
+            coloringSelect.addEventListener('change', function (e) {
+                console.log('Coloring option changed to: ' + e.target.value);
+                currentColoringOption = e.target.value;
+                updateMapColors();
+            });
+        }
+    }
+
+    // Load and draw CML data
+    function loadCmlData() {
+        console.log('Loading CML map data...');
+        try {
+            fetch('/api/cml-map')
+                .then(function (response) {
+                    console.log('Map response received:', response.status);
+                    var el = document.getElementById('debugMap');
+                    if (el) el.textContent = 'mapData=status:' + response.status;
+                    return response.json();
+                })
+                .then(function (cmls) {
+                    console.log('Drawing ' + cmls.length + ' CMLs');
+                    var el2 = document.getElementById('debugMap');
+                    if (el2) el2.textContent = 'mapData=ok:' + cmls.length;
+                    cmls.forEach(function (cml) {
+                        drawCmlLine(cml);
+                    });
+                    console.log('Done drawing');
+                })
+                .catch(function (error) {
+                    console.error('Error loading map data:', error);
+                    var errEl = document.getElementById('debugError');
+                    if (errEl) errEl.textContent = 'lastError=map:' + (error && error.message ? error.message : String(error));
+                    var el3 = document.getElementById('debugMap');
+                    if (el3) el3.textContent = 'mapData=error';
+                });
+        } catch (e) {
+            console.error('Exception when loading map data:', e);
+            var errEl = document.getElementById('debugError');
+            if (errEl) errEl.textContent = 'lastError=map-ex:' + String(e);
+        }
+    }
+
+    // Draw CML line on map with initial color
+    function drawCmlLine(cml) {
+        var cmlId = cml.cml_id;
+        var stats = cmlStats[cmlId];
+        var color = getColor(stats, currentColoringOption);
+
+        var latlngs = [
+            [cml.site_0.lat, cml.site_0.lon],
+            [cml.site_1.lat, cml.site_1.lon]
+        ];
+
+        var polyline = L.polyline(latlngs, {
+            color: color,
+            weight: 2,
+            opacity: 0.7
+        });
+        polyline.addTo(map);
+
+        // Store the stats for updating
+        polyline._cmlId = cmlId;
+        polyline._stats = stats;
+
+        // Create popup with stats
+        var popupText = '<strong>CML ' + cmlId + '</strong><br>';
+        if (stats) {
+            popupText += 'Completeness: ' + stats.completeness_percent + '%<br>';
+            popupText += 'Valid records: ' + stats.valid_records + '/' + stats.total_records + '<br>';
+            if (stats.last_rsl !== null) {
+                popupText += 'Last RSL: ' + stats.last_rsl + ' dBm<br>';
+            }
+            if (stats.stddev_last_60min !== null) {
+                popupText += 'Std Dev (60min): ' + stats.stddev_last_60min + '<br>';
+            }
+        }
+        polyline.bindPopup(popupText);
+
+        // Add click handler
+        polyline.on('click', function () {
+            selectCml(cmlId);
+        });
+
+        // Add hover effects
+        polyline.on('mouseover', function () {
+            this.setStyle({ weight: 4, opacity: 1 });
+        });
+        polyline.on('mouseout', function () {
+            this.setStyle({ weight: 2, opacity: 0.7 });
+        });
+
+        cmlLayers[cmlId] = polyline;
+    }
+
+    // Update all map line colors based on current coloring option
+    function updateMapColors() {
+        console.log('Updating colors for option: ' + currentColoringOption);
+        for (var cmlId in cmlLayers) {
+            if (cmlLayers.hasOwnProperty(cmlId)) {
+                var polyline = cmlLayers[cmlId];
+                var stats = polyline._stats;
+                var color = getColor(stats, currentColoringOption);
+                polyline.setStyle({ color: color });
+            }
+        }
+    }
+
+    // Select CML and update interface
+    function selectCml(cmlId) {
+        console.log('Selected CML: ' + cmlId);
+        selectedCmlId = cmlId;
+
+        // Update badge
+        document.getElementById('selectedCmlBadge').textContent = cmlId;
+        document.getElementById('mapInfo').classList.add('active');
+
+        // Update Grafana iframe
+        var grafanaPanel = document.getElementById('grafana-panel');
+        grafanaPanel.src = 'http://localhost:3000/d-solo/cml-realtime/cml-real-time-data?orgId=1&panelId=2&var-cml_id=' + cmlId + '&refresh=10s';
+    }
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', initializeMap);
+</script>
 {% endblock %}

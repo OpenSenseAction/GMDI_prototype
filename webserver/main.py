@@ -1,5 +1,6 @@
 import os
 import time
+import math
 import psycopg2
 import pandas as pd
 import folium
@@ -20,6 +21,18 @@ DATA_ARCHIVED_DIR = "/app/data_archived"
 # Create directories if they don't exist
 for directory in [DATA_INCOMING_DIR, DATA_STAGED_FOR_PARSING_DIR, DATA_ARCHIVED_DIR]:
     Path(directory).mkdir(parents=True, exist_ok=True)
+
+    def safe_float(value):
+        """Return a JSON-safe float (converting NaN/inf to None)."""
+        if value is None:
+            return None
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return None
+        if math.isnan(parsed) or math.isinf(parsed):
+            return None
+        return parsed
 
 
 # Database connection helper
@@ -372,6 +385,36 @@ def api_cml_metadata():
         return jsonify({"cmls": []})
 
 
+@app.route("/api/cml-map")
+def api_cml_map():
+    """API endpoint for fetching CML data optimized for map rendering"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify([])
+
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT cml_id::text, site_0_lon, site_0_lat, site_1_lon, site_1_lat FROM cml_metadata ORDER BY cml_id"
+        )
+        data = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        cmls = [
+            {
+                "cml_id": str(row[0]),
+                "site_0": {"lon": float(row[1]), "lat": float(row[2])},
+                "site_1": {"lon": float(row[3]), "lat": float(row[4])},
+            }
+            for row in data
+        ]
+        return jsonify(cmls)
+    except Exception as e:
+        print(f"Error fetching CML map data: {e}")
+        return jsonify([])
+
+
 @app.route("/api/timeseries/<cml_id>")
 def api_timeseries(cml_id):
     """API endpoint for fetching time series data"""
@@ -384,6 +427,66 @@ def api_timeseries(cml_id):
             }
         )
     return jsonify({"html": plot_html})
+
+
+@app.route("/api/cml-stats")
+def api_cml_stats():
+    """API endpoint for fetching per-CML statistics for data quality visualization"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify([])
+
+        cur = conn.cursor()
+        cur.execute(
+            """
+            WITH latest_60min AS (
+                SELECT cml_id, rsl, time
+                FROM cml_data
+                WHERE time >= (SELECT MAX(time) FROM cml_data) - INTERVAL '60 minutes'
+            )
+            SELECT
+                cd.cml_id::text,
+                COUNT(*) as total_records,
+                COUNT(CASE WHEN cd.rsl IS NOT NULL THEN 1 END) as valid_records,
+                COUNT(CASE WHEN cd.rsl IS NULL THEN 1 END) as null_records,
+                ROUND(100.0 * COUNT(CASE WHEN cd.rsl IS NOT NULL THEN 1 END) / COUNT(*), 2) as completeness_percent,
+                MIN(cd.rsl) as min_rsl,
+                MAX(cd.rsl) as max_rsl,
+                ROUND(AVG(cd.rsl)::numeric, 2) as mean_rsl,
+                ROUND(STDDEV(cd.rsl)::numeric, 2) as stddev_rsl,
+                (SELECT rsl FROM cml_data WHERE cml_id = cd.cml_id ORDER BY time DESC LIMIT 1) as last_rsl,
+                ROUND(STDDEV(l60.rsl)::numeric, 2) as stddev_last_60min
+            FROM cml_data cd
+            LEFT JOIN latest_60min l60 ON cd.cml_id = l60.cml_id
+            GROUP BY cd.cml_id
+            ORDER BY cd.cml_id
+        """
+        )
+        data = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        stats = [
+            {
+                "cml_id": str(row[0]),
+                "total_records": int(row[1]),
+                "valid_records": int(row[2]),
+                "null_records": int(row[3]),
+                "completeness_percent": safe_float(row[4]),
+                "min_rsl": safe_float(row[5]),
+                "max_rsl": safe_float(row[6]),
+                "mean_rsl": safe_float(row[7]),
+                "stddev_rsl": safe_float(row[8]),
+                "last_rsl": safe_float(row[9]),
+                "stddev_last_60min": safe_float(row[10]),
+            }
+            for row in data
+        ]
+        return jsonify(stats)
+    except Exception as e:
+        print(f"Error fetching CML stats: {e}")
+        return jsonify([])
 
 
 # ==================== ARCHIVE STATISTICS ROUTES ====================
