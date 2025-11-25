@@ -78,7 +78,7 @@ def overview():
 
 
 def generate_cml_map():
-    """Generate a Leaflet map showing all CMLs"""
+    """Generate a Leaflet map showing all CMLs with clickable lines"""
     try:
         conn = get_db_connection()
         if not conn:
@@ -86,7 +86,7 @@ def generate_cml_map():
 
         cur = conn.cursor()
         cur.execute(
-            "SELECT cml_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat FROM cml_metadata"
+            "SELECT cml_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat FROM cml_metadata ORDER BY cml_id"
         )
         data = cur.fetchall()
         cur.close()
@@ -104,27 +104,137 @@ def generate_cml_map():
         # Create map
         m = folium.Map(location=[avg_lat, avg_lon], zoom_start=8)
 
-        # Add CML lines
-        for row in data:
+        # Store CML IDs list for JavaScript
+        cml_ids_json = str([str(row[0]) for row in data]).replace("'", '"')
+
+        # Add CML lines with onclick handlers
+        for idx, row in enumerate(data):
             cml_id = row[0]
             site_0_lon = row[1]
             site_0_lat = row[2]
             site_1_lon = row[3]
             site_1_lat = row[4]
 
-            # Create polyline with data attribute to store CML ID
-            line = folium.PolyLine(
-                [[site_0_lat, site_0_lon], [site_1_lat, site_1_lon]],
-                color="blue",
-                weight=2.5,
-                opacity=0.8,
-                popup=folium.Popup(f"CML ID: {cml_id}", max_width=200),
-            )
-            # Store CML ID in the feature's properties for JavaScript access
-            line.options["cml_id"] = cml_id
-            line.add_to(m)
+            # Create GeoJSON feature with cml_id in properties
+            geojson_feature = {
+                "type": "Feature",
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [[site_0_lon, site_0_lat], [site_1_lon, site_1_lat]],
+                },
+                "properties": {
+                    "cml_id": str(cml_id),
+                },
+            }
 
-        return m._repr_html_()
+            # Create a custom popup with onclick
+            popup_html = f"""
+            <div>
+                <strong>CML ID: {cml_id}</strong><br>
+                <button onclick="window.handleCmlClick('{cml_id}'); return false;" style="margin-top: 5px; padding: 5px 10px; background-color: #0066cc; color: white; border: none; border-radius: 3px; cursor: pointer;">
+                    Load Data
+                </button>
+            </div>
+            """
+
+            # Add GeoJSON layer
+            geojson_layer = folium.GeoJson(
+                geojson_feature,
+                style_function=lambda x: {
+                    "color": "blue",
+                    "weight": 2.5,
+                    "opacity": 0.8,
+                },
+                popup=folium.Popup(popup_html, max_width=200),
+                name=f"CML {cml_id}",
+            )
+
+            # Add mouse event handlers via JavaScript
+            geojson_layer.add_to(m)
+
+        # Get the HTML and inject additional click handlers
+        map_html = m._repr_html_()
+
+        # Add JavaScript to enhance interactivity
+        enhanced_js = (
+            """
+        <script>
+        (function() {
+            // Delay to ensure map is loaded
+            setTimeout(function() {
+                var cmlIds = """
+            + cml_ids_json
+            + """;
+                
+                // Find all SVG paths and attach click handlers
+                function attachHandlers() {
+                    // Get all paths in the SVG
+                    var allPaths = document.querySelectorAll('svg path');
+                    var bluePaths = [];
+                    var attachedCount = 0;
+                    
+                    // Filter for blue paths
+                    allPaths.forEach(function(path) {
+                        var strokeColor = path.getAttribute('stroke');
+                        if (strokeColor && strokeColor.toLowerCase() === 'blue' && !path.hasAttribute('data-cml-click-attached')) {
+                            bluePaths.push(path);
+                        }
+                    });
+                    
+                    console.log('Found ' + bluePaths.length + ' blue paths out of ' + allPaths.length + ' total paths');
+                    
+                    bluePaths.forEach(function(path, index) {
+                        if (index < cmlIds.length) {
+                            var cmlId = cmlIds[index];
+                            
+                            // Mark as attached
+                            path.setAttribute('data-cml-click-attached', 'true');
+                            path.style.cursor = 'pointer';
+                            
+                            // Click handler
+                            path.addEventListener('click', function(e) {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                console.log('Direct path click for CML:', cmlId);
+                                if (typeof window.handleCmlClick === 'function') {
+                                    window.handleCmlClick(cmlId);
+                                } else {
+                                    console.error('handleCmlClick function not found');
+                                }
+                            }, true);
+                            
+                            // Hover effects
+                            path.addEventListener('mouseover', function() {
+                                this.style.strokeWidth = (this.getAttribute('stroke-width') || 2.5) * 1.5;
+                                this.style.opacity = '1';
+                            });
+                            
+                            path.addEventListener('mouseout', function() {
+                                this.style.strokeWidth = this.getAttribute('stroke-width') || '2.5';
+                                this.style.opacity = this.getAttribute('opacity') || '0.8';
+                            });
+                            
+                            attachedCount++;
+                        }
+                    });
+                    
+                    if (attachedCount > 0) {
+                        console.log('Attached click handlers to', attachedCount, 'paths');
+                    }
+                }
+                
+                attachHandlers();
+                
+                // Try again after a bit more delay in case paths are added dynamically
+                setTimeout(attachHandlers, 500);
+                setTimeout(attachHandlers, 1500);
+            }, 1000);
+        })();
+        </script>
+        """
+        )
+
+        return map_html + enhanced_js
 
     except Exception as e:
         print(f"Error generating map: {e}")
@@ -149,21 +259,22 @@ def get_available_cmls():
         return []
 
 
-def generate_time_series_plot(cml_id, sublink_id="sublink_1", hours=24):
-    """Generate a time series plot for a specific CML"""
+def generate_time_series_plot(cml_id, sublink_id="sublink_1", hours=168):
+    """Generate a time series plot for a specific CML (last 7 days by default)"""
     try:
         conn = get_db_connection()
         if not conn:
             return None
 
+        # Query data for the last 7 days (168 hours) relative to the latest data point
         query = """
             SELECT time, rsl 
             FROM cml_data 
             WHERE cml_id = %s AND sublink_id = %s
-            AND time >= NOW() - INTERVAL '%s hours'
+            AND time >= (SELECT MAX(time) FROM cml_data WHERE cml_id = %s) - INTERVAL '7 days'
             ORDER BY time
         """
-        df = pd.read_sql_query(query, conn, params=(cml_id, sublink_id, hours))
+        df = pd.read_sql_query(query, conn, params=(cml_id, sublink_id, cml_id))
         conn.close()
 
         if df.empty:
