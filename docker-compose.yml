@@ -2,7 +2,7 @@ services:
   parser:
     build: ./parser
     ports:
-      - "5003:5003"
+      - "5004:5004"
     depends_on:
       - database
     environment:
@@ -35,8 +35,26 @@ services:
   visualization:
     build: ./visualization
     ports:
+      - "5003:5003"
+    depends_on:
+      - database
+    environment:
+      - DATABASE_URL=postgresql://myuser:mypassword@database:5432/mydatabase
+
+  webserver:
+    build: ./webserver
+    ports:
       - "5000:5000"
     depends_on:
       - database
     environment:
       - DATABASE_URL=postgresql://myuser:mypassword@database:5432/mydatabase
+    volumes:
+      - webserver_data_incoming:/app/data_incoming
+      - webserver_data_staged:/app/data_staged_for_parsing
+      - webserver_data_archived:/app/data_archived
+
+volumes:
+  webserver_data_incoming:
+  webserver_data_staged:
+  webserver_data_archived:

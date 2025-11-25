@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+
+{% block title %}Overview - GMDI Platform{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Hero Header -->
+    <section class="mb-5 pb-4 border-bottom">
+        <div class="row align-items-center">
+            <div class="col-lg-8">
+                <h1 class="mb-2">System Overview</h1>
+                <p class="text-secondary mb-0">Real-time monitoring and analysis of Commercial Microwave Link data</p>
+            </div>
+            <div class="col-lg-4 text-end">
+                <small class="text-light"><code>User: MNO_xy</code></small>
+            </div>
+        </div>
+    </section>
+
+    <!-- Key Metrics Grid -->
+    <section class="mb-5">
+        <h2 class="mb-3">
+            <i class="fas fa-chart-line"></i> System Status
+        </h2>
+
+        <div class="stat-grid">
+            <div class="metric-card">
+                <div class="metric-value">{{ stats.total_cmls }}</div>
+                <div class="metric-label">
+                    <i class="fas fa-broadcast-tower"></i> Active CMLs
+                </div>
+                <small class="text-secondary d-block mt-2">Microwave links monitored</small>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-value">{{ "{:,}".format(stats.total_records) }}</div>
+                <div class="metric-label">
+                    <i class="fas fa-database"></i> Data Points
+                </div>
+                <small class="text-secondary d-block mt-2">Records in system</small>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-value">
+                    {% if stats.data_end_date %}
+                    {{ (stats.data_end_date - stats.data_start_date).days }}
+                    {% else %}
+                    0
+                    {% endif %}
+                </div>
+                <div class="metric-label">
+                    <i class="fas fa-calendar"></i> Days Active
+                </div>
+                <small class="text-secondary d-block mt-2">Data collection span</small>
+            </div>
+        </div>
+    </section>
+
+    <!-- Data Availability Timeline -->
+    <section class="mb-5">
+        <h2 class="mb-3">
+            <i class="fas fa-history"></i> Data Timeline
+        </h2>
+
+        {% if stats.data_start_date and stats.data_end_date %}
+        <div class="card">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <small class="text-secondary text-uppercase fw-6" style="letter-spacing: 0.5px;">Start
+                                Date</small>
+                            <div
+                                style="font-family: 'JetBrains Mono', monospace; font-size: 0.95rem; color: #0066cc; font-weight: 500;">
+                                {{ stats.data_start_date.strftime('%Y-%m-%d %H:%M:%S') }}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <small class="text-secondary text-uppercase fw-6" style="letter-spacing: 0.5px;">End
+                                Date</small>
+                            <div
+                                style="font-family: 'JetBrains Mono', monospace; font-size: 0.95rem; color: #0066cc; font-weight: 500;">
+                                {{ stats.data_end_date.strftime('%Y-%m-%d %H:%M:%S') }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="progress mt-3">
+                    <div class="progress-bar" style="width: 100%; background-color: #0066cc;"></div>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i>
+            <strong>No data available yet.</strong> Data collection has not yet begun.
+        </div>
+        {% endif %}
+    </section>
+
+    <!-- Processing Status -->
+    <section class="mb-5">
+        <h2 class="mb-3">
+            <i class="fas fa-gear"></i> System Status
+        </h2>
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center gap-3">
+                    <div
+                        style="width: 12px; height: 12px; background-color: #10b981; border-radius: 50%; animation: pulse 2s infinite;">
+                    </div>
+                    <div>
+                        <div class="fw-600">{{ stats.processing_status }}</div>
+                        <small class="text-secondary">Processing pipeline status</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Quick Access -->
+    <section class="mb-5">
+        <h2 class="mb-3">
+            <i class="fas fa-rocket"></i> Quick Access
+        </h2>
+
+        <div class="row">
+            <div class="col-md-4 mb-3">
+                <div class="card h-100" style="position: relative; overflow: hidden;">
+                    <div
+                        style="position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(to right, #0066cc, #06b6d4);">
+                    </div>
+                    <div class="card-body">
+                        <div style="font-size: 1.5rem; margin-bottom: 1rem; color: #0066cc;">
+                            <i class="fas fa-map-location-dot"></i>
+                        </div>
+                        <h5 class="card-title">Real-Time Data</h5>
+                        <p class="card-text small text-secondary mb-3">Live CML network visualization and current
+                            measurements</p>
+                        <a href="/realtime" class="btn btn-primary btn-sm">
+                            <i class="fas fa-arrow-right"></i> View
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4 mb-3">
+                <div class="card h-100" style="position: relative; overflow: hidden;">
+                    <div
+                        style="position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(to right, #10b981, #06b6d4);">
+                    </div>
+                    <div class="card-body">
+                        <div style="font-size: 1.5rem; margin-bottom: 1rem; color: #10b981;">
+                            <i class="fas fa-chart-line"></i>
+                        </div>
+                        <h5 class="card-title">Archive</h5>
+                        <p class="card-text small text-secondary mb-3">Historical data analysis and aggregated
+                            statistics</p>
+                        <a href="/archive" class="btn btn-primary btn-sm">
+                            <i class="fas fa-arrow-right"></i> Explore
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4 mb-3">
+                <div class="card h-100" style="position: relative; overflow: hidden;">
+                    <div
+                        style="position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(to right, #ff6b35, #f59e0b);">
+                    </div>
+                    <div class="card-body">
+                        <div style="font-size: 1.5rem; margin-bottom: 1rem; color: #ff6b35;">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                        </div>
+                        <h5 class="card-title">Data Uploads</h5>
+                        <p class="card-text small text-secondary mb-3">Manage and upload CML data files to the system
+                        </p>
+                        <a href="/data-uploads" class="btn btn-primary btn-sm">
+                            <i class="fas fa-arrow-right"></i> Upload
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+
+<style>
+    @keyframes pulse {
+
+        0%,
+        100% {
+            opacity: 1;
+        }
+
+        50% {
+            opacity: 0.5;
+        }
+    }
+
+    .fw-600 {
+        font-weight: 600;
+    }
+</style>
+{% endblock %}

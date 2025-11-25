@@ -1,0 +1,427 @@
+{% extends "base.html" %}
+
+{% block title %}Data Uploads - GMDI Platform{% endblock %}
+
+{% block extra_css %}
+<style>
+    .dropzone {
+        border: 2px dashed #0066cc;
+        border-radius: 0.5rem;
+        padding: 3rem 2rem;
+        text-align: center;
+        background-color: #f0f7ff;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        position: relative;
+    }
+
+    .dropzone:hover {
+        background-color: #e7f3ff;
+        border-color: #0052a3;
+        box-shadow: 0 4px 12px rgba(0, 102, 204, 0.15);
+    }
+
+    .dropzone.dragover {
+        background-color: #06b6d4;
+        border-color: #0891b2;
+        color: white;
+    }
+
+    .dropzone i {
+        font-size: 2.5rem;
+        margin-bottom: 1rem;
+        color: #0066cc;
+    }
+
+    .dropzone.dragover i {
+        color: white;
+    }
+
+    .file-browser-header {
+        background: linear-gradient(135deg, #0066cc 0%, #06b6d4 100%);
+        color: white;
+        padding: 1rem;
+        border-radius: 0.5rem 0.5rem 0 0;
+    }
+
+    .file-list-item {
+        padding: 1rem;
+        border-bottom: 1px solid #e5e7eb;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        transition: background-color 0.2s;
+    }
+
+    .file-list-item:hover {
+        background-color: #f9fafb;
+    }
+
+    .file-list-item:last-child {
+        border-bottom: none;
+    }
+
+    .file-badge {
+        display: inline-block;
+        padding: 0.35rem 0.75rem;
+        border-radius: 0.25rem;
+        font-size: 0.8rem;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+    }
+
+    .file-badge.incoming {
+        background-color: #fef3c7;
+        color: #92400e;
+    }
+
+    .file-badge.staged {
+        background-color: #d1d5db;
+        color: #374151;
+    }
+
+    .file-info {
+        flex: 1;
+    }
+
+    .file-name {
+        font-family: 'JetBrains Mono', monospace;
+        font-weight: 500;
+        color: #111827;
+        font-size: 0.9rem;
+    }
+
+    .file-meta {
+        font-size: 0.85rem;
+        color: #6b7280;
+        margin-top: 0.25rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Header -->
+    <section class="mb-5 pb-4 border-bottom">
+        <h1 class="mb-2">
+            <i class="fas fa-cloud-upload-alt"></i> Data Management
+        </h1>
+        <p class="text-secondary mb-0">Upload and manage CML data files</p>
+    </section>
+
+    <!-- Upload Section -->
+    <section class="mb-5">
+        <h2 class="mb-3">
+            <i class="fas fa-upload"></i> Upload Files
+        </h2>
+
+        <div class="card">
+            <div class="card-body">
+                <!-- Drag and Drop Zone -->
+                <div class="dropzone" id="dropzone">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <p class="mb-1" style="font-size: 1.1rem; font-weight: 600; color: #0066cc;">
+                        Drag and drop files here
+                    </p>
+                    <p class="text-secondary mb-0" style="font-size: 0.9rem;">
+                        or click to select files • Supports .nc, .csv, .h5, .hdf5 • Max 500 MB per file
+                    </p>
+                </div>
+
+                <!-- Upload Progress -->
+                <div id="uploadProgress" class="mt-4" style="display: none;">
+                    <p class="mb-2" style="font-weight: 600; color: #0066cc;">
+                        <i class="fas fa-sync fa-spin"></i>
+                        <span id="progressText">Uploading...</span>
+                    </p>
+                    <div class="progress" style="height: 28px; background-color: #e5e7eb;">
+                        <div id="progressBar" class="progress-bar" role="progressbar" style="width: 0%; background: linear-gradient(to right, #0066cc, #06b6d4); 
+                                    font-weight: 600; color: white; font-size: 0.85rem; line-height: 28px;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Uploaded Files -->
+                <div id="fileList" class="mt-4" style="display: none;">
+                    <h5 style="color: #0066cc; font-weight: 600; margin-bottom: 1rem;">
+                        <i class="fas fa-check-circle"></i> Upload Complete
+                    </h5>
+                    <ul class="list-group" id="files"></ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- File Browser Section -->
+    <section class="mb-5">
+        <h2 class="mb-3">
+            <i class="fas fa-folder-open"></i> File Browser
+        </h2>
+
+        <div class="alert alert-info" style="background-color: #f0f7ff; border-color: #0066cc;">
+            <i class="fas fa-info-circle"></i>
+            <strong style="color: #0066cc;">Processing Pipeline:</strong>
+            <span style="color: #1f2937;">Files uploaded here are placed in the "Incoming" folder and will be
+                automatically processed.</span>
+        </div>
+
+        <!-- Incoming Files -->
+        <div class="card mb-4">
+            <div class="file-browser-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-inbox"></i> Incoming Files
+                </h5>
+            </div>
+            <div class="card-body p-0">
+                <div id="incomingFilesList">
+                    <div class="p-3 text-center text-secondary">
+                        <i class="fas fa-spinner fa-spin"></i> Loading...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Staged Files -->
+        <div class="card">
+            <div class="file-browser-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-hourglass-start"></i> Staged for Processing
+                </h5>
+            </div>
+            <div class="card-body p-0">
+                <div id="stagedFilesList">
+                    <div class="p-3 text-center text-secondary">
+                        <i class="fas fa-spinner fa-spin"></i> Loading...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Guidelines Section -->
+    <section class="mb-5">
+        <h2 class="mb-3">
+            <i class="fas fa-file-import"></i> File Format Guidelines
+        </h2>
+
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 style="color: #0066cc; font-weight: 600; margin-bottom: 1rem;">
+                            <i class="fas fa-file"></i> Supported Formats
+                        </h5>
+                        <ul style="margin-bottom: 0; padding-left: 1.5rem;">
+                            <li><code style="background-color: transparent; color: #0066cc;">NetCDF (.nc)</code> –
+                                Network Common Data Format</li>
+                            <li><code style="background-color: transparent; color: #0066cc;">CSV (.csv)</code> –
+                                Comma-separated values</li>
+                            <li><code style="background-color: transparent; color: #0066cc;">HDF5 (.h5, .hdf5)</code> –
+                                Hierarchical Data Format</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6 mb-3">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 style="color: #0066cc; font-weight: 600; margin-bottom: 1rem;">
+                            <i class="fas fa-info-circle"></i> Limits & Notes
+                        </h5>
+                        <p class="mb-2">
+                            <strong>Max Size:</strong>
+                            <span style="font-family: 'JetBrains Mono', monospace;">500 MB per file</span>
+                        </p>
+                        <p class="mb-0">
+                            <strong>Note:</strong> Files are automatically processed after upload
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const dropzone = document.getElementById('dropzone');
+    const fileList = document.getElementById('fileList');
+    const filesContainer = document.getElementById('files');
+    const uploadProgress = document.getElementById('uploadProgress');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+
+    // Prevent default drag behaviors
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropzone.addEventListener(eventName, preventDefaults, false);
+        document.body.addEventListener(eventName, preventDefaults, false);
+    });
+
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+
+    // Highlight dropzone on drag over
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropzone.addEventListener(eventName, highlight, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropzone.addEventListener(eventName, unhighlight, false);
+    });
+
+    function highlight(e) {
+        dropzone.classList.add('dragover');
+    }
+
+    function unhighlight(e) {
+        dropzone.classList.remove('dragover');
+    }
+
+    // Handle drop
+    dropzone.addEventListener('drop', handleDrop, false);
+
+    function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        handleFiles(files);
+    }
+
+    // Handle click to select files
+    dropzone.addEventListener('click', () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.multiple = true;
+        input.accept = '.nc,.csv,.h5,.hdf5';
+        input.onchange = (e) => handleFiles(e.target.files);
+        input.click();
+    });
+
+    async function handleFiles(files) {
+        for (let file of files) {
+            await uploadFile(file);
+        }
+        loadFiles();
+    }
+
+    async function uploadFile(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            uploadProgress.style.display = 'block';
+            progressText.textContent = `Uploading ${file.name}...`;
+            progressBar.style.width = '0%';
+
+            const xhr = new XMLHttpRequest();
+
+            // Track upload progress
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable) {
+                    const percentComplete = (e.loaded / e.total) * 100;
+                    progressBar.style.width = percentComplete + '%';
+                }
+            });
+
+            xhr.addEventListener('load', () => {
+                if (xhr.status === 200) {
+                    const response = JSON.parse(xhr.responseText);
+                    progressText.textContent = `✓ ${file.name} uploaded successfully (${response.size_mb} MB)`;
+                    progressBar.style.width = '100%';
+                    progressBar.classList.add('bg-success');
+                } else {
+                    const response = JSON.parse(xhr.responseText);
+                    progressText.textContent = `✗ Error: ${response.error}`;
+                    progressBar.style.width = '100%';
+                    progressBar.classList.remove('bg-success');
+                    progressBar.classList.add('bg-danger');
+                }
+            });
+
+            xhr.addEventListener('error', () => {
+                progressText.textContent = `✗ Error uploading ${file.name}`;
+                progressBar.style.width = '100%';
+                progressBar.classList.remove('bg-success');
+                progressBar.classList.add('bg-danger');
+            });
+
+            xhr.open('POST', '/api/upload');
+            xhr.send(formData);
+
+        } catch (error) {
+            console.error('Error uploading file:', error);
+            progressText.textContent = `✗ Error uploading ${file.name}`;
+        }
+    }
+
+    // Load and display files from server
+    async function loadFiles() {
+        try {
+            const response = await fetch('/api/files');
+            const data = await response.json();
+
+            // Populate incoming files
+            const incomingFilesList = document.getElementById('incomingFilesList');
+            if (data.incoming_files && data.incoming_files.length > 0) {
+                const ul = document.createElement('ul');
+                ul.className = 'list-group';
+
+                data.incoming_files.forEach(file => {
+                    const li = document.createElement('li');
+                    li.className = 'list-group-item d-flex justify-content-between align-items-center';
+                    li.innerHTML = `
+                        <div>
+                            <strong>${file.filename}</strong><br>
+                            <small class="text-muted">${file.size_mb} MB • Uploaded: ${file.upload_time}</small>
+                        </div>
+                        <span class="badge bg-warning text-dark">Incoming</span>
+                    `;
+                    ul.appendChild(li);
+                });
+
+                incomingFilesList.innerHTML = '';
+                incomingFilesList.appendChild(ul);
+            } else {
+                incomingFilesList.innerHTML = '<p class="text-muted">No incoming files</p>';
+            }
+
+            // Populate staged files
+            const stagedFilesList = document.getElementById('stagedFilesList');
+            if (data.staged_files && data.staged_files.length > 0) {
+                const ul = document.createElement('ul');
+                ul.className = 'list-group';
+
+                data.staged_files.forEach(file => {
+                    const li = document.createElement('li');
+                    li.className = 'list-group-item d-flex justify-content-between align-items-center';
+                    li.innerHTML = `
+                        <div>
+                            <strong>${file.filename}</strong><br>
+                            <small class="text-muted">${file.size_mb} MB • Staged: ${file.upload_time}</small>
+                        </div>
+                        <span class="badge bg-info">Staged</span>
+                    `;
+                    ul.appendChild(li);
+                });
+
+                stagedFilesList.innerHTML = '';
+                stagedFilesList.appendChild(ul);
+            } else {
+                stagedFilesList.innerHTML = '<p class="text-muted">No staged files</p>';
+            }
+
+        } catch (error) {
+            console.error('Error loading files:', error);
+            document.getElementById('incomingFilesList').innerHTML = '<p class="text-danger">Error loading files</p>';
+            document.getElementById('stagedFilesList').innerHTML = '<p class="text-danger">Error loading files</p>';
+        }
+    }
+
+    // Load files on page load and refresh every 5 seconds
+    document.addEventListener('DOMContentLoaded', loadFiles);
+    setInterval(loadFiles, 5000);
+</script>
+{% endblock %}

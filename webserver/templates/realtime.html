@@ -1,0 +1,328 @@
+{% extends "base.html" %}
+
+{% block title %}Real-Time Data - GMDI Platform{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+    #map {
+        height: 500px;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    #mapClickPlot {
+        height: 180px;
+        border-radius: 0.5rem;
+        border: 1px solid #e5e7eb;
+        background-color: #f9fafb;
+        display: none;
+        overflow: auto;
+    }
+
+    #mapClickPlot.active {
+        display: block;
+    }
+
+    .map-plot-info {
+        padding: 1rem;
+        background-color: #f0f7ff;
+        border-left: 4px solid #0066cc;
+        margin-bottom: 1rem;
+        border-radius: 0.5rem;
+        display: none;
+    }
+
+    .map-plot-info.active {
+        display: block;
+    }
+
+    .cml-selector {
+        margin-bottom: 1.5rem;
+    }
+
+    .cml-selector label {
+        font-weight: 600;
+        color: #0066cc;
+        margin-bottom: 0.75rem;
+        display: block;
+        font-size: 0.9rem;
+        letter-spacing: 0.3px;
+        text-transform: uppercase;
+    }
+
+    .chart-container {
+        background-color: transparent;
+        padding: 0;
+        border-radius: 0.5rem;
+    }
+
+    .selector-group {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .selector-group .form-select {
+        flex: 1;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Header -->
+    <section class="mb-5 pb-4 border-bottom">
+        <h1 class="mb-2">
+            <i class="fas fa-globe"></i> Real-Time Data Visualization
+        </h1>
+        <p class="text-secondary mb-0">Live CML network map and signal measurements</p>
+    </section>
+
+    <!-- CML Network Map -->
+    <section class="mb-5">
+        <h2 class="mb-3">
+            <i class="fas fa-map"></i> Network Coverage Map
+        </h2>
+
+        <div class="map-plot-info" id="mapPlotInfo">
+            <i class="fas fa-info-circle"></i>
+            <strong id="selectedCmlInfo">CML selected</strong> — Displaying time series data below
+        </div>
+
+        {% if map_html %}
+        <div id="map">
+            {{ map_html | safe }}
+        </div>
+        {% else %}
+        <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle"></i>
+            <strong>Unable to load map.</strong> Please ensure the database is running.
+        </div>
+        {% endif %}
+
+        <!-- Interactive plot from map click -->
+        <div id="mapClickPlot"></div>
+    </section>
+
+    <!-- Time Series Data -->
+    <section class="mb-5">
+        <h2 class="mb-3">
+            <i class="fas fa-chart-line"></i> Signal Measurements
+        </h2>
+
+        <!-- CML Selector -->
+        <div class="cml-selector">
+            <label for="cmlSelect">Select CML Link</label>
+            <div class="selector-group">
+                <select id="cmlSelect" class="form-select">
+                    {% for cml in cmls %}
+                    <option value="{{ cml }}" {% if cml==selected_cml %}selected{% endif %}>
+                        CML {{ cml }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <button class="btn btn-primary" id="loadButton" type="button">
+                    <i class="fas fa-sync-alt"></i> Load
+                </button>
+            </div>
+        </div>
+
+        <!-- Time Series Chart -->
+        <div class="chart-container">
+            <div class="card">
+                <div class="card-body">
+                    {% if plot_html %}
+                    <div id="timeSeriesChart">
+                        {{ plot_html | safe }}
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info mb-0">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>No data available</strong> for the selected CML
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Data Info -->
+    <section class="mb-5">
+        <h2 class="mb-3">
+            <i class="fas fa-info-circle"></i> About This Data
+        </h2>
+        <div class="card">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <h5 style="color: #0066cc; font-weight: 600; margin-bottom: 0.5rem;">
+                            <i class="fas fa-signal"></i> Received Signal Level (RSL)
+                        </h5>
+                        <p class="text-secondary mb-0" style="font-size: 0.9rem;">
+                            The strength of the radio signal at the receiver. Changes in RSL correlate with atmospheric
+                            phenomena, particularly rainfall.
+                        </p>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <h5 style="color: #0066cc; font-weight: 600; margin-bottom: 0.5rem;">
+                            <i class="fas fa-clock"></i> Update Frequency
+                        </h5>
+                        <p class="text-secondary mb-0" style="font-size: 0.9rem;">
+                            Data is updated regularly as new measurements arrive from the CML network. Select a link
+                            above to view recent measurements.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+    // Global handler for CML clicks from the map
+    window.handleCmlClick = function (cmlId) {
+        console.log('CML clicked:', cmlId);
+        loadMapClickPlot(cmlId);
+    };
+
+    // Helper function to insert HTML with script execution
+    function setHTMLWithScripts(element, html) {
+        // Clear the element
+        element.innerHTML = '';
+
+        // Create a temporary container to parse the HTML
+        const temp = document.createElement('div');
+        temp.innerHTML = html;
+
+        // Process all nodes
+        while (temp.firstChild) {
+            const node = temp.firstChild;
+
+            if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'SCRIPT') {
+                // Create a new script element and copy attributes
+                const newScript = document.createElement('script');
+                for (let i = 0; i < node.attributes.length; i++) {
+                    newScript.setAttribute(node.attributes[i].name, node.attributes[i].value);
+                }
+                newScript.textContent = node.textContent;
+
+                // Append to container - this will execute the script
+                element.appendChild(newScript);
+            } else {
+                // Append non-script elements normally
+                element.appendChild(node);
+            }
+        }
+    }
+
+    // Load and display plot from map click
+    async function loadMapClickPlot(cmlId) {
+        const plotContainer = document.getElementById('mapClickPlot');
+        const infoBox = document.getElementById('mapPlotInfo');
+        const selectedCmlInfo = document.getElementById('selectedCmlInfo');
+
+        if (!plotContainer) {
+            console.error('Plot container not found');
+            return;
+        }
+
+        console.log('Loading plot for CML:', cmlId);
+
+        // Show loading state
+        plotContainer.innerHTML = '<div style="padding: 2rem; text-align: center; color: #6b7280;"><i class="fas fa-spinner fa-spin"></i> Loading data for CML ' + cmlId + '...</div>';
+        plotContainer.classList.add('active');
+        infoBox.classList.add('active');
+        selectedCmlInfo.textContent = 'CML ' + cmlId + ' selected';
+
+        try {
+            const response = await fetch(`/api/timeseries/${cmlId}`);
+            const data = await response.json();
+
+            console.log('Response received for CML', cmlId);
+
+            if (data.html) {
+                setHTMLWithScripts(plotContainer, data.html);
+            } else {
+                plotContainer.innerHTML = '<div class="alert alert-warning" style="margin: 1rem;"><i class="fas fa-exclamation-triangle"></i> No data available for this CML</div>';
+            }
+        } catch (error) {
+            console.error('Error loading plot:', error);
+            plotContainer.innerHTML = '<div class="alert alert-danger" style="margin: 1rem;"><i class="fas fa-exclamation-circle"></i> Error loading data. Please try again.</div>';
+        }
+    }
+
+    // Helper function to insert HTML with script execution
+    function setHTMLWithScripts(element, html) {
+        // Clear the element
+        element.innerHTML = '';
+
+        // Create a temporary container to parse the HTML
+        const temp = document.createElement('div');
+        temp.innerHTML = html;
+
+        // Process all nodes
+        while (temp.firstChild) {
+            const node = temp.firstChild;
+
+            if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'SCRIPT') {
+                // Create a new script element and copy attributes
+                const newScript = document.createElement('script');
+                for (let i = 0; i < node.attributes.length; i++) {
+                    newScript.setAttribute(node.attributes[i].name, node.attributes[i].value);
+                }
+                newScript.textContent = node.textContent;
+
+                // Append to container - this will execute the script
+                element.appendChild(newScript);
+            } else {
+                // Append non-script elements normally
+                element.appendChild(node);
+            }
+        }
+    }
+
+    // Handle manual CML selection from dropdown
+    if (document.getElementById('loadButton')) {
+        document.getElementById('loadButton').addEventListener('click', function () {
+            const cmlId = document.getElementById('cmlSelect').value;
+            const loadButton = document.getElementById('loadButton');
+            const chartContainer = document.getElementById('timeSeriesChart');
+
+            console.log('Manual load for CML:', cmlId);
+
+            // Show loading state
+            loadButton.disabled = true;
+            loadButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+
+            // Fetch new data
+            fetch(`/api/timeseries/${cmlId}`)
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Chart data received for CML', cmlId);
+                    if (data.html) {
+                        // Use the helper function to properly render with scripts
+                        setHTMLWithScripts(chartContainer, data.html);
+                        console.log('Chart rendered');
+                    } else {
+                        chartContainer.innerHTML = '<div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i> No data available for this CML</div>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading chart:', error);
+                    chartContainer.innerHTML =
+                        '<div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> Error loading data. Please try again.</div>';
+                })
+                .finally(() => {
+                    // Reset button state
+                    loadButton.disabled = false;
+                    loadButton.innerHTML = '<i class="fas fa-sync-alt"></i> Load';
+                });
+        });
+    }
+</script>
+{% endblock %}

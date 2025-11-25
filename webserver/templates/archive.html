@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+
+{% block title %}Archive - GMDI Platform{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Header -->
+    <section class="mb-5 pb-4 border-bottom">
+        <h1 class="mb-2">
+            <i class="fas fa-archive"></i> Data Archive
+        </h1>
+        <p class="text-secondary mb-0">Historical data analysis and statistics</p>
+    </section>
+
+    <!-- Key Metrics -->
+    <section class="mb-5">
+        <div class="stat-grid">
+            <div class="metric-card">
+                <div class="metric-value">{{ "{:,}".format(stats.total_records) }}</div>
+                <div class="metric-label">
+                    <i class="fas fa-database"></i> Total Records
+                </div>
+                <small class="text-secondary d-block mt-2">Records in archive</small>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-value">{{ stats.cml_count }}</div>
+                <div class="metric-label">
+                    <i class="fas fa-broadcast-tower"></i> Active CMLs
+                </div>
+                <small class="text-secondary d-block mt-2">Monitored links</small>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-value">
+                    {% if stats.date_range and stats.date_range.start and stats.date_range.end %}
+                    {{ (stats.date_range.end - stats.date_range.start).days }}
+                    {% else %}
+                    0
+                    {% endif %}
+                </div>
+                <div class="metric-label">
+                    <i class="fas fa-calendar"></i> Days Archived
+                </div>
+                <small class="text-secondary d-block mt-2">Data collection span</small>
+            </div>
+        </div>
+    </section>
+
+    <!-- Data Time Span -->
+    <section class="mb-5">
+        <h2 class="mb-3">
+            <i class="fas fa-history"></i> Archive Timeline
+        </h2>
+        {% if stats.date_range and stats.date_range.start and stats.date_range.end %}
+        <div class="card">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <small class="text-secondary text-uppercase fw-6" style="letter-spacing: 0.5px;">Archive
+                                Start</small>
+                            <div
+                                style="font-family: 'JetBrains Mono', monospace; font-size: 0.95rem; color: #0066cc; font-weight: 500;">
+                                {{ stats.date_range.start.strftime('%Y-%m-%d %H:%M:%S') }}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <small class="text-secondary text-uppercase fw-6" style="letter-spacing: 0.5px;">Latest
+                                Record</small>
+                            <div
+                                style="font-family: 'JetBrains Mono', monospace; font-size: 0.95rem; color: #0066cc; font-weight: 500;">
+                                {{ stats.date_range.end.strftime('%Y-%m-%d %H:%M:%S') }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="progress mt-3">
+                    <div class="progress-bar" style="width: 100%; background-color: #0066cc;"></div>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i>
+            No archived data available yet
+        </div>
+        {% endif %}
+    </section>
+
+    <!-- Data Distribution Chart -->
+    <section class="mb-5">
+        <h2 class="mb-3">
+            <i class="fas fa-chart-bar"></i> Data Distribution
+        </h2>
+
+        {% if chart_html %}
+        <div class="card">
+            <div class="card-body">
+                {{ chart_html | safe }}
+            </div>
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i>
+            No data available to display charts
+        </div>
+        {% endif %}
+    </section>
+
+    <!-- Top CMLs by Record Count -->
+    <section class="mb-5">
+        <h2 class="mb-3">
+            <i class="fas fa-ranking-star"></i> Top 10 Most Active CMLs
+        </h2>
+
+        {% if stats.records_per_cml %}
+        <div class="card">
+            <div class="table-responsive">
+                <table class="table mb-0">
+                    <thead>
+                        <tr style="border-top: none;">
+                            <th style="color: #0066cc; font-family: 'JetBrains Mono', monospace; font-weight: 600;">Rank
+                            </th>
+                            <th style="color: #0066cc; font-family: 'JetBrains Mono', monospace; font-weight: 600;">CML
+                                ID</th>
+                            <th style="color: #0066cc; font-family: 'JetBrains Mono', monospace; font-weight: 600;">
+                                Records</th>
+                            <th style="color: #0066cc; font-family: 'JetBrains Mono', monospace; font-weight: 600;">
+                                Share</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% set total = stats.total_records %}
+                        {% for item in stats.records_per_cml %}
+                        <tr>
+                            <td>
+                                <span
+                                    style="display: inline-block; width: 28px; height: 28px; background: linear-gradient(135deg, #0066cc, #06b6d4); border-radius: 4px; text-align: center; line-height: 28px; color: white; font-weight: 600; font-size: 0.85rem;">
+                                    {{ loop.index }}
+                                </span>
+                            </td>
+                            <td>
+                                <code
+                                    style="background-color: transparent; color: #0066cc; font-weight: 500;">{{ item.cml_id }}</code>
+                            </td>
+                            <td>
+                                <span
+                                    style="font-family: 'JetBrains Mono', monospace; font-weight: 500; color: #10b981;">
+                                    {{ "{:,}".format(item.count) }}
+                                </span>
+                            </td>
+                            <td>
+                                <div class="progress" style="height: 24px; background-color: #f0f4f8;">
+                                    <div class="progress-bar" role="progressbar" style="width: {% if total > 0 %}{{ (item.count / total) * 100 }}{% else %}0{% endif %}%; 
+                                                 background: linear-gradient(to right, #0066cc, #06b6d4); 
+                                                 font-size: 0.75rem; 
+                                                 line-height: 24px; 
+                                                 color: white;
+                                                 font-weight: 600;">
+                                        {% if total > 0 %}{{ "%.1f" | format((item.count / total) * 100) }}%{% else
+                                        %}N/A{% endif %}
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i>
+            No CML data available
+        </div>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}
