@@ -4,6 +4,7 @@ import psycopg2
 import pandas as pd
 import folium
 import altair as alt
+import requests
 from flask import Flask, render_template, request, jsonify
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -313,6 +314,30 @@ def realtime():
         selected_cml=default_cml,
         plot_html=plot_html,
     )
+
+
+@app.route("/grafana-dashboard")
+def grafana_dashboard():
+    """Proxy to Grafana dashboard solo panel"""
+    try:
+        # Use the d-solo endpoint which is designed for iframes
+        grafana_url = "http://grafana:3000/d-solo/cml-realtime/cml-real-time-data?orgId=1&refresh=10s&theme=dark"
+        response = requests.get(grafana_url, timeout=10)
+        response.raise_for_status()
+
+        # Get the content
+        content = response.text
+
+        # Add CORS headers to the response
+        @app.after_request
+        def add_header(response):
+            response.headers["X-Frame-Options"] = "ALLOWALL"
+            return response
+
+        return content
+    except Exception as e:
+        print(f"Error proxying Grafana dashboard: {e}")
+        return f"<div style='padding: 2rem; color: red;'>Error loading Grafana dashboard: {e}</div>"
 
 
 @app.route("/api/cml-metadata")

@@ -1,0 +1,350 @@
+{
+    "annotations": {
+        "list": [
+            {
+                "builtIn": 1,
+                "datasource": {
+                    "type": "grafana",
+                    "uid": "-- Grafana --"
+                },
+                "enable": true,
+                "hide": true,
+                "iconColor": "rgba(0, 211, 255, 1)",
+                "name": "Annotations & Alerts",
+                "type": "dashboard"
+            }
+        ]
+    },
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 0,
+    "id": 1,
+    "links": [],
+    "liveNow": false,
+    "panels": [
+        {
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "PostgreSQL"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {
+                        "hideFrom": {
+                            "tooltip": false,
+                            "viz": false,
+                            "legend": false
+                        }
+                    }
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 0
+            },
+            "id": 4,
+            "options": {
+                "text": "Select a CML ID using the dropdown below to view its time series data"
+            },
+            "pluginVersion": "9.0.0",
+            "targets": [],
+            "type": "text"
+        },
+        {
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "PostgreSQL"
+            },
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 1
+            },
+            "id": 5,
+            "options": {
+                "showLabel": "auto",
+                "showLegend": "auto",
+                "showValue": "auto",
+                "text": ""
+            },
+            "pluginVersion": "9.0.0",
+            "targets": [],
+            "type": "stat"
+        },
+        {
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "PostgreSQL"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "RSL (dBm)",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "drawStyle": "line",
+                        "fillOpacity": 0,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "tooltip": false,
+                            "viz": false,
+                            "legend": false
+                        },
+                        "lineInterpolation": "linear",
+                        "lineWidth": 2,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "auto",
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            }
+                        ]
+                    },
+                    "unit": "dBm"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 24,
+                "x": 0,
+                "y": 2
+            },
+            "id": 2,
+            "options": {
+                "legend": {
+                    "calcs": [],
+                    "displayMode": "list",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "mode": "single",
+                    "sort": "none"
+                }
+            },
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "grafana-postgresql-datasource",
+                        "uid": "PostgreSQL"
+                    },
+                    "format": "time_series",
+                    "group": [],
+                    "metricColumn": "none",
+                    "rawQuery": true,
+                    "rawSql": "SELECT\n  time AS \"time\",\n  rsl AS \"RSL\"\nFROM cml_data\nWHERE cml_id = ${cml_id}::text\nORDER BY time ASC",
+                    "refId": "A",
+                    "select": [
+                        [
+                            {
+                                "params": [
+                                    "rsl"
+                                ],
+                                "type": "column"
+                            }
+                        ]
+                    ],
+                    "table": "cml_data",
+                    "timeColumn": "time",
+                    "timeColumnType": "timestamptz",
+                    "where": [
+                        {
+                            "name": "cml_id",
+                            "params": [
+                                "$cml_id"
+                            ],
+                            "type": "macroCondition"
+                        }
+                    ]
+                }
+            ],
+            "title": "CML Time Series - Received Signal Level",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "PostgreSQL"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {
+                        "hideFrom": {
+                            "tooltip": false,
+                            "viz": false,
+                            "legend": false
+                        }
+                    },
+                    "mappings": []
+                },
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "site_0_lat"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.hidden",
+                                "value": true
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "site_0_lon"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.hidden",
+                                "value": true
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "site_1_lat"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.hidden",
+                                "value": true
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "site_1_lon"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.hidden",
+                                "value": true
+                            }
+                        ]
+                    }
+                ]
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 24,
+                "x": 0,
+                "y": 10
+            },
+            "id": 3,
+            "options": {
+                "basemap": {
+                    "name": "OpenStreetMap",
+                    "type": "default"
+                },
+                "controls": {
+                    "showFullscreenToggle": true,
+                    "showLayerToggle": true,
+                    "showZoomControls": true,
+                    "showMeasureTools": false,
+                    "showDebugConsole": false
+                },
+                "view": {
+                    "id": "coords",
+                    "lat": 0,
+                    "lng": 0,
+                    "zoom": 1
+                }
+            },
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "grafana-postgresql-datasource",
+                        "uid": "PostgreSQL"
+                    },
+                    "format": "table",
+                    "rawQuery": true,
+                    "rawSql": "SELECT cml_id, site_0_lat as latitude, site_0_lon as longitude FROM cml_metadata UNION ALL SELECT cml_id, site_1_lat as latitude, site_1_lon as longitude FROM cml_metadata",
+                    "refId": "A"
+                }
+            ],
+            "title": "CML Endpoints Map",
+            "type": "geomap"
+        }
+    ],
+    "refresh": "10s",
+    "schemaVersion": 38,
+    "style": "dark",
+    "tags": [
+        "cml",
+        "timeseries",
+        "realtime"
+    ],
+    "templating": {
+        "list": [
+            {
+                "current": {
+                    "selected": false,
+                    "text": "10001",
+                    "value": "10001"
+                },
+                "datasource": {
+                    "type": "grafana-postgresql-datasource",
+                    "uid": "PostgreSQL"
+                },
+                "definition": "SELECT DISTINCT cml_id::text FROM cml_metadata ORDER BY cml_id",
+                "description": null,
+                "error": null,
+                "hide": 0,
+                "includeAll": false,
+                "label": "CML ID",
+                "multi": false,
+                "name": "cml_id",
+                "options": [],
+                "query": "SELECT DISTINCT cml_id::text FROM cml_metadata ORDER BY cml_id",
+                "refresh": 1,
+                "regex": "",
+                "skipUrlSync": false,
+                "sort": 0,
+                "tagValuesQuery": "",
+                "tagsQuery": "",
+                "type": "query",
+                "useTags": false
+            }
+        ]
+    },
+    "time": {
+        "from": "2015-08-27T00:00:00Z",
+        "to": "2015-08-27T00:30:00Z"
+    },
+    "timepicker": {},
+    "timezone": "",
+    "title": "CML Real-Time Data",
+    "uid": "cml-realtime",
+    "version": 1,
+    "weekStart": ""
+}
