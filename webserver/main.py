@@ -22,17 +22,18 @@ DATA_ARCHIVED_DIR = "/app/data_archived"
 for directory in [DATA_INCOMING_DIR, DATA_STAGED_FOR_PARSING_DIR, DATA_ARCHIVED_DIR]:
     Path(directory).mkdir(parents=True, exist_ok=True)
 
-    def safe_float(value):
-        """Return a JSON-safe float (converting NaN/inf to None)."""
-        if value is None:
-            return None
-        try:
-            parsed = float(value)
-        except (TypeError, ValueError):
-            return None
-        if math.isnan(parsed) or math.isinf(parsed):
-            return None
-        return parsed
+
+def safe_float(value):
+    """Return a JSON-safe float (converting NaN/inf to None)."""
+    if value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(parsed) or math.isinf(parsed):
+        return None
+    return parsed
 
 
 # Database connection helper
@@ -294,19 +295,40 @@ def generate_time_series_plot(cml_id, sublink_id="sublink_1", hours=168):
         if df.empty:
             return None
 
-        # Create Altair plot
+        # Ensure Altair uses the default (light) theme and create plot with light styling
+        try:
+            alt.themes.enable("default")
+        except Exception:
+            pass
+
         df["time"] = pd.to_datetime(df["time"])
         chart = (
             alt.Chart(df)
-            .mark_line(point=True)
+            .mark_line(color="#1f77b4", point=True)
             .encode(x="time:T", y="rsl:Q", tooltip=["time:T", "rsl:Q"])
             .properties(
                 width=800, height=400, title=f"Received Signal Level - CML {cml_id}"
             )
+            .configure_view(
+                stroke="transparent",
+            )
+            .configure_title(fontSize=16, anchor="start", color="#111")
+            .configure_axis(labelColor="#333", titleColor="#333", gridColor="#e6e6e6")
+            .configure_legend(labelColor="#333", titleColor="#333")
+            .configure_background("#ffffff")
             .interactive()
         )
 
-        return chart.to_html()
+        chart_html = chart.to_html()
+        # Ensure the embedded HTML uses a light background when inserted into pages
+        try:
+            if "</head>" in chart_html:
+                inject = "<style>body, .vega-embed { background: #ffffff !important; color: #111 !important; }</style>"
+                chart_html = chart_html.replace("</head>", inject + "</head>")
+        except Exception:
+            pass
+
+        return chart_html
     except Exception as e:
         print(f"Error generating time series plot: {e}")
         return None
@@ -333,8 +355,8 @@ def realtime():
 def grafana_dashboard():
     """Proxy to Grafana dashboard solo panel"""
     try:
-        # Use the d-solo endpoint which is designed for iframes
-        grafana_url = "http://grafana:3000/d-solo/cml-realtime/cml-real-time-data?orgId=1&refresh=10s&theme=dark"
+        # Use the d-solo endpoint which is designed for iframes (request light theme)
+        grafana_url = "http://grafana:3000/d-solo/cml-realtime/cml-real-time-data?orgId=1&refresh=10s&theme=light"
         response = requests.get(grafana_url, timeout=10)
         response.raise_for_status()
 

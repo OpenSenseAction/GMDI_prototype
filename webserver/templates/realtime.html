@@ -7,7 +7,8 @@
 <style>
     #cml-map {
         width: 100%;
-        height: 500px;
+        aspect-ratio: 1 / 1;
+        height: auto;
         border-radius: 0.5rem;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         margin-bottom: 1rem;
@@ -15,7 +16,8 @@
 
     .grafana-container {
         width: 100%;
-        height: 600px;
+        height: 100%;
+        min-height: 300px;
         border: none;
         border-radius: 0.5rem;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -56,51 +58,56 @@
         <p class="text-secondary mb-0">Live CML network time series measurements</p>
     </section>
 
-    <!-- CML Network Map -->
+    <!-- CML Network Map + Time Series side-by-side -->
     <section class="mb-5">
-        <h2 class="mb-3">
-            <i class="fas fa-map"></i> CML Network Map
-        </h2>
+        <div class="row gx-4">
+            <div class="col-12 col-lg-3">
+                <h2 class="mb-3">
+                    <i class="fas fa-map"></i> CML Network Map
+                </h2>
 
-        <div class="mb-3">
-            <label for="coloringOption" class="form-label">Color CML lines by:</label>
-            <select id="coloringOption" class="form-select">
-                <option value="completeness">Data Completeness (%)</option>
-                <option value="last_rsl">Last RSL Value (dBm)</option>
-                <option value="std_dev">RSL Std Deviation - Last 60 min</option>
-            </select>
+                <div class="mb-3">
+                    <label for="coloringOption" class="form-label">Color CML lines by:</label>
+                    <select id="coloringOption" class="form-select">
+                        <option value="completeness">Data Completeness (%)</option>
+                        <option value="last_rsl">Last RSL Value (dBm)</option>
+                        <option value="std_dev">RSL Std Deviation - Last 60 min</option>
+                    </select>
+                </div>
+
+                <div class="map-info" id="mapInfo">
+                    <i class="fas fa-info-circle"></i>
+                    <strong>CML Selected:</strong>
+                    <span class="selected-cml-badge" id="selectedCmlBadge">-</span>
+                </div>
+
+                <div id="cml-map"></div>
+                <!-- Debug panel (visible) to help diagnose client-side loading issues -->
+                <div id="mapDebug"
+                    style="margin-top:0.5rem;padding:0.5rem;background:#fffbe6;border:1px solid #f5e0a8;border-radius:6px;font-size:0.9rem;color:#333;">
+                    <strong>Debug:</strong>
+                    <span id="debugStats">stats=N/A</span>
+                    &nbsp;|&nbsp;
+                    <span id="debugMap">mapData=N/A</span>
+                    &nbsp;|&nbsp;
+                    <span id="debugError">lastError=none</span>
+                </div>
+            </div>
+
+            <div class="col-12 col-lg-9 d-flex flex-column">
+                <h2 class="mb-3">
+                    <i class="fas fa-chart-line"></i> Time Series Data
+                </h2>
+                <p class="text-secondary mb-3">Click on a CML line in the map to select it and view its received signal
+                    level (RSL) measurements. The time series panel updates automatically.</p>
+
+                <div class="flex-grow-1 d-flex">
+                    <iframe class="grafana-container flex-fill" id="grafana-panel"
+                        src="http://localhost:3000/d-solo/cml-realtime/cml-real-time-data?orgId=1&panelId=2&var-cml_id=10001&refresh=10s&theme=light"
+                        allowfullscreen style="border:0;"></iframe>
+                </div>
+            </div>
         </div>
-
-        <div class="map-info" id="mapInfo">
-            <i class="fas fa-info-circle"></i>
-            <strong>CML Selected:</strong>
-            <span class="selected-cml-badge" id="selectedCmlBadge">-</span>
-        </div>
-
-        <div id="cml-map"></div>
-        <!-- Debug panel (visible) to help diagnose client-side loading issues -->
-        <div id="mapDebug"
-            style="margin-top:0.5rem;padding:0.5rem;background:#fffbe6;border:1px solid #f5e0a8;border-radius:6px;font-size:0.9rem;color:#333;">
-            <strong>Debug:</strong>
-            <span id="debugStats">stats=N/A</span>
-            &nbsp;|&nbsp;
-            <span id="debugMap">mapData=N/A</span>
-            &nbsp;|&nbsp;
-            <span id="debugError">lastError=none</span>
-        </div>
-    </section>
-
-    <!-- Time Series Panel -->
-    <section class="mb-5">
-        <h2 class="mb-3">
-            <i class="fas fa-chart-line"></i> Time Series Data
-        </h2>
-        <p class="text-secondary mb-3">Click on a CML line in the map above to select it and view its time series data
-            below.</p>
-
-        <iframe class="grafana-container" id="grafana-panel"
-            src="http://localhost:3000/d-solo/cml-realtime/cml-real-time-data?orgId=1&panelId=2&var-cml_id=10001&refresh=10s"
-            allowfullscreen></iframe>
     </section>
 
     <!-- Info -->
@@ -172,9 +179,11 @@
         console.log('Initializing map...');
         try {
             map = L.map('cml-map').setView([57.705, 11.97], 11);
-            L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png', {
-                attribution: '&copy; OpenStreetMap contributors &copy; Stadia Maps',
-                maxZoom: 20
+            // Use Carto Positron - clean, minimal light basemap
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+                maxZoom: 19,
+                subdomains: 'abcd'
             }).addTo(map);
             console.log('Map created');
 
@@ -334,12 +343,42 @@
         document.getElementById('selectedCmlBadge').textContent = cmlId;
         document.getElementById('mapInfo').classList.add('active');
 
-        // Update Grafana iframe
+        // Update Grafana iframe with theme=light
         var grafanaPanel = document.getElementById('grafana-panel');
-        grafanaPanel.src = 'http://localhost:3000/d-solo/cml-realtime/cml-real-time-data?orgId=1&panelId=2&var-cml_id=' + cmlId + '&refresh=10s';
+        grafanaPanel.src = 'http://localhost:3000/d-solo/cml-realtime/cml-real-time-data?orgId=1&panelId=2&var-cml_id=' + cmlId + '&refresh=10s&theme=light';
     }
 
     // Initialize on page load
-    document.addEventListener('DOMContentLoaded', initializeMap);
+    document.addEventListener('DOMContentLoaded', function () {
+        initializeMap();
+        // Sync iframe height to the square map element so both columns match
+        function syncIframeHeight() {
+            try {
+                var mapEl = document.getElementById('cml-map');
+                var iframe = document.getElementById('grafana-panel');
+                if (mapEl && iframe) {
+                    // offsetHeight works after layout; give a small delay for map tiles
+                    setTimeout(function () {
+                        iframe.style.height = mapEl.offsetHeight + 'px';
+                    }, 150);
+                }
+            } catch (e) {
+                console.warn('syncIframeHeight error', e);
+            }
+        }
+
+        // Call after initial draw and when window resizes
+        window.addEventListener('resize', syncIframeHeight);
+        // Also call when map data has been loaded (after drawing)
+        var origLoadCmlData = loadCmlData;
+        loadCmlData = function () {
+            var p = origLoadCmlData();
+            syncIframeHeight();
+            return p;
+        };
+
+        // Ensure height synced after initial load
+        setTimeout(syncIframeHeight, 500);
+    });
 </script>
 {% endblock %}
