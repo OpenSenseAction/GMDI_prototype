@@ -1,6 +1,5 @@
 psycopg2-binary
 folium
-requests
-flask
-altair
 pandas
+panel
+bokeh
