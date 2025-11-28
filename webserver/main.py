@@ -518,6 +518,31 @@ def api_cml_stats():
         return jsonify([])
 
 
+@app.route("/api/data-time-range")
+def api_data_time_range():
+    """API endpoint for fetching the actual time range of available data"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"earliest": None, "latest": None})
+
+        cur = conn.cursor()
+        cur.execute("SELECT MIN(time), MAX(time) FROM cml_data")
+        result = cur.fetchone()
+        cur.close()
+        conn.close()
+
+        if result and result[0] and result[1]:
+            # Format as ISO 8601 strings
+            return jsonify(
+                {"earliest": result[0].isoformat(), "latest": result[1].isoformat()}
+            )
+        return jsonify({"earliest": None, "latest": None})
+    except Exception as e:
+        print(f"Error fetching data time range: {e}")
+        return jsonify({"earliest": None, "latest": None})
+
+
 # ==================== ARCHIVE STATISTICS ROUTES ====================
 
 

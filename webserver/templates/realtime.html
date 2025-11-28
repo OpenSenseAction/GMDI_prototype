@@ -104,20 +104,16 @@
                     level (RSL) measurements. The time series panel updates automatically.</p>
 
                 <div class="d-flex align-items-center mb-2" style="gap:0.75rem;">
-                    <label for="timeRangeSelect" class="mb-0" style="font-weight:600;">Time range:</label>
-                    <select id="timeRangeSelect" class="form-select form-select-sm" style="max-width:160px;">
-                        <option value="15m">Last 15 minutes</option>
-                        <option value="1h" selected>Last 1 hour</option>
-                        <option value="6h">Last 6 hours</option>
-                        <option value="24h">Last 24 hours</option>
-                        <option value="7d">Last 7 days</option>
-                        <option value="30d">Last 30 days</option>
-                    </select>
+                    <p class="text-secondary mb-0">Use the time picker in the Grafana panel below to navigate to
+                        available data.</p>
+                    <button id="jumpToDataBtn" class="btn btn-sm btn-primary">
+                        <i class="fas fa-fast-forward"></i> Jump to Latest Data
+                    </button>
                 </div>
 
                 <div class="flex-grow-1 d-flex">
                     <iframe class="grafana-container flex-fill" id="grafana-panel"
-                        src="http://localhost:3000/d-solo/cml-realtime/cml-real-time-data?orgId=1&panelId=2&var-cml_id=10001&refresh=10s&theme=light&from=now-1h&to=now"
+                        src="http://localhost:3000/d/cml-realtime/cml-real-time-data?orgId=1&var-cml_id=10001&refresh=10s&theme=light&from=now-1h&to=now&viewPanel=2&kiosk"
                         allowfullscreen style="border:0;"></iframe>
                 </div>
             </div>
@@ -356,45 +352,62 @@
         // Update badge
         document.getElementById('selectedCmlBadge').textContent = cmlId;
         document.getElementById('mapInfo').classList.add('active');
-        // Update Grafana iframe with theme=light and current time range
-        try {
-            var grafanaPanel = document.getElementById('grafana-panel');
-            grafanaPanel.src = buildGrafanaSrc(cmlId);
-        } catch (e) {
-            console.warn('Failed to update grafana iframe:', e);
-        }
-    }
 
-
-    // Build Grafana iframe URL using selected cml and time range
-    function buildGrafanaSrc(cmlId) {
-        var rangeEl = document.getElementById('timeRangeSelect');
-        var range = rangeEl ? rangeEl.value : '1h';
-        var fromTo = { from: 'now-1h', to: 'now' };
-        switch (range) {
-            case '15m': fromTo = { from: 'now-15m', to: 'now' }; break;
-            case '1h': fromTo = { from: 'now-1h', to: 'now' }; break;
-            case '6h': fromTo = { from: 'now-6h', to: 'now' }; break;
-            case '24h': fromTo = { from: 'now-24h', to: 'now' }; break;
-            case '7d': fromTo = { from: 'now-7d', to: 'now' }; break;
-            case '30d': fromTo = { from: 'now-30d', to: 'now' }; break;
-            default: fromTo = { from: 'now-1h', to: 'now' };
-        }
-        var base = 'http://localhost:3000/d-solo/cml-realtime/cml-real-time-data';
-        var params = [];
-        params.push('orgId=1');
-        params.push('panelId=2');
-        params.push('var-cml_id=' + encodeURIComponent(cmlId));
-        params.push('refresh=10s');
-        params.push('theme=light');
-        params.push('from=' + encodeURIComponent(fromTo.from));
-        params.push('to=' + encodeURIComponent(fromTo.to));
-        return base + '?' + params.join('&');
+        // Update Grafana iframe URL with new CML ID
+        var grafanaPanel = document.getElementById('grafana-panel');
+        var base = 'http://localhost:3000/d/cml-realtime/cml-real-time-data';
+        var params = [
+            'orgId=1',
+            'var-cml_id=' + encodeURIComponent(cmlId),
+            'refresh=10s',
+            'theme=light',
+            'from=now-1h',
+            'to=now',
+            'viewPanel=2',
+            'kiosk'
+        ];
+        grafanaPanel.src = base + '?' + params.join('&');
     }
 
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', function () {
         initializeMap();
+
+        // Add event listener for Jump to Latest Data button
+        var jumpBtn = document.getElementById('jumpToDataBtn');
+        if (jumpBtn) {
+            jumpBtn.addEventListener('click', function () {
+                // Fetch the actual data time range from the database
+                fetch('/api/data-time-range')
+                    .then(function (response) { return response.json(); })
+                    .then(function (data) {
+                        if (data.earliest && data.latest) {
+                            var grafanaPanel = document.getElementById('grafana-panel');
+                            var base = 'http://localhost:3000/d/cml-realtime/cml-real-time-data';
+                            // Convert ISO strings to Unix timestamps in milliseconds
+                            var fromTimestamp = new Date(data.earliest).getTime();
+                            var toTimestamp = new Date(data.latest).getTime();
+                            var params = [
+                                'orgId=1',
+                                'var-cml_id=' + encodeURIComponent(selectedCmlId),
+                                'refresh=10s',
+                                'theme=light',
+                                'from=' + fromTimestamp,
+                                'to=' + toTimestamp,
+                                'viewPanel=2',
+                                'kiosk'
+                            ];
+                            grafanaPanel.src = base + '?' + params.join('&');
+                        } else {
+                            console.warn('No data time range available');
+                        }
+                    })
+                    .catch(function (error) {
+                        console.error('Error fetching data time range:', error);
+                    });
+            });
+        }
+
         // Sync iframe height to the square map element so both columns match
         function syncIframeHeight() {
             try {
@@ -413,18 +426,7 @@
 
         // Call after initial draw and when window resizes
         window.addEventListener('resize', syncIframeHeight);
-        // Hook time range selector to update iframe
-        var timeSelect = document.getElementById('timeRangeSelect');
-        if (timeSelect) {
-            timeSelect.addEventListener('change', function () {
-                try {
-                    var grafanaPanel = document.getElementById('grafana-panel');
-                    grafanaPanel.src = buildGrafanaSrc(selectedCmlId);
-                } catch (e) {
-                    console.warn('failed to update iframe on time change', e);
-                }
-            });
-        }
+
         // Also call when map data has been loaded (after drawing)
         var origLoadCmlData = loadCmlData;
         loadCmlData = function () {
