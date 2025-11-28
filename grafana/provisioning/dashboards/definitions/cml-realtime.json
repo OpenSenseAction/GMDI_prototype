@@ -155,36 +155,100 @@
                         "uid": "PostgreSQL"
                     },
                     "format": "time_series",
-                    "group": [],
-                    "metricColumn": "none",
                     "rawQuery": true,
-                    "rawSql": "SELECT\n  time AS \"time\",\n  rsl AS \"RSL\"\nFROM cml_data\nWHERE cml_id = ${cml_id}::text\nORDER BY time ASC",
-                    "refId": "A",
-                    "select": [
-                        [
-                            {
-                                "params": [
-                                    "rsl"
-                                ],
-                                "type": "column"
-                            }
-                        ]
-                    ],
-                    "table": "cml_data",
-                    "timeColumn": "time",
-                    "timeColumnType": "timestamptz",
-                    "where": [
-                        {
-                            "name": "cml_id",
-                            "params": [
-                                "$cml_id"
-                            ],
-                            "type": "macroCondition"
-                        }
-                    ]
+                    "rawSql": "SELECT\n  time AS \"time\",\n  sublink_id AS \"metric\",\n  rsl AS \"value\"\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nORDER BY \"time\" ASC",
+                    "refId": "A"
                 }
             ],
             "title": "CML Time Series - Received Signal Level",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "PostgreSQL"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "TSL (dB)",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "drawStyle": "line",
+                        "fillOpacity": 0,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "tooltip": false,
+                            "viz": false,
+                            "legend": false
+                        },
+                        "lineInterpolation": "linear",
+                        "lineWidth": 2,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "auto",
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            }
+                        ]
+                    },
+                    "unit": "dB"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 24,
+                "x": 0,
+                "y": 10
+            },
+            "id": 6,
+            "options": {
+                "legend": {
+                    "calcs": [],
+                    "displayMode": "list",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "mode": "single",
+                    "sort": "none"
+                }
+            },
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "grafana-postgresql-datasource",
+                        "uid": "PostgreSQL"
+                    },
+                    "format": "time_series",
+                    "rawQuery": true,
+                    "rawSql": "SELECT\n  time AS \"time\",\n  sublink_id AS \"metric\",\n  tsl AS \"value\"\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nORDER BY \"time\" ASC",
+                    "refId": "A"
+                }
+            ],
+            "title": "CML Time Series - Transmitted Signal Level",
             "type": "timeseries"
         },
         {
@@ -258,7 +322,7 @@
                 "h": 8,
                 "w": 24,
                 "x": 0,
-                "y": 10
+                "y": 18
             },
             "id": 3,
             "options": {
