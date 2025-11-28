@@ -355,21 +355,28 @@ def realtime():
 def grafana_dashboard():
     """Proxy to Grafana dashboard solo panel"""
     try:
-        # Use the d-solo endpoint which is designed for iframes (request light theme)
-        grafana_url = "http://grafana:3000/d-solo/cml-realtime/cml-real-time-data?orgId=1&refresh=10s&theme=light"
-        response = requests.get(grafana_url, timeout=10)
-        response.raise_for_status()
+        # Proxy a request to the full Grafana dashboard (not d-solo) so the timepicker is available.
+        # Forward query params from the incoming request to Grafana.
+        base = "http://grafana:3000/d/cml-realtime/cml-real-time-data"
+        params = request.args.to_dict(flat=True)
+        # Ensure a theme is provided (default to light)
+        params.setdefault("theme", "light")
+        params.setdefault("orgId", "1")
 
-        # Get the content
-        content = response.text
+        # Build Grafana URL
+        from urllib.parse import urlencode
 
-        # Add CORS headers to the response
-        @app.after_request
-        def add_header(response):
-            response.headers["X-Frame-Options"] = "ALLOWALL"
-            return response
+        grafana_url = base + "?" + urlencode(params)
 
-        return content
+        resp = requests.get(grafana_url, timeout=10)
+        resp.raise_for_status()
+
+        content = resp.text
+
+        # Return response with header allowing embedding
+        response = app.response_class(content, mimetype="text/html")
+        response.headers["X-Frame-Options"] = "ALLOWALL"
+        return response
     except Exception as e:
         print(f"Error proxying Grafana dashboard: {e}")
         return f"<div style='padding: 2rem; color: red;'>Error loading Grafana dashboard: {e}</div>"

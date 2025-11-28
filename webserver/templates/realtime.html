@@ -69,11 +69,13 @@
                 <div class="mb-3">
                     <label for="coloringOption" class="form-label">Color CML lines by:</label>
                     <select id="coloringOption" class="form-select">
-                        <option value="completeness">Data Completeness (%)</option>
-                        <option value="last_rsl">Last RSL Value (dBm)</option>
-                        <option value="std_dev">RSL Std Deviation - Last 60 min</option>
+                        <option value="completeness" selected>Data Completeness</option>
+                        <option value="last_rsl">Last RSL Value</option>
+                        <option value="std_dev">RSL Std Dev (60min)</option>
                     </select>
                 </div>
+
+                <p class="text-secondary mb-2">Click on a CML line to select it.</p>
 
                 <div class="map-info" id="mapInfo">
                     <i class="fas fa-info-circle"></i>
@@ -101,9 +103,21 @@
                 <p class="text-secondary mb-3">Click on a CML line in the map to select it and view its received signal
                     level (RSL) measurements. The time series panel updates automatically.</p>
 
+                <div class="d-flex align-items-center mb-2" style="gap:0.75rem;">
+                    <label for="timeRangeSelect" class="mb-0" style="font-weight:600;">Time range:</label>
+                    <select id="timeRangeSelect" class="form-select form-select-sm" style="max-width:160px;">
+                        <option value="15m">Last 15 minutes</option>
+                        <option value="1h" selected>Last 1 hour</option>
+                        <option value="6h">Last 6 hours</option>
+                        <option value="24h">Last 24 hours</option>
+                        <option value="7d">Last 7 days</option>
+                        <option value="30d">Last 30 days</option>
+                    </select>
+                </div>
+
                 <div class="flex-grow-1 d-flex">
                     <iframe class="grafana-container flex-fill" id="grafana-panel"
-                        src="http://localhost:3000/d-solo/cml-realtime/cml-real-time-data?orgId=1&panelId=2&var-cml_id=10001&refresh=10s&theme=light"
+                        src="http://localhost:3000/d-solo/cml-realtime/cml-real-time-data?orgId=1&panelId=2&var-cml_id=10001&refresh=10s&theme=light&from=now-1h&to=now"
                         allowfullscreen style="border:0;"></iframe>
                 </div>
             </div>
@@ -342,10 +356,40 @@
         // Update badge
         document.getElementById('selectedCmlBadge').textContent = cmlId;
         document.getElementById('mapInfo').classList.add('active');
+        // Update Grafana iframe with theme=light and current time range
+        try {
+            var grafanaPanel = document.getElementById('grafana-panel');
+            grafanaPanel.src = buildGrafanaSrc(cmlId);
+        } catch (e) {
+            console.warn('Failed to update grafana iframe:', e);
+        }
+    }
 
-        // Update Grafana iframe with theme=light
-        var grafanaPanel = document.getElementById('grafana-panel');
-        grafanaPanel.src = 'http://localhost:3000/d-solo/cml-realtime/cml-real-time-data?orgId=1&panelId=2&var-cml_id=' + cmlId + '&refresh=10s&theme=light';
+
+    // Build Grafana iframe URL using selected cml and time range
+    function buildGrafanaSrc(cmlId) {
+        var rangeEl = document.getElementById('timeRangeSelect');
+        var range = rangeEl ? rangeEl.value : '1h';
+        var fromTo = { from: 'now-1h', to: 'now' };
+        switch (range) {
+            case '15m': fromTo = { from: 'now-15m', to: 'now' }; break;
+            case '1h': fromTo = { from: 'now-1h', to: 'now' }; break;
+            case '6h': fromTo = { from: 'now-6h', to: 'now' }; break;
+            case '24h': fromTo = { from: 'now-24h', to: 'now' }; break;
+            case '7d': fromTo = { from: 'now-7d', to: 'now' }; break;
+            case '30d': fromTo = { from: 'now-30d', to: 'now' }; break;
+            default: fromTo = { from: 'now-1h', to: 'now' };
+        }
+        var base = 'http://localhost:3000/d-solo/cml-realtime/cml-real-time-data';
+        var params = [];
+        params.push('orgId=1');
+        params.push('panelId=2');
+        params.push('var-cml_id=' + encodeURIComponent(cmlId));
+        params.push('refresh=10s');
+        params.push('theme=light');
+        params.push('from=' + encodeURIComponent(fromTo.from));
+        params.push('to=' + encodeURIComponent(fromTo.to));
+        return base + '?' + params.join('&');
     }
 
     // Initialize on page load
@@ -369,6 +413,18 @@
 
         // Call after initial draw and when window resizes
         window.addEventListener('resize', syncIframeHeight);
+        // Hook time range selector to update iframe
+        var timeSelect = document.getElementById('timeRangeSelect');
+        if (timeSelect) {
+            timeSelect.addEventListener('change', function () {
+                try {
+                    var grafanaPanel = document.getElementById('grafana-panel');
+                    grafanaPanel.src = buildGrafanaSrc(selectedCmlId);
+                } catch (e) {
+                    console.warn('failed to update iframe on time change', e);
+                }
+            });
+        }
         // Also call when map data has been loaded (after drawing)
         var origLoadCmlData = loadCmlData;
         loadCmlData = function () {
