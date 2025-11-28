@@ -2,6 +2,7 @@ apiVersion: 1
 
 datasources:
   - name: PostgreSQL
+    uid: PostgreSQL
     type: grafana-postgresql-datasource
     access: proxy
     url: database:5432
