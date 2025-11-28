@@ -1,9 +1,11 @@
 import os
 import time
+import math
 import psycopg2
 import pandas as pd
 import folium
 import altair as alt
+import requests
 from flask import Flask, render_template, request, jsonify
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -19,6 +21,19 @@ DATA_ARCHIVED_DIR = "/app/data_archived"
 # Create directories if they don't exist
 for directory in [DATA_INCOMING_DIR, DATA_STAGED_FOR_PARSING_DIR, DATA_ARCHIVED_DIR]:
     Path(directory).mkdir(parents=True, exist_ok=True)
+
+
+def safe_float(value):
+    """Return a JSON-safe float (converting NaN/inf to None)."""
+    if value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(parsed) or math.isinf(parsed):
+        return None
+    return parsed
 
 
 # Database connection helper
@@ -280,19 +295,40 @@ def generate_time_series_plot(cml_id, sublink_id="sublink_1", hours=168):
         if df.empty:
             return None
 
-        # Create Altair plot
+        # Ensure Altair uses the default (light) theme and create plot with light styling
+        try:
+            alt.themes.enable("default")
+        except Exception:
+            pass
+
         df["time"] = pd.to_datetime(df["time"])
         chart = (
             alt.Chart(df)
-            .mark_line(point=True)
+            .mark_line(color="#1f77b4", point=True)
             .encode(x="time:T", y="rsl:Q", tooltip=["time:T", "rsl:Q"])
             .properties(
                 width=800, height=400, title=f"Received Signal Level - CML {cml_id}"
             )
+            .configure_view(
+                stroke="transparent",
+            )
+            .configure_title(fontSize=16, anchor="start", color="#111")
+            .configure_axis(labelColor="#333", titleColor="#333", gridColor="#e6e6e6")
+            .configure_legend(labelColor="#333", titleColor="#333")
+            .configure_background("#ffffff")
             .interactive()
         )
 
-        return chart.to_html()
+        chart_html = chart.to_html()
+        # Ensure the embedded HTML uses a light background when inserted into pages
+        try:
+            if "</head>" in chart_html:
+                inject = "<style>body, .vega-embed { background: #ffffff !important; color: #111 !important; }</style>"
+                chart_html = chart_html.replace("</head>", inject + "</head>")
+        except Exception:
+            pass
+
+        return chart_html
     except Exception as e:
         print(f"Error generating time series plot: {e}")
         return None
@@ -313,6 +349,37 @@ def realtime():
         selected_cml=default_cml,
         plot_html=plot_html,
     )
+
+
+@app.route("/grafana-dashboard")
+def grafana_dashboard():
+    """Proxy to Grafana dashboard solo panel"""
+    try:
+        # Proxy a request to the full Grafana dashboard (not d-solo) so the timepicker is available.
+        # Forward query params from the incoming request to Grafana.
+        base = "http://grafana:3000/d/cml-realtime/cml-real-time-data"
+        params = request.args.to_dict(flat=True)
+        # Ensure a theme is provided (default to light)
+        params.setdefault("theme", "light")
+        params.setdefault("orgId", "1")
+
+        # Build Grafana URL
+        from urllib.parse import urlencode
+
+        grafana_url = base + "?" + urlencode(params)
+
+        resp = requests.get(grafana_url, timeout=10)
+        resp.raise_for_status()
+
+        content = resp.text
+
+        # Return response with header allowing embedding
+        response = app.response_class(content, mimetype="text/html")
+        response.headers["X-Frame-Options"] = "ALLOWALL"
+        return response
+    except Exception as e:
+        print(f"Error proxying Grafana dashboard: {e}")
+        return f"<div style='padding: 2rem; color: red;'>Error loading Grafana dashboard: {e}</div>"
 
 
 @app.route("/api/cml-metadata")
@@ -347,6 +414,36 @@ def api_cml_metadata():
         return jsonify({"cmls": []})
 
 
+@app.route("/api/cml-map")
+def api_cml_map():
+    """API endpoint for fetching CML data optimized for map rendering"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify([])
+
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT cml_id::text, site_0_lon, site_0_lat, site_1_lon, site_1_lat FROM cml_metadata ORDER BY cml_id"
+        )
+        data = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        cmls = [
+            {
+                "cml_id": str(row[0]),
+                "site_0": {"lon": float(row[1]), "lat": float(row[2])},
+                "site_1": {"lon": float(row[3]), "lat": float(row[4])},
+            }
+            for row in data
+        ]
+        return jsonify(cmls)
+    except Exception as e:
+        print(f"Error fetching CML map data: {e}")
+        return jsonify([])
+
+
 @app.route("/api/timeseries/<cml_id>")
 def api_timeseries(cml_id):
     """API endpoint for fetching time series data"""
@@ -359,6 +456,91 @@ def api_timeseries(cml_id):
             }
         )
     return jsonify({"html": plot_html})
+
+
+@app.route("/api/cml-stats")
+def api_cml_stats():
+    """API endpoint for fetching per-CML statistics for data quality visualization"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify([])
+
+        cur = conn.cursor()
+        cur.execute(
+            """
+            WITH latest_60min AS (
+                SELECT cml_id, rsl, time
+                FROM cml_data
+                WHERE time >= (SELECT MAX(time) FROM cml_data) - INTERVAL '60 minutes'
+            )
+            SELECT
+                cd.cml_id::text,
+                COUNT(*) as total_records,
+                COUNT(CASE WHEN cd.rsl IS NOT NULL THEN 1 END) as valid_records,
+                COUNT(CASE WHEN cd.rsl IS NULL THEN 1 END) as null_records,
+                ROUND(100.0 * COUNT(CASE WHEN cd.rsl IS NOT NULL THEN 1 END) / COUNT(*), 2) as completeness_percent,
+                MIN(cd.rsl) as min_rsl,
+                MAX(cd.rsl) as max_rsl,
+                ROUND(AVG(cd.rsl)::numeric, 2) as mean_rsl,
+                ROUND(STDDEV(cd.rsl)::numeric, 2) as stddev_rsl,
+                (SELECT rsl FROM cml_data WHERE cml_id = cd.cml_id ORDER BY time DESC LIMIT 1) as last_rsl,
+                ROUND(STDDEV(l60.rsl)::numeric, 2) as stddev_last_60min
+            FROM cml_data cd
+            LEFT JOIN latest_60min l60 ON cd.cml_id = l60.cml_id
+            GROUP BY cd.cml_id
+            ORDER BY cd.cml_id
+        """
+        )
+        data = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        stats = [
+            {
+                "cml_id": str(row[0]),
+                "total_records": int(row[1]),
+                "valid_records": int(row[2]),
+                "null_records": int(row[3]),
+                "completeness_percent": safe_float(row[4]),
+                "min_rsl": safe_float(row[5]),
+                "max_rsl": safe_float(row[6]),
+                "mean_rsl": safe_float(row[7]),
+                "stddev_rsl": safe_float(row[8]),
+                "last_rsl": safe_float(row[9]),
+                "stddev_last_60min": safe_float(row[10]),
+            }
+            for row in data
+        ]
+        return jsonify(stats)
+    except Exception as e:
+        print(f"Error fetching CML stats: {e}")
+        return jsonify([])
+
+
+@app.route("/api/data-time-range")
+def api_data_time_range():
+    """API endpoint for fetching the actual time range of available data"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"earliest": None, "latest": None})
+
+        cur = conn.cursor()
+        cur.execute("SELECT MIN(time), MAX(time) FROM cml_data")
+        result = cur.fetchone()
+        cur.close()
+        conn.close()
+
+        if result and result[0] and result[1]:
+            # Format as ISO 8601 strings
+            return jsonify(
+                {"earliest": result[0].isoformat(), "latest": result[1].isoformat()}
+            )
+        return jsonify({"earliest": None, "latest": None})
+    except Exception as e:
+        print(f"Error fetching data time range: {e}")
+        return jsonify({"earliest": None, "latest": None})
 
 
 # ==================== ARCHIVE STATISTICS ROUTES ====================

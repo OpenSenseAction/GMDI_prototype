@@ -5,176 +5,133 @@
 {% block extra_css %}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
-    #map {
-        height: 500px;
+    #cml-map {
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        height: auto;
         border-radius: 0.5rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         margin-bottom: 1rem;
-        border: 1px solid #e5e7eb;
+    }
+
+    .grafana-container {
+        width: 100%;
+        height: 100%;
+        min-height: 300px;
+        border: none;
+        border-radius: 0.5rem;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
 
-    #mapClickPlot {
-        height: 180px;
-        border-radius: 0.5rem;
-        border: 1px solid #e5e7eb;
-        background-color: #f9fafb;
-        display: none;
-        overflow: auto;
-    }
-
-    #mapClickPlot.active {
-        display: block;
-    }
-
-    .map-plot-info {
-        padding: 1rem;
+    .map-info {
         background-color: #f0f7ff;
         border-left: 4px solid #0066cc;
-        margin-bottom: 1rem;
+        padding: 1rem;
         border-radius: 0.5rem;
+        margin-bottom: 1rem;
         display: none;
     }
 
-    .map-plot-info.active {
+    .map-info.active {
         display: block;
     }
 
-    .cml-selector {
-        margin-bottom: 1.5rem;
-    }
-
-    .cml-selector label {
+    .selected-cml-badge {
+        display: inline-block;
+        background-color: #0066cc;
+        color: white;
+        padding: 0.25rem 0.75rem;
+        border-radius: 1rem;
         font-weight: 600;
-        color: #0066cc;
-        margin-bottom: 0.75rem;
-        display: block;
-        font-size: 0.9rem;
-        letter-spacing: 0.3px;
-        text-transform: uppercase;
-    }
-
-    .chart-container {
-        background-color: transparent;
-        padding: 0;
-        border-radius: 0.5rem;
-    }
-
-    .selector-group {
-        display: flex;
-        gap: 0.5rem;
-    }
-
-    .selector-group .form-select {
-        flex: 1;
+        margin-left: 0.5rem;
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container">
+<div class="container-fluid">
     <!-- Header -->
     <section class="mb-5 pb-4 border-bottom">
         <h1 class="mb-2">
             <i class="fas fa-globe"></i> Real-Time Data Visualization
         </h1>
-        <p class="text-secondary mb-0">Live CML network map and signal measurements</p>
+        <p class="text-secondary mb-0">Live CML network time series measurements</p>
     </section>
 
-    <!-- CML Network Map -->
+    <!-- CML Network Map + Time Series side-by-side -->
     <section class="mb-5">
-        <h2 class="mb-3">
-            <i class="fas fa-map"></i> Network Coverage Map
-        </h2>
+        <div class="row gx-4">
+            <div class="col-12 col-lg-3">
+                <h2 class="mb-3">
+                    <i class="fas fa-map"></i> CML Network Map
+                </h2>
 
-        <div class="map-plot-info" id="mapPlotInfo">
-            <i class="fas fa-info-circle"></i>
-            <strong id="selectedCmlInfo">CML selected</strong> — Displaying time series data below
-        </div>
+                <div class="mb-3">
+                    <label for="coloringOption" class="form-label">Color CML lines by:</label>
+                    <select id="coloringOption" class="form-select">
+                        <option value="completeness" selected>Data Completeness</option>
+                        <option value="last_rsl">Last RSL Value</option>
+                        <option value="std_dev">RSL Std Dev (60min)</option>
+                    </select>
+                </div>
 
-        {% if map_html %}
-        <div id="map">
-            {{ map_html | safe }}
-        </div>
-        {% else %}
-        <div class="alert alert-warning">
-            <i class="fas fa-exclamation-triangle"></i>
-            <strong>Unable to load map.</strong> Please ensure the database is running.
-        </div>
-        {% endif %}
+                <p class="text-secondary mb-2">Click on a CML line to select it.</p>
 
-        <!-- Interactive plot from map click -->
-        <div id="mapClickPlot"></div>
-    </section>
+                <div class="map-info" id="mapInfo">
+                    <i class="fas fa-info-circle"></i>
+                    <strong>CML Selected:</strong>
+                    <span class="selected-cml-badge" id="selectedCmlBadge">-</span>
+                </div>
 
-    <!-- Time Series Data -->
-    <section class="mb-5">
-        <h2 class="mb-3">
-            <i class="fas fa-chart-line"></i> Signal Measurements
-        </h2>
-
-        <!-- CML Selector -->
-        <div class="cml-selector">
-            <label for="cmlSelect">Select CML Link</label>
-            <div class="selector-group">
-                <select id="cmlSelect" class="form-select">
-                    {% for cml in cmls %}
-                    <option value="{{ cml }}" {% if cml==selected_cml %}selected{% endif %}>
-                        CML {{ cml }}
-                    </option>
-                    {% endfor %}
-                </select>
-                <button class="btn btn-primary" id="loadButton" type="button">
-                    <i class="fas fa-sync-alt"></i> Load
-                </button>
+                <div id="cml-map"></div>
+                <!-- Debug panel (visible) to help diagnose client-side loading issues -->
+                <div id="mapDebug"
+                    style="margin-top:0.5rem;padding:0.5rem;background:#fffbe6;border:1px solid #f5e0a8;border-radius:6px;font-size:0.9rem;color:#333;">
+                    <strong>Debug:</strong>
+                    <span id="debugStats">stats=N/A</span>
+                    &nbsp;|&nbsp;
+                    <span id="debugMap">mapData=N/A</span>
+                    &nbsp;|&nbsp;
+                    <span id="debugError">lastError=none</span>
+                </div>
             </div>
-        </div>
 
-        <!-- Time Series Chart -->
-        <div class="chart-container">
-            <div class="card">
-                <div class="card-body">
-                    {% if plot_html %}
-                    <div id="timeSeriesChart">
-                        {{ plot_html | safe }}
-                    </div>
-                    {% else %}
-                    <div class="alert alert-info mb-0">
-                        <i class="fas fa-info-circle"></i>
-                        <strong>No data available</strong> for the selected CML
-                    </div>
-                    {% endif %}
+            <div class="col-12 col-lg-9 d-flex flex-column">
+                <h2 class="mb-3">
+                    <i class="fas fa-chart-line"></i> Time Series Data
+                </h2>
+                <p class="text-secondary mb-3">Click on a CML line in the map to select it and view its received signal
+                    level (RSL) measurements. The time series panel updates automatically.</p>
+
+                <div class="d-flex align-items-center mb-2" style="gap:0.75rem;">
+                    <p class="text-secondary mb-0">Use the time picker in the Grafana panel below to navigate to
+                        available data.</p>
+                    <button id="jumpToDataBtn" class="btn btn-sm btn-primary">
+                        <i class="fas fa-fast-forward"></i> Jump to Latest Data
+                    </button>
+                </div>
+
+                <div class="flex-grow-1 d-flex">
+                    <iframe class="grafana-container flex-fill" id="grafana-panel"
+                        src="http://localhost:3000/d/cml-realtime/cml-real-time-data?orgId=1&var-cml_id=10001&refresh=10s&theme=light&from=now-1h&to=now&viewPanel=2&kiosk"
+                        allowfullscreen style="border:0;"></iframe>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- Data Info -->
+    <!-- Info -->
     <section class="mb-5">
         <h2 class="mb-3">
-            <i class="fas fa-info-circle"></i> About This Data
+            <i class="fas fa-info-circle"></i> About This View
         </h2>
         <div class="card">
             <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <h5 style="color: #0066cc; font-weight: 600; margin-bottom: 0.5rem;">
-                            <i class="fas fa-signal"></i> Received Signal Level (RSL)
-                        </h5>
-                        <p class="text-secondary mb-0" style="font-size: 0.9rem;">
-                            The strength of the radio signal at the receiver. Changes in RSL correlate with atmospheric
-                            phenomena, particularly rainfall.
-                        </p>
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <h5 style="color: #0066cc; font-weight: 600; margin-bottom: 0.5rem;">
-                            <i class="fas fa-clock"></i> Update Frequency
-                        </h5>
-                        <p class="text-secondary mb-0" style="font-size: 0.9rem;">
-                            Data is updated regularly as new measurements arrive from the CML network. Select a link
-                            above to view recent measurements.
-                        </p>
-                    </div>
-                </div>
+                <p class="text-secondary mb-0">
+                    Click on any CML line in the network map to select it and view its received signal level (RSL)
+                    measurements.
+                    The time series panel updates automatically. The dashboard refreshes every 10 seconds.
+                </p>
             </div>
         </div>
     </section>
@@ -184,145 +141,302 @@
 {% block extra_js %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
-    // Global handler for CML clicks from the map
-    window.handleCmlClick = function (cmlId) {
-        console.log('CML clicked:', cmlId);
-        loadMapClickPlot(cmlId);
+    let map;
+    let cmlLayers = {};
+    let cmlStats = {};
+    let selectedCmlId = '10001';
+    let currentColoringOption = 'completeness';
+
+    // Color functions for each option
+    const colorFunctions = {
+        completeness: function (stat) {
+            if (!stat) return '#0066cc';
+            const completeness = stat.completeness_percent || 0;
+            if (completeness >= 90) return '#22c55e'; // green
+            if (completeness >= 70) return '#eab308'; // yellow
+            if (completeness >= 50) return '#f97316'; // orange
+            return '#ef4444'; // red
+        },
+        last_rsl: function (stat) {
+            if (!stat) return '#0066cc';
+            const rsl = stat.last_rsl;
+            if (rsl === null) return '#808080'; // gray for missing data
+            if (rsl >= -40) return '#22c55e'; // green
+            if (rsl >= -45) return '#eab308'; // yellow
+            if (rsl >= -50) return '#f97316'; // orange
+            return '#ef4444'; // red
+        },
+        std_dev: function (stat) {
+            if (!stat) return '#0066cc';
+            const stddev = stat.stddev_last_60min;
+            if (stddev === null) return '#808080'; // gray for missing data
+            if (stddev <= 1) return '#22c55e'; // green (very stable)
+            if (stddev <= 2) return '#eab308'; // yellow (moderate)
+            if (stddev <= 3) return '#f97316'; // orange (variable)
+            return '#ef4444'; // red (very unstable)
+        }
     };
 
-    // Helper function to insert HTML with script execution
-    function setHTMLWithScripts(element, html) {
-        // Clear the element
-        element.innerHTML = '';
-
-        // Create a temporary container to parse the HTML
-        const temp = document.createElement('div');
-        temp.innerHTML = html;
-
-        // Process all nodes
-        while (temp.firstChild) {
-            const node = temp.firstChild;
-
-            if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'SCRIPT') {
-                // Create a new script element and copy attributes
-                const newScript = document.createElement('script');
-                for (let i = 0; i < node.attributes.length; i++) {
-                    newScript.setAttribute(node.attributes[i].name, node.attributes[i].value);
-                }
-                newScript.textContent = node.textContent;
-
-                // Append to container - this will execute the script
-                element.appendChild(newScript);
-            } else {
-                // Append non-script elements normally
-                element.appendChild(node);
-            }
+    function getColor(stat, option) {
+        if (colorFunctions[option]) {
+            return colorFunctions[option](stat);
         }
+        return '#0066cc';
     }
 
-    // Load and display plot from map click
-    async function loadMapClickPlot(cmlId) {
-        const plotContainer = document.getElementById('mapClickPlot');
-        const infoBox = document.getElementById('mapPlotInfo');
-        const selectedCmlInfo = document.getElementById('selectedCmlInfo');
-
-        if (!plotContainer) {
-            console.error('Plot container not found');
-            return;
-        }
-
-        console.log('Loading plot for CML:', cmlId);
-
-        // Show loading state
-        plotContainer.innerHTML = '<div style="padding: 2rem; text-align: center; color: #6b7280;"><i class="fas fa-spinner fa-spin"></i> Loading data for CML ' + cmlId + '...</div>';
-        plotContainer.classList.add('active');
-        infoBox.classList.add('active');
-        selectedCmlInfo.textContent = 'CML ' + cmlId + ' selected';
-
+    // Initialize map
+    function initializeMap() {
+        console.log('Initializing map...');
         try {
-            const response = await fetch(`/api/timeseries/${cmlId}`);
-            const data = await response.json();
+            map = L.map('cml-map').setView([57.705, 11.97], 11);
+            // Use Carto Positron - clean, minimal light basemap
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+                maxZoom: 19,
+                subdomains: 'abcd'
+            }).addTo(map);
+            console.log('Map created');
 
-            console.log('Response received for CML', cmlId);
-
-            if (data.html) {
-                setHTMLWithScripts(plotContainer, data.html);
-            } else {
-                plotContainer.innerHTML = '<div class="alert alert-warning" style="margin: 1rem;"><i class="fas fa-exclamation-triangle"></i> No data available for this CML</div>';
+            // Fetch stats first
+            console.log('Fetching CML stats...');
+            try {
+                fetch('/api/cml-stats')
+                    .then(function (response) {
+                        console.log('Stats response received:', response.status);
+                        var el = document.getElementById('debugStats');
+                        if (el) el.textContent = 'stats=status:' + response.status;
+                        return response.json();
+                    })
+                    .then(function (stats) {
+                        console.log('Received stats for ' + stats.length + ' CMLs');
+                        stats.forEach(function (stat) {
+                            cmlStats[stat.cml_id] = stat;
+                        });
+                        var el2 = document.getElementById('debugStats');
+                        if (el2) el2.textContent = 'stats=ok:' + stats.length;
+                        loadCmlData();
+                    })
+                    .catch(function (error) {
+                        console.error('Error loading stats:', error);
+                        var errEl = document.getElementById('debugError');
+                        if (errEl) errEl.textContent = 'lastError=stats:' + (error && error.message ? error.message : String(error));
+                        var el3 = document.getElementById('debugStats');
+                        if (el3) el3.textContent = 'stats=error';
+                        loadCmlData(); // Try loading without stats
+                    });
+            } catch (e) {
+                console.error('Exception when fetching stats:', e);
+                var errEl = document.getElementById('debugError');
+                if (errEl) errEl.textContent = 'lastError=stats-ex:' + String(e);
+                loadCmlData();
             }
-        } catch (error) {
-            console.error('Error loading plot:', error);
-            plotContainer.innerHTML = '<div class="alert alert-danger" style="margin: 1rem;"><i class="fas fa-exclamation-circle"></i> Error loading data. Please try again.</div>';
+        } catch (e) {
+            console.error('Error in initializeMap:', e);
+        }
+
+        // Add event listener for coloring option change
+        var coloringSelect = document.getElementById('coloringOption');
+        if (coloringSelect) {
+            coloringSelect.addEventListener('change', function (e) {
+                console.log('Coloring option changed to: ' + e.target.value);
+                currentColoringOption = e.target.value;
+                updateMapColors();
+            });
         }
     }
 
-    // Helper function to insert HTML with script execution
-    function setHTMLWithScripts(element, html) {
-        // Clear the element
-        element.innerHTML = '';
-
-        // Create a temporary container to parse the HTML
-        const temp = document.createElement('div');
-        temp.innerHTML = html;
-
-        // Process all nodes
-        while (temp.firstChild) {
-            const node = temp.firstChild;
-
-            if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'SCRIPT') {
-                // Create a new script element and copy attributes
-                const newScript = document.createElement('script');
-                for (let i = 0; i < node.attributes.length; i++) {
-                    newScript.setAttribute(node.attributes[i].name, node.attributes[i].value);
-                }
-                newScript.textContent = node.textContent;
-
-                // Append to container - this will execute the script
-                element.appendChild(newScript);
-            } else {
-                // Append non-script elements normally
-                element.appendChild(node);
-            }
-        }
-    }
-
-    // Handle manual CML selection from dropdown
-    if (document.getElementById('loadButton')) {
-        document.getElementById('loadButton').addEventListener('click', function () {
-            const cmlId = document.getElementById('cmlSelect').value;
-            const loadButton = document.getElementById('loadButton');
-            const chartContainer = document.getElementById('timeSeriesChart');
-
-            console.log('Manual load for CML:', cmlId);
-
-            // Show loading state
-            loadButton.disabled = true;
-            loadButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
-
-            // Fetch new data
-            fetch(`/api/timeseries/${cmlId}`)
-                .then(response => response.json())
-                .then(data => {
-                    console.log('Chart data received for CML', cmlId);
-                    if (data.html) {
-                        // Use the helper function to properly render with scripts
-                        setHTMLWithScripts(chartContainer, data.html);
-                        console.log('Chart rendered');
-                    } else {
-                        chartContainer.innerHTML = '<div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i> No data available for this CML</div>';
-                    }
+    // Load and draw CML data
+    function loadCmlData() {
+        console.log('Loading CML map data...');
+        try {
+            fetch('/api/cml-map')
+                .then(function (response) {
+                    console.log('Map response received:', response.status);
+                    var el = document.getElementById('debugMap');
+                    if (el) el.textContent = 'mapData=status:' + response.status;
+                    return response.json();
                 })
-                .catch(error => {
-                    console.error('Error loading chart:', error);
-                    chartContainer.innerHTML =
-                        '<div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> Error loading data. Please try again.</div>';
+                .then(function (cmls) {
+                    console.log('Drawing ' + cmls.length + ' CMLs');
+                    var el2 = document.getElementById('debugMap');
+                    if (el2) el2.textContent = 'mapData=ok:' + cmls.length;
+                    cmls.forEach(function (cml) {
+                        drawCmlLine(cml);
+                    });
+                    console.log('Done drawing');
                 })
-                .finally(() => {
-                    // Reset button state
-                    loadButton.disabled = false;
-                    loadButton.innerHTML = '<i class="fas fa-sync-alt"></i> Load';
+                .catch(function (error) {
+                    console.error('Error loading map data:', error);
+                    var errEl = document.getElementById('debugError');
+                    if (errEl) errEl.textContent = 'lastError=map:' + (error && error.message ? error.message : String(error));
+                    var el3 = document.getElementById('debugMap');
+                    if (el3) el3.textContent = 'mapData=error';
                 });
-        });
+        } catch (e) {
+            console.error('Exception when loading map data:', e);
+            var errEl = document.getElementById('debugError');
+            if (errEl) errEl.textContent = 'lastError=map-ex:' + String(e);
+        }
     }
+
+    // Draw CML line on map with initial color
+    function drawCmlLine(cml) {
+        var cmlId = cml.cml_id;
+        var stats = cmlStats[cmlId];
+        var color = getColor(stats, currentColoringOption);
+
+        var latlngs = [
+            [cml.site_0.lat, cml.site_0.lon],
+            [cml.site_1.lat, cml.site_1.lon]
+        ];
+
+        var polyline = L.polyline(latlngs, {
+            color: color,
+            weight: 2,
+            opacity: 0.7
+        });
+        polyline.addTo(map);
+
+        // Store the stats for updating
+        polyline._cmlId = cmlId;
+        polyline._stats = stats;
+
+        // Create popup with stats
+        var popupText = '<strong>CML ' + cmlId + '</strong><br>';
+        if (stats) {
+            popupText += 'Completeness: ' + stats.completeness_percent + '%<br>';
+            popupText += 'Valid records: ' + stats.valid_records + '/' + stats.total_records + '<br>';
+            if (stats.last_rsl !== null) {
+                popupText += 'Last RSL: ' + stats.last_rsl + ' dBm<br>';
+            }
+            if (stats.stddev_last_60min !== null) {
+                popupText += 'Std Dev (60min): ' + stats.stddev_last_60min + '<br>';
+            }
+        }
+        polyline.bindPopup(popupText);
+
+        // Add click handler
+        polyline.on('click', function () {
+            selectCml(cmlId);
+        });
+
+        // Add hover effects
+        polyline.on('mouseover', function () {
+            this.setStyle({ weight: 4, opacity: 1 });
+        });
+        polyline.on('mouseout', function () {
+            this.setStyle({ weight: 2, opacity: 0.7 });
+        });
+
+        cmlLayers[cmlId] = polyline;
+    }
+
+    // Update all map line colors based on current coloring option
+    function updateMapColors() {
+        console.log('Updating colors for option: ' + currentColoringOption);
+        for (var cmlId in cmlLayers) {
+            if (cmlLayers.hasOwnProperty(cmlId)) {
+                var polyline = cmlLayers[cmlId];
+                var stats = polyline._stats;
+                var color = getColor(stats, currentColoringOption);
+                polyline.setStyle({ color: color });
+            }
+        }
+    }
+
+    // Select CML and update interface
+    function selectCml(cmlId) {
+        console.log('Selected CML: ' + cmlId);
+        selectedCmlId = cmlId;
+
+        // Update badge
+        document.getElementById('selectedCmlBadge').textContent = cmlId;
+        document.getElementById('mapInfo').classList.add('active');
+
+        // Update Grafana iframe URL with new CML ID
+        var grafanaPanel = document.getElementById('grafana-panel');
+        var base = 'http://localhost:3000/d/cml-realtime/cml-real-time-data';
+        var params = [
+            'orgId=1',
+            'var-cml_id=' + encodeURIComponent(cmlId),
+            'refresh=10s',
+            'theme=light',
+            'from=now-1h',
+            'to=now',
+            'viewPanel=2',
+            'kiosk'
+        ];
+        grafanaPanel.src = base + '?' + params.join('&');
+    }
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', function () {
+        initializeMap();
+
+        // Add event listener for Jump to Latest Data button
+        var jumpBtn = document.getElementById('jumpToDataBtn');
+        if (jumpBtn) {
+            jumpBtn.addEventListener('click', function () {
+                // Fetch the actual data time range from the database
+                fetch('/api/data-time-range')
+                    .then(function (response) { return response.json(); })
+                    .then(function (data) {
+                        if (data.earliest && data.latest) {
+                            var grafanaPanel = document.getElementById('grafana-panel');
+                            var base = 'http://localhost:3000/d/cml-realtime/cml-real-time-data';
+                            // Convert ISO strings to Unix timestamps in milliseconds
+                            var fromTimestamp = new Date(data.earliest).getTime();
+                            var toTimestamp = new Date(data.latest).getTime();
+                            var params = [
+                                'orgId=1',
+                                'var-cml_id=' + encodeURIComponent(selectedCmlId),
+                                'refresh=10s',
+                                'theme=light',
+                                'from=' + fromTimestamp,
+                                'to=' + toTimestamp,
+                                'viewPanel=2',
+                                'kiosk'
+                            ];
+                            grafanaPanel.src = base + '?' + params.join('&');
+                        } else {
+                            console.warn('No data time range available');
+                        }
+                    })
+                    .catch(function (error) {
+                        console.error('Error fetching data time range:', error);
+                    });
+            });
+        }
+
+        // Sync iframe height to the square map element so both columns match
+        function syncIframeHeight() {
+            try {
+                var mapEl = document.getElementById('cml-map');
+                var iframe = document.getElementById('grafana-panel');
+                if (mapEl && iframe) {
+                    // offsetHeight works after layout; give a small delay for map tiles
+                    setTimeout(function () {
+                        iframe.style.height = mapEl.offsetHeight + 'px';
+                    }, 150);
+                }
+            } catch (e) {
+                console.warn('syncIframeHeight error', e);
+            }
+        }
+
+        // Call after initial draw and when window resizes
+        window.addEventListener('resize', syncIframeHeight);
+
+        // Also call when map data has been loaded (after drawing)
+        var origLoadCmlData = loadCmlData;
+        loadCmlData = function () {
+            var p = origLoadCmlData();
+            syncIframeHeight();
+            return p;
+        };
+
+        // Ensure height synced after initial load
+        setTimeout(syncIframeHeight, 500);
+    });
 </script>
 {% endblock %}

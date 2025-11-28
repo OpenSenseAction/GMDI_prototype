@@ -1,0 +1,14 @@
+{
+    "id": null,
+    "title": "Provisioning Test",
+    "uid": "provisioning-test",
+    "timezone": "",
+    "schemaVersion": 39,
+    "version": 0,
+    "refresh": "",
+    "time": {
+        "from": "now-6h",
+        "to": "now"
+    },
+    "panels": []
+}
