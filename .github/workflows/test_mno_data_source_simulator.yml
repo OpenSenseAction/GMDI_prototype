@@ -1,0 +1,44 @@
+name: MNO Simulator Tests
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'mno_data_source_simulator/**'
+      - '.github/workflows/test_mno_data_source_simulator.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'mno_data_source_simulator/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        cd mno_data_source_simulator
+        pip install -r requirements.txt
+        pip install pytest pytest-cov
+    
+    - name: Run tests with coverage
+      run: |
+        cd mno_data_source_simulator
+        pytest tests/test_generator.py -v --cov=data_generator --cov-report=xml --cov-report=term
+    
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./mno_data_source_simulator/coverage.xml
+        flags: mno_simulator
+        fail_ci_if_error: false
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

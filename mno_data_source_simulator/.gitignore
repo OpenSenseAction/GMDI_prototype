@@ -1,0 +1,29 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data directories
+data_to_upload/
+data_uploaded/
+
+# Data files (if testing locally)
+*.csv
+*.nc
+!example_data/*.nc

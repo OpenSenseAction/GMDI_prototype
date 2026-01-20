@@ -1,0 +1,33 @@
+# MNO Data Source Simulator Configuration
+
+# Data source configuration
+data_source:
+  # Path to the NetCDF file with CML data
+  netcdf_file: "/app/example_data/openMRG_cmls_20150827_12hours.nc"
+  # Loop duration in seconds (1 hour = 3600 seconds)
+  loop_duration_seconds: 3600
+
+# SFTP upload configuration
+sftp:
+  enabled: true
+  host: "sftp.example.com"
+  port: 22
+  username: "mno_user"
+  # Password will be read from SFTP_PASSWORD environment variable
+  remote_path: "/upload/cml_data"
+  # Upload frequency in seconds
+  upload_frequency_seconds: 60
+
+# Data generation configuration
+generator:
+  # How often to generate new data points (in seconds)
+  generation_frequency_seconds: 60
+  # Directory where generated CSV files will be written
+  output_dir: "data_to_upload"
+
+# Local file directories
+file_management:
+  # Directory for files waiting to be uploaded
+  source_dir: "data_to_upload"
+  # Directory for files that have been uploaded
+  archive_dir: "data_uploaded"
