@@ -14,7 +14,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from data_generator import CMLDataGenerator
 
 
-NETCDF_FILE = "/Users/chwala-c/code/gmdi_prototype/parser/example_data/openMRG_cmls_20150827_12hours.nc"
+# Use relative path that works both locally and in CI
+NETCDF_FILE = str(
+    Path(__file__).parent.parent.parent
+    / "parser"
+    / "example_data"
+    / "openMRG_cmls_20150827_12hours.nc"
+)
 
 
 @pytest.fixture
