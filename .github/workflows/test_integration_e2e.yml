@@ -75,7 +75,7 @@ jobs:
         
         # Wait for webserver to respond (ignore HTTP status, just check if it's listening)
         echo "Waiting for webserver..."
-        timeout 60 bash -c 'until curl -s http://localhost:5001/ >/dev/null 2>&1; do echo "Retrying..."; sleep 2; done'
+        timeout 60 bash -c 'until curl -s http://localhost:5000/ >/dev/null 2>&1; do echo "Retrying..."; sleep 2; done'
         echo "Webserver is ready"
         
         # Wait for SFTP server
