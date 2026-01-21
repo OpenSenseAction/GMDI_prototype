@@ -1,15 +1,21 @@
 services:
   mno_simulator:
-    build: ./mno_simulator
+    build: ./mno_data_source_simulator
+    depends_on:
+      - sftp_receiver
     volumes:
       - ./parser/example_data:/app/example_data:ro
       - mno_data_to_upload:/app/data_to_upload
       - mno_data_uploaded:/app/data_uploaded
+      - ./ssh_keys:/app/ssh_keys:ro
     environment:
-      - SFTP_PASSWORD=${SFTP_PASSWORD}
-    # Uncomment to override config values
-    # - SFTP_HOST=your_sftp_host
-    # - SFTP_PORT=22
+      - SFTP_HOST=sftp_receiver
+      - SFTP_PORT=22
+      - SFTP_USERNAME=cml_user
+      - SFTP_REMOTE_PATH=/uploads
+      - SFTP_USE_SSH_KEY=true
+      - SFTP_PRIVATE_KEY_PATH=/app/ssh_keys/id_rsa
+      - SFTP_KNOWN_HOSTS_PATH=/app/ssh_keys/known_hosts
 
   parser:
     build: ./parser
@@ -59,12 +65,46 @@ services:
       - "5000:5000"
     depends_on:
       - database
+      - sftp_receiver
     environment:
       - DATABASE_URL=postgresql://myuser:mypassword@database:5432/mydatabase
+      - STORAGE_BACKEND=local  # Options: local, s3, minio
+      - STORAGE_BASE_PATH=/app/data
     volumes:
-      - webserver_data_incoming:/app/data_incoming
-      - webserver_data_staged:/app/data_staged_for_parsing
-      - webserver_data_archived:/app/data_archived
+      - sftp_uploads:/app/data/incoming:ro  # Read-only access to SFTP uploads
+      - webserver_data_staged:/app/data/staged
+      - webserver_data_archived:/app/data/archived
+
+  sftp_receiver:
+    image: atmoz/sftp:latest
+    ports:
+      - "2222:22"
+    volumes:
+      - sftp_uploads:/home/cml_user/uploads
+      - ./ssh_keys/sftp_host_ed25519_key:/etc/ssh/ssh_host_ed25519_key:ro
+      - ./ssh_keys/sftp_host_rsa_key:/etc/ssh/ssh_host_rsa_key:ro
+      - ./ssh_keys/authorized_keys:/home/cml_user/.ssh/keys/authorized_keys:ro
+      - ./sftp_receiver/entrypoint.sh:/custom-entrypoint.sh:ro
+    entrypoint: ["/custom-entrypoint.sh"]
+    command: cml_user::1001:1001:uploads
+
+  # Optional: MinIO for S3-compatible object storage (uncomment to use)
+  # minio:
+  #   image: minio/minio:latest
+  #   ports:
+  #     - "9000:9000"
+  #     - "9001:9001"
+  #   environment:
+  #     MINIO_ROOT_USER: minioadmin
+  #     MINIO_ROOT_PASSWORD: minioadmin
+  #   volumes:
+  #     - minio_data:/data
+  #   command: server /data --console-address ":9001"
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+  #     interval: 30s
+  #     timeout: 20s
+  #     retries: 3
 
   grafana:
     image: grafana/grafana:latest
@@ -84,9 +124,10 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning
 
 volumes:
-  webserver_data_incoming:
+  sftp_uploads:
   webserver_data_staged:
   webserver_data_archived:
   grafana_data:
   mno_data_to_upload:
   mno_data_uploaded:
+  # minio_data:  # Uncomment if using MinIO

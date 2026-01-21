@@ -10,16 +10,16 @@ data_source:
 # SFTP upload configuration
 sftp:
   enabled: true
-  host: "sftp.example.com"
+  host: "sftp_receiver"
   port: 22
-  username: "mno_user"
+  username: "cml_user"
   # Authentication: Use either password (via env var) or SSH key file
   # Password will be read from SFTP_PASSWORD environment variable
   # SSH key path (if using key-based auth, preferred over password)
-  private_key_path: null  # e.g., "/app/config/id_rsa" or "~/.ssh/id_rsa"
+  private_key_path: "/app/ssh_keys/id_rsa"
   # Host key verification file path (default: ~/.ssh/known_hosts)
-  known_hosts_path: null  # e.g., "/app/config/known_hosts"
-  remote_path: "/upload/cml_data"
+  known_hosts_path: "/app/ssh_keys/known_hosts"
+  remote_path: "/uploads"
   # Upload frequency in seconds
   upload_frequency_seconds: 60
   # Connection timeout in seconds
