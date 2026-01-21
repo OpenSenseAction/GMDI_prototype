@@ -98,7 +98,7 @@ def main():
         while True:
             try:
                 # Generate data and write to CSV file
-                csv_file = generator.generate_and_write_csv()
+                csv_file = generator.generate_data_and_write_csv()
                 logger.info(f"Generated CSV file: {csv_file}")
 
                 # Check if it's time to upload

@@ -74,125 +74,208 @@ class CMLDataGenerator:
             f"time delta: {self.time_delta}"
         )
 
-    def get_current_data_point(self) -> dict:
+    def _get_netcdf_index_for_timestamp(self, timestamp: pd.Timestamp) -> int:
         """
-        Get the current data point with adjusted timestamp.
+        Map a timestamp to the corresponding NetCDF data index.
+
+        Parameters
+        ----------
+        timestamp : pd.Timestamp
+            Timestamp to map.
 
         Returns
         -------
-        dict
-            Dictionary containing:
-            - timestamp: Current timestamp
-            - data: xarray.Dataset with CML data for this timestamp
-            - metadata: Metadata about CMls (coordinates, etc.)
+        int
+            Index in the NetCDF dataset.
         """
-        current_time = datetime.now()
-
         # Calculate elapsed time since loop start
-        elapsed = (current_time - self.loop_start_time).total_seconds()
+        elapsed = (timestamp - self.loop_start_time).total_seconds()
 
         # Calculate position within the loop
         loop_position = elapsed % self.loop_duration_seconds
 
         # Map loop position to original data index
-        # Scale loop position to the range of available data points
         original_duration = (
             self.original_time_points[-1] - self.original_time_points[0]
         ).total_seconds()
 
         if original_duration > 0:
-            # Calculate which original time index to use
             time_fraction = loop_position / self.loop_duration_seconds
             original_index = int(time_fraction * (len(self.original_time_points) - 1))
         else:
             original_index = 0
 
-        # Get data for this time index
-        data_slice = self.dataset.isel(time=original_index)
+        return original_index
 
-        # Extract metadata (time-independent data)
-        metadata = self.dataset.drop_vars(self.dataset.data_vars).drop_dims("time")
-
-        logger.debug(
-            f"Generated data point at index {original_index}/{len(self.original_time_points)-1}"
-        )
-
-        return {
-            "timestamp": current_time,
-            "data": data_slice,
-            "metadata": metadata,
-        }
-
-    def get_data_as_dataframe(self, data_point: dict) -> pd.DataFrame:
+    def generate_data(
+        self, timestamps: pd.DatetimeIndex | list | np.ndarray | None = None
+    ) -> pd.DataFrame:
         """
-        Convert a data point to a pandas DataFrame.
+        Generate fake CML data from NetCDF source.
+
+        If no timestamps provided, generates data for current time.
+        Otherwise, generates data for all specified timestamps.
 
         Parameters
         ----------
-        data_point : dict
-            Data point dictionary from get_current_data_point()
+        timestamps : pd.DatetimeIndex, list, np.ndarray, or None
+            Timestamps for which to generate data.
+            If None, uses current time (default).
 
         Returns
         -------
         pd.DataFrame
             DataFrame with columns: time, cml_id, sublink_id, tsl, rsl
         """
-        # Convert to DataFrame
-        df = data_point["data"].to_dataframe()
+        # Handle default: current timestamp
+        if timestamps is None:
+            timestamps = [pd.Timestamp(datetime.now())]
+        elif not isinstance(timestamps, pd.DatetimeIndex):
+            timestamps = pd.DatetimeIndex(timestamps)
 
-        # Add timestamp
-        df["time"] = data_point["timestamp"]
+        all_data = []
 
-        # Reset index to get cml_id and sublink_id as columns
-        df = df.reset_index()
+        for ts in timestamps:
+            # Get NetCDF index for this timestamp
+            original_index = self._get_netcdf_index_for_timestamp(ts)
 
-        # Select relevant columns
-        if "tsl" in df.columns and "rsl" in df.columns:
-            df = df[["time", "cml_id", "sublink_id", "tsl", "rsl"]]
-        else:
-            logger.warning("Expected columns 'tsl' and 'rsl' not found in dataset")
+            # Get data for this time index
+            data_slice = self.dataset.isel(time=original_index)
 
-        return df
+            # Convert to DataFrame
+            df = data_slice.to_dataframe().reset_index()
+            df["time"] = ts
 
-    def get_metadata_as_dataframe(self, data_point: dict) -> pd.DataFrame:
+            # Select relevant columns
+            if "tsl" in df.columns and "rsl" in df.columns:
+                df = df[["time", "cml_id", "sublink_id", "tsl", "rsl"]]
+
+            all_data.append(df)
+
+        # Combine all data
+        result = pd.concat(all_data, ignore_index=True)
+
+        logger.debug(
+            f"Generated data for {len(timestamps)} timestamp(s) ({len(result)} rows)"
+        )
+
+        return result
+
+    def get_metadata_dataframe(self) -> pd.DataFrame:
         """
-        Convert metadata to a pandas DataFrame.
+        Get CML metadata as a pandas DataFrame.
 
-        Parameters
-        ----------
-        data_point : dict
-            Data point dictionary from get_current_data_point()
+        Extracts all metadata coordinates from the NetCDF dataset
+        (excluding dimension coordinates like time, cml_id, sublink_id).
 
         Returns
         -------
         pd.DataFrame
-            DataFrame with CML metadata
+            DataFrame with CML metadata.
         """
-        return data_point["metadata"].to_dataframe()
+        # Identify metadata coordinates (non-dimension coordinates)
+        dimension_coords = set(self.dataset.sizes.keys())
+        all_coords = set(self.dataset.coords.keys())
+        metadata_coord_names = list(all_coords - dimension_coords)
 
-    def generate_and_write_csv(self) -> str:
+        # Extract metadata as DataFrame
+        metadata_df = self.dataset[metadata_coord_names].to_dataframe()
+
+        return metadata_df
+
+    def generate_data_and_write_csv(
+        self,
+        timestamps=None,
+        split_freq: str = None,
+    ) -> list:
         """
-        Generate current data point and write it to a CSV file.
+        Generate data and write it to CSV file(s).
+
+        Parameters
+        ----------
+        timestamps : array-like, optional
+            Timestamps for which to generate data. If None, generates
+            data for the current time.
+        split_freq : str, optional
+            Frequency for splitting data into separate files using pandas
+            frequency strings (e.g., '1h', '1d', '1W'). If None, writes
+            all data to a single file.
+
+        Returns
+        -------
+        list
+            List of paths to the generated CSV file(s).
+        """
+        # Generate data
+        df = self.generate_data(timestamps)
+
+        # Determine if we need to split by frequency
+        if split_freq is None:
+            # Write all data to a single file
+            timestamp = df["time"].iloc[0]
+            timestamp_str = pd.Timestamp(timestamp).strftime("%Y%m%d_%H%M%S")
+            filename = f"cml_data_{timestamp_str}.csv"
+            filepath = self.output_dir / filename
+
+            df.to_csv(filepath, index=False)
+            logger.info(f"Generated CSV file: {filepath} ({len(df)} rows)")
+
+            return [str(filepath)]
+        else:
+            # Split data by frequency and write multiple files
+            filepaths = []
+
+            # Group by the specified frequency
+            df["time_pd"] = pd.to_datetime(df["time"])
+            grouped = df.groupby(pd.Grouper(key="time_pd", freq=split_freq))
+
+            for period_start, group_df in grouped:
+                if len(group_df) == 0:
+                    continue
+
+                # Remove the temporary time_pd column
+                group_df = group_df.drop(columns=["time_pd"])
+
+                # Generate filename based on period start
+                timestamp_str = period_start.strftime("%Y%m%d_%H%M%S")
+                filename = f"cml_data_{timestamp_str}.csv"
+                filepath = self.output_dir / filename
+
+                group_df.to_csv(filepath, index=False)
+                logger.info(f"Generated CSV file: {filepath} ({len(group_df)} rows)")
+                filepaths.append(str(filepath))
+
+            return filepaths
+
+    def write_metadata_csv(self, filepath: str = None) -> str:
+        """
+        Write CML metadata to a CSV file.
+
+        Parameters
+        ----------
+        filepath : str, optional
+            Full path to the output CSV file. If not provided, generates
+            a filename with timestamp in the output directory.
 
         Returns
         -------
         str
-            Path to the generated CSV file.
+            Path to the generated metadata CSV file.
         """
-        # Generate current data point
-        data_point = self.get_current_data_point()
+        # Get metadata as DataFrame
+        metadata_df = self.get_metadata_dataframe()
 
-        # Convert to DataFrame
-        df = self.get_data_as_dataframe(data_point)
-
-        # Generate filename with timestamp
-        timestamp = data_point["timestamp"].strftime("%Y%m%d_%H%M%S")
-        filename = f"cml_data_{timestamp}.csv"
-        filepath = self.output_dir / filename
+        # Generate filepath if not provided
+        if filepath is None:
+            timestamp_str = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"cml_metadata_{timestamp_str}.csv"
+            filepath = self.output_dir / filename
 
         # Write to CSV
-        df.to_csv(filepath, index=False)
-        logger.info(f"Generated CSV file: {filepath} ({len(df)} rows)")
+        metadata_df.to_csv(filepath, index=False)
+        logger.info(
+            f"Generated metadata CSV file: {filepath} ({len(metadata_df)} rows)"
+        )
 
         return str(filepath)
 

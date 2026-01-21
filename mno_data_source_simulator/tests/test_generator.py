@@ -53,7 +53,12 @@ def test_csv_file_generation(test_dir):
     )
 
     # Generate a CSV file
-    csv_file = generator.generate_and_write_csv()
+    csv_files = generator.generate_data_and_write_csv()
+
+    # Should return a list with one file
+    assert isinstance(csv_files, list)
+    assert len(csv_files) == 1
+    csv_file = csv_files[0]
 
     # Check file exists
     assert Path(csv_file).exists()
@@ -90,8 +95,8 @@ def test_multiple_csv_generation(test_dir):
     # Generate 3 files with small delays to ensure unique timestamps
     files = []
     for i in range(3):
-        csv_file = generator.generate_and_write_csv()
-        files.append(csv_file)
+        csv_files = generator.generate_data_and_write_csv()
+        files.extend(csv_files)
         if i < 2:  # Don't sleep after last iteration
             time.sleep(1)
 
@@ -112,22 +117,11 @@ def test_metadata_csv_generation(test_dir):
         output_dir=test_dir,
     )
 
-    # Generate a data point to get metadata
-    data_point = generator.get_current_data_point()
-
-    # Convert metadata to DataFrame
-    metadata_df = generator.get_metadata_as_dataframe(data_point)
-
-    # Generate filename
-    timestamp = data_point["timestamp"].strftime("%Y%m%d_%H%M%S")
-    filename = f"cml_metadata_{timestamp}.csv"
-    filepath = Path(test_dir) / filename
-
-    # Write metadata to CSV
-    metadata_df.to_csv(filepath, index=False)
+    # Generate metadata CSV using the class method
+    filepath = generator.write_metadata_csv()
 
     # Check file exists
-    assert filepath.exists()
+    assert Path(filepath).exists()
 
     # Load and validate CSV content
     loaded_df = pd.read_csv(filepath)
@@ -147,10 +141,10 @@ def test_metadata_csv_generation(test_dir):
 
     # Check data is not empty
     assert len(loaded_df) > 0
-    assert len(loaded_df) == 728  # Expected number of CMLs
+    assert len(loaded_df) == 728  # Expected number of CMLs (including both sublinks)
 
-    # Check specific hardcoded values from the first 2 entries in the NetCDF file
-    # First entry (cml_id 10001)
+    # Check specific hardcoded values from the first 2 CMLs in the NetCDF file
+    # First CML, first sublink (cml_id 10001, sublink_1) - row 0
     assert loaded_df.iloc[0]["site_0_lat"] == pytest.approx(57.70368)
     assert loaded_df.iloc[0]["site_0_lon"] == pytest.approx(11.99507)
     assert loaded_df.iloc[0]["site_1_lat"] == pytest.approx(57.69785)
@@ -159,13 +153,220 @@ def test_metadata_csv_generation(test_dir):
     assert loaded_df.iloc[0]["polarization"] == "v"
     assert loaded_df.iloc[0]["length"] == pytest.approx(691.44)
 
-    # Second entry (cml_id 10002)
-    assert loaded_df.iloc[1]["site_0_lat"] == pytest.approx(57.72539)
-    assert loaded_df.iloc[1]["site_0_lon"] == pytest.approx(11.98181)
-    assert loaded_df.iloc[1]["site_1_lat"] == pytest.approx(57.72285)
-    assert loaded_df.iloc[1]["site_1_lon"] == pytest.approx(11.97265)
-    assert loaded_df.iloc[1]["frequency"] == pytest.approx(38528.0)
-    assert loaded_df.iloc[1]["polarization"] == "v"
-    assert loaded_df.iloc[1]["length"] == pytest.approx(614.55)
+    # Second CML, first sublink (cml_id 10002, sublink_1) - row 2
+    assert loaded_df.iloc[2]["site_0_lat"] == pytest.approx(57.72539)
+    assert loaded_df.iloc[2]["site_0_lon"] == pytest.approx(11.98181)
+    assert loaded_df.iloc[2]["site_1_lat"] == pytest.approx(57.72285)
+    assert loaded_df.iloc[2]["site_1_lon"] == pytest.approx(11.97265)
+    assert loaded_df.iloc[2]["frequency"] == pytest.approx(38528.0)
+    assert loaded_df.iloc[2]["polarization"] == "v"
+    assert loaded_df.iloc[2]["length"] == pytest.approx(614.55)
+
+    generator.close()
+
+
+def test_generate_fake_data_for_timestamps_with_list(test_dir):
+    """Test generating fake data for a list of timestamps."""
+    generator = CMLDataGenerator(
+        netcdf_file=NETCDF_FILE,
+        loop_duration_seconds=3600,
+        output_dir=test_dir,
+    )
+
+    # Create a list of timestamps
+    timestamps = [
+        pd.Timestamp("2026-01-21 10:00:00"),
+        pd.Timestamp("2026-01-21 10:05:00"),
+        pd.Timestamp("2026-01-21 10:10:00"),
+    ]
+
+    # Generate fake data
+    df = generator.generate_data(timestamps)
+
+    # Check structure
+    assert len(df) > 0
+    assert "time" in df.columns
+    assert "cml_id" in df.columns
+    assert "tsl" in df.columns
+    assert "rsl" in df.columns
+
+    # Check we have data for all timestamps
+    unique_times = df["time"].unique()
+    assert len(unique_times) == 3
+
+    # Check timestamps match input
+    for ts in timestamps:
+        assert ts in df["time"].values
+
+    generator.close()
+
+
+def test_generate_fake_data_for_timestamps_with_daterange(test_dir):
+    """Test generating fake data with pandas DatetimeIndex."""
+    generator = CMLDataGenerator(
+        netcdf_file=NETCDF_FILE,
+        loop_duration_seconds=3600,
+        output_dir=test_dir,
+    )
+
+    # Create a date range
+    timestamps = pd.date_range(start="2026-01-21 10:00:00", periods=12, freq="5min")
+
+    # Generate fake data
+    df = generator.generate_data(timestamps)
+
+    # Check structure
+    assert len(df) > 0
+    required_columns = ["time", "cml_id", "sublink_id", "tsl", "rsl"]
+    for col in required_columns:
+        assert col in df.columns
+
+    # Check we have data for all timestamps
+    unique_times = df["time"].unique()
+    assert len(unique_times) == 12
+
+    # Check data cycles through NetCDF (should use different indices)
+    # Due to looping, some values should differ
+    tsl_values = df.groupby("cml_id")["tsl"].apply(list)
+    # Check that at least one CML has varying TSL values
+    has_variation = any(len(set(vals)) > 1 for vals in tsl_values if len(vals) > 1)
+    assert has_variation
+
+    generator.close()
+
+
+def test_generate_fake_data_for_timestamps_with_array(test_dir):
+    """Test generating fake data with numpy array."""
+    generator = CMLDataGenerator(
+        netcdf_file=NETCDF_FILE,
+        loop_duration_seconds=3600,
+        output_dir=test_dir,
+    )
+
+    # Create timestamps as numpy array
+    import numpy as np
+
+    timestamps = np.array(
+        [
+            pd.Timestamp("2026-01-21 10:00:00"),
+            pd.Timestamp("2026-01-21 10:30:00"),
+            pd.Timestamp("2026-01-21 11:00:00"),
+        ]
+    )
+
+    # Generate fake data
+    df = generator.generate_data(timestamps)
+
+    # Check basic structure
+    assert len(df) > 0
+    assert len(df["time"].unique()) == 3
+
+    generator.close()
+
+
+def test_generate_data_current_time(test_dir):
+    """Test generating data for current time (no timestamps provided)."""
+    generator = CMLDataGenerator(
+        netcdf_file=NETCDF_FILE,
+        loop_duration_seconds=3600,
+        output_dir=test_dir,
+    )
+
+    # Generate data for current time
+    df = generator.generate_data()
+
+    # Check structure
+    assert len(df) > 0
+    assert "time" in df.columns
+    assert "cml_id" in df.columns
+    assert "tsl" in df.columns
+    assert "rsl" in df.columns
+
+    # Should have exactly one timestamp
+    assert len(df["time"].unique()) == 1
+
+    generator.close()
+
+
+def test_get_metadata_dataframe(test_dir):
+    """Test getting metadata as DataFrame."""
+    generator = CMLDataGenerator(
+        netcdf_file=NETCDF_FILE,
+        output_dir=test_dir,
+    )
+
+    # Get metadata DataFrame
+    metadata_df = generator.get_metadata_dataframe()
+
+    # Check structure
+    assert isinstance(metadata_df, pd.DataFrame)
+    assert len(metadata_df) == 728
+
+    # Check expected columns
+    expected_columns = [
+        "site_0_lat",
+        "site_0_lon",
+        "site_1_lat",
+        "site_1_lon",
+        "frequency",
+        "polarization",
+        "length",
+    ]
+    for col in expected_columns:
+        assert col in metadata_df.columns
+
+    generator.close()
+
+
+def test_generate_data_and_write_csv_with_timestamps(test_dir):
+    """Test generating and writing CSV with custom timestamps."""
+    generator = CMLDataGenerator(
+        netcdf_file=NETCDF_FILE,
+        output_dir=test_dir,
+    )
+
+    # Create timestamps
+    timestamps = pd.date_range(start="2026-01-21 10:00:00", periods=5, freq="5min")
+
+    # Generate CSV files
+    csv_files = generator.generate_data_and_write_csv(timestamps=timestamps)
+
+    # Should return one file
+    assert isinstance(csv_files, list)
+    assert len(csv_files) == 1
+
+    # Load and check content
+    df = pd.read_csv(csv_files[0])
+    assert len(df["time"].unique()) == 5
+
+    generator.close()
+
+
+def test_generate_data_and_write_csv_with_split_freq(test_dir):
+    """Test generating and writing CSV with frequency splitting."""
+    generator = CMLDataGenerator(
+        netcdf_file=NETCDF_FILE,
+        output_dir=test_dir,
+    )
+
+    # Create timestamps spanning 3 hours
+    timestamps = pd.date_range(start="2026-01-21 10:00:00", periods=12, freq="15min")
+
+    # Split by hour
+    csv_files = generator.generate_data_and_write_csv(
+        timestamps=timestamps, split_freq="1h"
+    )
+
+    # Should return 3 files (one per hour)
+    assert isinstance(csv_files, list)
+    assert len(csv_files) == 3
+
+    # Check all files exist
+    for filepath in csv_files:
+        assert Path(filepath).exists()
+
+    # Load first file and check it has 4 timestamps (15min intervals in 1 hour)
+    df = pd.read_csv(csv_files[0])
+    assert len(df["time"].unique()) == 4
 
     generator.close()
