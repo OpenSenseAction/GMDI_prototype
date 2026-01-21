@@ -34,10 +34,24 @@ jobs:
     - name: Generate SSH keys
       run: |
         mkdir -p ssh_keys
-        ssh-keygen -t rsa -b 4096 -f ssh_keys/sftp_host_key -N "" -C "SFTP host key"
-        ssh-keygen -t rsa -b 4096 -f ssh_keys/mno_client_key -N "" -C "MNO client key"
-        chmod 600 ssh_keys/*
-        chmod 644 ssh_keys/*.pub
+        
+        # Generate SFTP server host keys
+        ssh-keygen -t ed25519 -f ssh_keys/sftp_host_ed25519_key -N "" -C "SFTP host ed25519 key"
+        ssh-keygen -t rsa -b 4096 -f ssh_keys/sftp_host_rsa_key -N "" -C "SFTP host RSA key"
+        
+        # Generate client key for MNO simulator
+        ssh-keygen -t rsa -b 4096 -f ssh_keys/id_rsa -N "" -C "MNO client key"
+        
+        # Create authorized_keys with the client public key
+        cp ssh_keys/id_rsa.pub ssh_keys/authorized_keys
+        
+        # Create known_hosts with server host keys
+        echo "[sftp_receiver]:22 $(cat ssh_keys/sftp_host_ed25519_key.pub)" > ssh_keys/known_hosts
+        echo "[sftp_receiver]:22 $(cat ssh_keys/sftp_host_rsa_key.pub)" >> ssh_keys/known_hosts
+        
+        # Set correct permissions
+        chmod 600 ssh_keys/id_rsa ssh_keys/sftp_host_*_key
+        chmod 644 ssh_keys/*.pub ssh_keys/authorized_keys ssh_keys/known_hosts
     
     - name: Start services
       run: |
