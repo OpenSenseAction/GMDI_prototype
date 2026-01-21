@@ -13,10 +13,17 @@ sftp:
   host: "sftp.example.com"
   port: 22
   username: "mno_user"
+  # Authentication: Use either password (via env var) or SSH key file
   # Password will be read from SFTP_PASSWORD environment variable
+  # SSH key path (if using key-based auth, preferred over password)
+  private_key_path: null  # e.g., "/app/config/id_rsa" or "~/.ssh/id_rsa"
+  # Host key verification file path (default: ~/.ssh/known_hosts)
+  known_hosts_path: null  # e.g., "/app/config/known_hosts"
   remote_path: "/upload/cml_data"
   # Upload frequency in seconds
   upload_frequency_seconds: 60
+  # Connection timeout in seconds
+  connection_timeout: 30
 
 # Data generation configuration
 generator:

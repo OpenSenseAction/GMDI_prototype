@@ -3,9 +3,9 @@
 Requires Docker: See README.md for setup.
 """
 
+import os
 import tempfile
 import shutil
-import time
 from pathlib import Path
 import sys
 import pytest
@@ -22,6 +22,12 @@ SFTP_PORT = 2222
 SFTP_USERNAME = "test_user"
 SFTP_PASSWORD = "test_password"
 SFTP_REMOTE_PATH = "/upload/cml_data"
+
+# Get known_hosts path from environment or use default
+
+KNOWN_HOSTS_PATH = os.getenv(
+    "KNOWN_HOSTS_PATH", os.path.expanduser("~/.ssh/known_hosts")
+)
 
 
 @pytest.fixture
@@ -76,6 +82,7 @@ def test_real_sftp_connection(test_dirs):
         port=SFTP_PORT,
         username=SFTP_USERNAME,
         password=SFTP_PASSWORD,
+        known_hosts_path=KNOWN_HOSTS_PATH,
         remote_path=SFTP_REMOTE_PATH,
         source_dir=test_dirs["source"],
         archive_dir=test_dirs["archive"],
@@ -98,6 +105,7 @@ def test_real_sftp_upload_file(test_dirs, sample_csv_files):
         port=SFTP_PORT,
         username=SFTP_USERNAME,
         password=SFTP_PASSWORD,
+        known_hosts_path=KNOWN_HOSTS_PATH,
         remote_path=SFTP_REMOTE_PATH,
         source_dir=test_dirs["source"],
         archive_dir=test_dirs["archive"],
@@ -108,7 +116,7 @@ def test_real_sftp_upload_file(test_dirs, sample_csv_files):
 
         # Upload first file
         local_file = sample_csv_files[0]
-        remote_path = uploader.upload_file(local_file)
+        uploader.upload_file(local_file)
 
         # Verify remote file exists
         filename = Path(local_file).name
@@ -134,6 +142,7 @@ def test_real_sftp_upload_pending_files(test_dirs, sample_csv_files):
         port=SFTP_PORT,
         username=SFTP_USERNAME,
         password=SFTP_PASSWORD,
+        known_hosts_path=KNOWN_HOSTS_PATH,
         remote_path=SFTP_REMOTE_PATH,
         source_dir=test_dirs["source"],
         archive_dir=test_dirs["archive"],
@@ -179,13 +188,14 @@ def test_real_sftp_context_manager(test_dirs, sample_csv_files):
             port=SFTP_PORT,
             username=SFTP_USERNAME,
             password=SFTP_PASSWORD,
+            known_hosts_path=KNOWN_HOSTS_PATH,
             remote_path=SFTP_REMOTE_PATH,
             source_dir=test_dirs["source"],
             archive_dir=test_dirs["archive"],
         ) as uploader:
             # Upload a file
             local_file = sample_csv_files[0]
-            remote_path = uploader.upload_file(local_file)
+            uploader.upload_file(local_file)
 
             # Verify
             filename = Path(local_file).name

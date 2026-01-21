@@ -124,11 +124,13 @@ def test_uploader_connection(test_dirs, mock_sftp):
     mock_sftp["ssh_class"].assert_called_once()
     mock_sftp["client"].set_missing_host_key_policy.assert_called_once()
 
-    # Verify connection was established
+    # Verify connection was established with security parameters
     mock_sftp["client"].connect.assert_called_once_with(
         hostname="localhost",
         port=22,
         username="test_user",
+        timeout=30,
+        look_for_keys=False,
         password="test_pass",
     )
 

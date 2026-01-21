@@ -64,22 +64,44 @@ def main():
     # Initialize SFTP uploader if enabled
     sftp_uploader = None
     if config["sftp"]["enabled"]:
-        # Get SFTP password from environment variable
+        # Get SFTP authentication credentials - require exactly one method
         sftp_password = os.getenv("SFTP_PASSWORD")
-        if not sftp_password:
+        private_key_path = config["sftp"].get("private_key_path")
+
+        # Validate authentication configuration: exactly one method required
+        if sftp_password and private_key_path:
+            logger.error(
+                "Multiple SFTP authentication methods configured. "
+                "Use either SFTP_PASSWORD environment variable OR private_key_path in config.yml, not both. "
+                "SFTP upload disabled."
+            )
+        elif not sftp_password and not private_key_path:
             logger.warning(
-                "SFTP_PASSWORD environment variable not set. SFTP upload disabled."
+                "No SFTP authentication method configured. "
+                "Set SFTP_PASSWORD environment variable OR configure private_key_path in config.yml. "
+                "SFTP upload disabled."
             )
         else:
             try:
+                # Expand user paths if present
+                if private_key_path:
+                    private_key_path = os.path.expanduser(private_key_path)
+
+                known_hosts = config["sftp"].get("known_hosts_path")
+                if known_hosts:
+                    known_hosts = os.path.expanduser(known_hosts)
+
                 sftp_uploader = SFTPUploader(
                     host=config["sftp"]["host"],
                     port=config["sftp"]["port"],
                     username=config["sftp"]["username"],
                     password=sftp_password,
+                    private_key_path=private_key_path,
+                    known_hosts_path=known_hosts,
                     remote_path=config["sftp"]["remote_path"],
                     source_dir=config["file_management"]["source_dir"],
                     archive_dir=config["file_management"]["archive_dir"],
+                    connection_timeout=config["sftp"].get("connection_timeout", 30),
                 )
                 sftp_uploader.connect()
                 logger.info("SFTP uploader initialized")

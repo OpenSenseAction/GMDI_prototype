@@ -50,9 +50,40 @@ generator:
 sftp:
   enabled: true
   upload_frequency_seconds: 60  # How often to upload
+  private_key_path: "/path/to/ssh/key"  # Recommended
+  known_hosts_path: "/path/to/known_hosts"  # For host verification
 ```
 
-Set `SFTP_PASSWORD` environment variable for SFTP credentials.
+### Authentication
+
+**SSH Key Authentication (Recommended):**
+```bash
+# Generate SSH key pair
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/mno_sftp_key
+
+# Add public key to SFTP server
+# Set in config.yml:
+#   private_key_path: "~/.ssh/mno_sftp_key"
+```
+
+**Password Authentication:**
+```bash
+export SFTP_PASSWORD=your_password
+```
+
+### Host Key Verification
+
+For security, verify the SFTP server's host key:
+
+```bash
+# Add server to known_hosts
+ssh-keyscan -p 22 sftp.example.com >> ~/.ssh/known_hosts
+
+# Or specify custom known_hosts file in config.yml:
+#   known_hosts_path: "/app/config/known_hosts"
+```
+
+**Security Warning:** The uploader uses strict host key checking. Ensure the server's host key is in your known_hosts file before connecting.
 
 ## Inspecting Data
 
