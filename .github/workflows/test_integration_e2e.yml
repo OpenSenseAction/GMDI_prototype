@@ -1,0 +1,107 @@
+name: E2E Integration Tests
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'tests/**'
+      - 'docker-compose.yml'
+      - 'webserver/**'
+      - 'mno_data_source_simulator/**'
+      - 'database/**'
+      - '.github/workflows/test_integration_e2e.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'tests/**'
+      - 'docker-compose.yml'
+      - 'webserver/**'
+      - 'mno_data_source_simulator/**'
+      - 'database/**'
+
+jobs:
+  e2e-integration-tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Generate SSH keys
+      run: |
+        mkdir -p ssh_keys
+        
+        # Generate SFTP server host keys
+        ssh-keygen -t ed25519 -f ssh_keys/sftp_host_ed25519_key -N "" -C "SFTP host ed25519 key"
+        ssh-keygen -t rsa -b 4096 -f ssh_keys/sftp_host_rsa_key -N "" -C "SFTP host RSA key"
+        
+        # Generate client key for MNO simulator
+        ssh-keygen -t rsa -b 4096 -f ssh_keys/id_rsa -N "" -C "MNO client key"
+        
+        # Create authorized_keys with the client public key
+        cp ssh_keys/id_rsa.pub ssh_keys/authorized_keys
+        
+        # Create known_hosts with server host keys (without port since it's standard port 22)
+        echo "sftp_receiver $(cat ssh_keys/sftp_host_ed25519_key.pub)" > ssh_keys/known_hosts
+        echo "sftp_receiver $(cat ssh_keys/sftp_host_rsa_key.pub)" >> ssh_keys/known_hosts
+        
+        # Set correct permissions (host keys need to be 600 before mounting)
+        chmod 600 ssh_keys/id_rsa ssh_keys/sftp_host_ed25519_key ssh_keys/sftp_host_rsa_key
+        chmod 644 ssh_keys/*.pub ssh_keys/authorized_keys ssh_keys/known_hosts
+        
+        # Debug: Show generated files
+        ls -la ssh_keys/
+        echo "Known hosts content:"
+        cat ssh_keys/known_hosts
+    
+    - name: Start services
+      run: |
+        docker compose up -d sftp_receiver webserver mno_simulator
+        sleep 10
+    
+    - name: Wait for services to be ready
+      run: |
+        # Wait for database to be ready
+        echo "Waiting for database..."
+        timeout 60 bash -c 'until docker compose exec -T database pg_isready -U postgres; do sleep 1; done'
+        echo "Database is ready"
+        
+        # Give webserver time to connect to database
+        sleep 5
+        
+        # Wait for webserver to respond (ignore HTTP status, just check if it's listening)
+        echo "Waiting for webserver..."
+        timeout 60 bash -c 'until curl -s http://localhost:5000/ >/dev/null 2>&1; do echo "Retrying..."; sleep 2; done'
+        echo "Webserver is ready"
+        
+        # Wait for SFTP server
+        echo "Waiting for SFTP server..."
+        timeout 30 bash -c 'until nc -z localhost 2222; do sleep 1; done'
+        echo "SFTP server is ready"
+        
+        echo "All services are ready"
+    
+    - name: Run E2E integration tests
+      run: |
+        docker compose --profile testing run --rm integration_tests
+    
+    - name: Show logs on failure
+      if: failure()
+      run: |
+        echo "=== SFTP Receiver Logs ==="
+        docker compose logs sftp_receiver
+        echo "=== Webserver Logs ==="
+        docker compose logs webserver
+        echo "=== MNO Simulator Logs ==="
+        docker compose logs mno_simulator
+        echo "=== Database Logs ==="
+        docker compose logs database
+    
+    - name: Cleanup
+      if: always()
+      run: |
+        docker compose --profile testing down -v

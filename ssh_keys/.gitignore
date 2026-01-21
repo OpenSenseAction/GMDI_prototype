@@ -1,0 +1,10 @@
+# Ignore all files in this directory by default
+*
+
+# Except for these files
+!.gitignore
+!README.md
+!generate_ssh_keys.sh
+
+# The actual keys should be generated locally and never committed
+# This ensures private keys are never accidentally committed to version control
