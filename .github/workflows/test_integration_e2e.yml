@@ -1,0 +1,74 @@
+name: E2E Integration Tests
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'tests/**'
+      - 'docker-compose.yml'
+      - 'webserver/**'
+      - 'mno_data_source_simulator/**'
+      - 'database/**'
+      - '.github/workflows/test_integration_e2e.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'tests/**'
+      - 'docker-compose.yml'
+      - 'webserver/**'
+      - 'mno_data_source_simulator/**'
+      - 'database/**'
+
+jobs:
+  e2e-integration-tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Generate SSH keys
+      run: |
+        mkdir -p ssh_keys
+        ssh-keygen -t rsa -b 4096 -f ssh_keys/sftp_host_key -N "" -C "SFTP host key"
+        ssh-keygen -t rsa -b 4096 -f ssh_keys/mno_client_key -N "" -C "MNO client key"
+        chmod 600 ssh_keys/*
+        chmod 644 ssh_keys/*.pub
+    
+    - name: Start services
+      run: |
+        docker compose up -d sftp_receiver webserver mno_simulator
+        sleep 10
+    
+    - name: Wait for services to be ready
+      run: |
+        # Wait for database
+        timeout 30 bash -c 'until docker compose exec -T database pg_isready -U postgres; do sleep 1; done'
+        # Wait for webserver to start
+        timeout 30 bash -c 'until curl -f http://localhost:5001/ 2>/dev/null; do sleep 1; done'
+        echo "Services are ready"
+    
+    - name: Run E2E integration tests
+      run: |
+        docker compose --profile testing run --rm integration_tests
+    
+    - name: Show logs on failure
+      if: failure()
+      run: |
+        echo "=== SFTP Receiver Logs ==="
+        docker compose logs sftp_receiver
+        echo "=== Webserver Logs ==="
+        docker compose logs webserver
+        echo "=== MNO Simulator Logs ==="
+        docker compose logs mno_simulator
+        echo "=== Database Logs ==="
+        docker compose logs database
+    
+    - name: Cleanup
+      if: always()
+      run: |
+        docker compose --profile testing down -v
