@@ -23,7 +23,15 @@ See `integration/README.md` for details.
 ```bash
 # From mno_data_source_simulator directory
 cd tests/integration && docker-compose -f docker-compose-test.yml up -d && sleep 5
+
+# Set up host key verification (recommended)
+ssh-keyscan -p 2222 localhost >> /tmp/test_known_hosts
+export KNOWN_HOSTS_PATH=/tmp/test_known_hosts
+
+# Run tests
 cd ../.. && pytest tests/integration/ -v -m integration
+
+# Clean up
 cd tests/integration && docker-compose -f docker-compose-test.yml down -v
 ```
 

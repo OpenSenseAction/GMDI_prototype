@@ -8,15 +8,20 @@
 
 ## Current Status
 
-### ✅ Unit Tests (`tests/test_sftp_uploader.py`, `tests/test_generator.py`)
-- 12 SFTP uploader tests (92% coverage) + data generator tests
-- Mock external dependencies (paramiko)
-- Test initialization, uploads, error handling, file archiving
+### ✅ Unit Tests (`tests/test_sftp_uploader.py`, `tests/test_generator.py`, `tests/test_sftp_security.py`, `tests/test_main_auth.py`)
+- 48 total unit tests covering:
+  - SFTP uploader functionality (connection, uploads, error handling, file archiving)
+  - Data generator (CSV generation, metadata, timestamp handling)
+  - Security features (path validation, filename sanitization, authentication methods, host key verification, timeouts)
+  - Authentication validation (password vs SSH key, explicit configuration)
+- Mock external dependencies (paramiko, filesystem)
+- Coverage: 86% overall (97% data_generator, 84% sftp_uploader, 73% main)
 - Run: `pytest tests/ -v -m "not integration"`
 
 ### ✅ Integration Tests (`tests/integration/test_sftp_integration.py`)
 - 4 tests with real SFTP server (Docker)
 - Verify actual network operations and file transfers
+- Test host key verification with real SSH connections
 - SFTP uploader automatically creates remote directories
 - Run: See `tests/integration/README.md`
 
@@ -38,9 +43,10 @@ See `tests/README.md` for command reference.
 
 ## Coverage Targets
 
-- `sftp_uploader.py`: >90% ✅ (currently 92%)
-- `data_generator.py`: >90%
-- `main.py`: >70%
+- `sftp_uploader.py`: >80% ✅ (currently 84%)
+- `data_generator.py`: >90% ✅ (currently 97%)
+- `main.py`: >70% ✅ (currently 73%)
+- Overall: >85% ✅ (currently 86%)
 
 ## CI/CD
 

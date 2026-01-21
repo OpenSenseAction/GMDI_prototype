@@ -24,7 +24,19 @@ This starts a containerized SFTP server on port 2222 with:
 - **Base directory:** /upload
 - **Test creates:** /upload/cml_data (automatically)
 
-### 2. Run the Integration Tests
+### 2. Set Up Host Key Verification (for strict security tests)
+
+```bash
+# Add the test server's host key to known_hosts
+ssh-keyscan -p 2222 localhost >> /tmp/test_known_hosts
+
+# Set environment variable for tests
+export KNOWN_HOSTS_PATH=/tmp/test_known_hosts
+```
+
+Alternatively, the tests will use `~/.ssh/known_hosts` if the environment variable is not set.
+
+### 3. Run the Integration Tests
 
 ```bash
 # From the mno_data_source_simulator directory
@@ -46,11 +58,12 @@ The `-v` flag removes volumes to clean up test data.
 ## What's Tested
 
 Integration tests verify:
-- ✅ Actual SFTP connection establishment
+- ✅ Actual SFTP connection establishment with host key verification
 - ✅ Real file uploads to SFTP server
 - ✅ Multiple file batch uploads
 - ✅ File verification on remote server
 - ✅ Context manager with real connections
+- ✅ Password and SSH key authentication methods
 
 ## Troubleshooting
 
