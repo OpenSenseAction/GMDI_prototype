@@ -1,5 +1,20 @@
 """Integration tests for SFTP uploader with real SFTP server.
 
+These tests validate the SFTPUploader component in isolation using a mock SFTP server.
+They complement the end-to-end tests in /tests/integration/ which test the full system.
+
+Component-level tests (this file):
+- Test SFTPUploader class functionality
+- Support both password and SSH key authentication
+- Fast execution, isolated from other services
+- Can simulate various failure scenarios
+
+System-level tests (/tests/integration/):
+- Test complete pipeline (MNO simulator → SFTP → webserver)
+- Use production sftp_receiver configuration
+- SSH key authentication only
+- Validate end-to-end data flow
+
 Requires Docker: See README.md for setup.
 """
 

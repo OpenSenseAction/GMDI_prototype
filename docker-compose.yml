@@ -123,6 +123,26 @@ services:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
 
+  # Integration test runner (run with: docker compose run --rm integration_tests)
+  integration_tests:
+    build:
+      context: .
+      dockerfile: tests/Dockerfile
+    depends_on:
+      - sftp_receiver
+      - webserver
+      - mno_simulator
+    environment:
+      - SFTP_HOST=sftp_receiver
+      - SFTP_PORT=22
+    volumes:
+      - ./tests:/workspace/tests:ro
+      - ./ssh_keys:/workspace/ssh_keys:ro
+      - ./pyproject.toml:/workspace/pyproject.toml:ro
+    network_mode: "service:sftp_receiver"
+    profiles:
+      - testing
+
 volumes:
   sftp_uploads:
   webserver_data_staged:
