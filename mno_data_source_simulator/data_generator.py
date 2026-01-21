@@ -268,6 +268,26 @@ class CMLDataGenerator:
         # Get metadata as DataFrame
         metadata_df = self.get_metadata_dataframe()
 
+        # Reset index to include cml_id and sublink_id as columns
+        # This ensures the sorted order is preserved in the CSV
+        metadata_df = metadata_df.reset_index()
+
+        # Reorder columns: cml_id, sublink_id, site_0 (lon, lat), site_1 (lon, lat), frequency, polarization, length
+        column_order = [
+            "cml_id",
+            "sublink_id",
+            "site_0_lon",
+            "site_0_lat",
+            "site_1_lon",
+            "site_1_lat",
+            "frequency",
+            "polarization",
+            "length",
+        ]
+        # Only include columns that exist in the dataframe
+        column_order = [col for col in column_order if col in metadata_df.columns]
+        metadata_df = metadata_df[column_order]
+
         # Generate filepath if not provided
         if filepath is None:
             timestamp_str = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")

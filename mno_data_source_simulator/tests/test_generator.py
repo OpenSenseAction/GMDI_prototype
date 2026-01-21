@@ -126,12 +126,14 @@ def test_metadata_csv_generation(test_dir):
     # Load and validate CSV content
     loaded_df = pd.read_csv(filepath)
 
-    # Check required columns exist (based on actual OpenMRG dataset)
+    # Check required columns exist (including cml_id and sublink_id)
     required_columns = [
-        "site_0_lat",
+        "cml_id",
+        "sublink_id",
         "site_0_lon",
-        "site_1_lat",
+        "site_0_lat",
         "site_1_lon",
+        "site_1_lat",
         "frequency",
         "polarization",
         "length",
@@ -139,12 +141,17 @@ def test_metadata_csv_generation(test_dir):
     for col in required_columns:
         assert col in loaded_df.columns
 
+    # Check column order is correct
+    assert list(loaded_df.columns) == required_columns
+
     # Check data is not empty
     assert len(loaded_df) > 0
     assert len(loaded_df) == 728  # Expected number of CMLs (including both sublinks)
 
     # Check specific hardcoded values from the first 2 CMLs in the NetCDF file
     # First CML, first sublink (cml_id 10001, sublink_1) - row 0
+    assert loaded_df.iloc[0]["cml_id"] == 10001
+    assert loaded_df.iloc[0]["sublink_id"] == "sublink_1"
     assert loaded_df.iloc[0]["site_0_lat"] == pytest.approx(57.70368)
     assert loaded_df.iloc[0]["site_0_lon"] == pytest.approx(11.99507)
     assert loaded_df.iloc[0]["site_1_lat"] == pytest.approx(57.69785)
@@ -154,6 +161,8 @@ def test_metadata_csv_generation(test_dir):
     assert loaded_df.iloc[0]["length"] == pytest.approx(691.44)
 
     # Second CML, first sublink (cml_id 10002, sublink_1) - row 2
+    assert loaded_df.iloc[2]["cml_id"] == 10002
+    assert loaded_df.iloc[2]["sublink_id"] == "sublink_1"
     assert loaded_df.iloc[2]["site_0_lat"] == pytest.approx(57.72539)
     assert loaded_df.iloc[2]["site_0_lon"] == pytest.approx(11.98181)
     assert loaded_df.iloc[2]["site_1_lat"] == pytest.approx(57.72285)
