@@ -179,10 +179,16 @@ def test_s3_import_error_without_boto3():
         S3StorageBackend(bucket="test-bucket")
 
 
-@pytest.mark.skipif(
-    not hasattr(sys.modules.get("boto3", None), "client"),
-    reason="boto3 not installed - S3 tests skipped",
-)
+# Try to import boto3 to check if it's available
+try:
+    import boto3
+
+    HAS_BOTO3 = True
+except ImportError:
+    HAS_BOTO3 = False
+
+
+@pytest.mark.skipif(not HAS_BOTO3, reason="boto3 not installed - S3 tests skipped")
 class TestS3StorageBackend:
     """Test suite for S3StorageBackend."""
 
