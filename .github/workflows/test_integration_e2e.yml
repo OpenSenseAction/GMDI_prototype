@@ -45,13 +45,18 @@ jobs:
         # Create authorized_keys with the client public key
         cp ssh_keys/id_rsa.pub ssh_keys/authorized_keys
         
-        # Create known_hosts with server host keys
-        echo "[sftp_receiver]:22 $(cat ssh_keys/sftp_host_ed25519_key.pub)" > ssh_keys/known_hosts
-        echo "[sftp_receiver]:22 $(cat ssh_keys/sftp_host_rsa_key.pub)" >> ssh_keys/known_hosts
+        # Create known_hosts with server host keys (without port since it's standard port 22)
+        echo "sftp_receiver $(cat ssh_keys/sftp_host_ed25519_key.pub)" > ssh_keys/known_hosts
+        echo "sftp_receiver $(cat ssh_keys/sftp_host_rsa_key.pub)" >> ssh_keys/known_hosts
         
-        # Set correct permissions
-        chmod 600 ssh_keys/id_rsa ssh_keys/sftp_host_*_key
+        # Set correct permissions (host keys need to be 600 before mounting)
+        chmod 600 ssh_keys/id_rsa ssh_keys/sftp_host_ed25519_key ssh_keys/sftp_host_rsa_key
         chmod 644 ssh_keys/*.pub ssh_keys/authorized_keys ssh_keys/known_hosts
+        
+        # Debug: Show generated files
+        ls -la ssh_keys/
+        echo "Known hosts content:"
+        cat ssh_keys/known_hosts
     
     - name: Start services
       run: |
