@@ -1,0 +1,18 @@
+services:
+  sftp_test_server:
+    image: atmoz/sftp:latest
+    container_name: sftp_test_server
+    ports:
+      - "2222:22"
+    command: test_user:test_password:1001:100:upload
+    tmpfs:
+      - /home/test_user/upload:uid=1001,gid=100
+    networks:
+      - test_network
+
+networks:
+  test_network:
+    driver: bridge
+
+volumes:
+  sftp_test_data:

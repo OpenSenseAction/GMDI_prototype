@@ -66,6 +66,12 @@ docker-compose exec mno_simulator ls /app/data_to_upload/
 
 ## Testing
 
+See `TESTING.md` for complete testing strategy.
+
 ```bash
-pytest tests/ -v --cov=data_generator
+# Unit tests (fast)
+pytest tests/ -v -m "not integration"
+
+# All tests including integration (requires Docker)
+pytest tests/ -v
 ```
