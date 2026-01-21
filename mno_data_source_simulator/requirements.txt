@@ -1,0 +1,8 @@
+xarray==2024.1.0
+netCDF4==1.6.5
+numpy==1.26.3
+pandas==2.1.4
+paramiko==3.4.0
+pyyaml==6.0.1
+pytest==7.4.3
+pytest-cov==4.1.0

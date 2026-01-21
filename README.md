@@ -5,6 +5,7 @@ This monorepo contains the following components:
 4. **Data Processor** - Analyzes and processes stored data
 5. **Webserver** - Main user-facing web application with three pages
 6. **Visualization** - Low-level visualization and analysis tools (Leaflet)
+7. **MNO Data Source Simulator** - Simulates real-time CML data from MNO sources via SFTP
 
 ## Webserver Pages
 

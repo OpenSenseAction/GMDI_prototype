@@ -1,4 +1,16 @@
 services:
+  mno_simulator:
+    build: ./mno_simulator
+    volumes:
+      - ./parser/example_data:/app/example_data:ro
+      - mno_data_to_upload:/app/data_to_upload
+      - mno_data_uploaded:/app/data_uploaded
+    environment:
+      - SFTP_PASSWORD=${SFTP_PASSWORD}
+    # Uncomment to override config values
+    # - SFTP_HOST=your_sftp_host
+    # - SFTP_PORT=22
+
   parser:
     build: ./parser
     ports:
@@ -76,3 +88,5 @@ volumes:
   webserver_data_staged:
   webserver_data_archived:
   grafana_data:
+  mno_data_to_upload:
+  mno_data_uploaded:

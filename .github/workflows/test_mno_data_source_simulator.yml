@@ -1,0 +1,77 @@
+name: MNO Simulator Tests
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'mno_data_source_simulator/**'
+      - '.github/workflows/test_mno_data_source_simulator.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'mno_data_source_simulator/**'
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        cd mno_data_source_simulator
+        pip install -r requirements.txt
+    
+    - name: Run unit tests with coverage
+      run: |
+        cd mno_data_source_simulator
+        pytest tests/ -v -m "not integration" --cov=. --cov-report=xml --cov-report=term
+    
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./mno_data_source_simulator/coverage.xml
+        flags: mno_simulator
+        fail_ci_if_error: false
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+  
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: unit-tests  # Only run if unit tests pass
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        cd mno_data_source_simulator
+        pip install -r requirements.txt
+    
+    - name: Start SFTP test server
+      run: |
+        cd mno_data_source_simulator/tests/integration
+        docker compose -f docker-compose-test.yml up -d
+        sleep 5
+    
+    - name: Run integration tests
+      run: |
+        cd mno_data_source_simulator
+        pytest tests/integration/ -v -m integration
+    
+    - name: Cleanup SFTP server
+      if: always()
+      run: |
+        cd mno_data_source_simulator/tests/integration
+        docker compose -f docker-compose-test.yml down -v
