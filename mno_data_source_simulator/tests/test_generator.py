@@ -148,28 +148,37 @@ def test_metadata_csv_generation(test_dir):
     assert len(loaded_df) > 0
     assert len(loaded_df) == 728  # Expected number of CMLs (including both sublinks)
 
-    # Check specific hardcoded values from the first 2 CMLs in the NetCDF file
-    # First CML, first sublink (cml_id 10001, sublink_1) - row 0
-    assert loaded_df.iloc[0]["cml_id"] == 10001
-    assert loaded_df.iloc[0]["sublink_id"] == "sublink_1"
-    assert loaded_df.iloc[0]["site_0_lat"] == pytest.approx(57.70368)
-    assert loaded_df.iloc[0]["site_0_lon"] == pytest.approx(11.99507)
-    assert loaded_df.iloc[0]["site_1_lat"] == pytest.approx(57.69785)
-    assert loaded_df.iloc[0]["site_1_lon"] == pytest.approx(11.99110)
-    assert loaded_df.iloc[0]["frequency"] == pytest.approx(28206.5)
-    assert loaded_df.iloc[0]["polarization"] == "v"
-    assert loaded_df.iloc[0]["length"] == pytest.approx(691.44)
+    # Check specific hardcoded values from known CMLs in the NetCDF file
+    # Use query to find specific CML/sublink combinations instead of hardcoded row indices
+    # This makes the test robust to different iteration orders across platforms
 
-    # Second CML, first sublink (cml_id 10002, sublink_1) - row 2
-    assert loaded_df.iloc[2]["cml_id"] == 10002
-    assert loaded_df.iloc[2]["sublink_id"] == "sublink_1"
-    assert loaded_df.iloc[2]["site_0_lat"] == pytest.approx(57.72539)
-    assert loaded_df.iloc[2]["site_0_lon"] == pytest.approx(11.98181)
-    assert loaded_df.iloc[2]["site_1_lat"] == pytest.approx(57.72285)
-    assert loaded_df.iloc[2]["site_1_lon"] == pytest.approx(11.97265)
-    assert loaded_df.iloc[2]["frequency"] == pytest.approx(38528.0)
-    assert loaded_df.iloc[2]["polarization"] == "v"
-    assert loaded_df.iloc[2]["length"] == pytest.approx(614.55)
+    # First CML (cml_id 10001, sublink_1)
+    row_10001_1 = loaded_df[
+        (loaded_df["cml_id"] == 10001) & (loaded_df["sublink_id"] == "sublink_1")
+    ]
+    assert len(row_10001_1) == 1
+    row_10001_1 = row_10001_1.iloc[0]
+    assert row_10001_1["site_0_lat"] == pytest.approx(57.70368)
+    assert row_10001_1["site_0_lon"] == pytest.approx(11.99507)
+    assert row_10001_1["site_1_lat"] == pytest.approx(57.69785)
+    assert row_10001_1["site_1_lon"] == pytest.approx(11.99110)
+    assert row_10001_1["frequency"] == pytest.approx(28206.5)
+    assert row_10001_1["polarization"] == "v"
+    assert row_10001_1["length"] == pytest.approx(691.44)
+
+    # Second CML (cml_id 10002, sublink_1)
+    row_10002_1 = loaded_df[
+        (loaded_df["cml_id"] == 10002) & (loaded_df["sublink_id"] == "sublink_1")
+    ]
+    assert len(row_10002_1) == 1
+    row_10002_1 = row_10002_1.iloc[0]
+    assert row_10002_1["site_0_lat"] == pytest.approx(57.72539)
+    assert row_10002_1["site_0_lon"] == pytest.approx(11.98181)
+    assert row_10002_1["site_1_lat"] == pytest.approx(57.72285)
+    assert row_10002_1["site_1_lon"] == pytest.approx(11.97265)
+    assert row_10002_1["frequency"] == pytest.approx(38528.0)
+    assert row_10002_1["polarization"] == "v"
+    assert row_10002_1["length"] == pytest.approx(614.55)
 
     generator.close()
 
