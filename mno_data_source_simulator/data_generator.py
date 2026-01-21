@@ -181,6 +181,9 @@ class CMLDataGenerator:
         # Extract metadata as DataFrame
         metadata_df = self.dataset[metadata_coord_names].to_dataframe()
 
+        # Sort by index to ensure deterministic order across different systems
+        metadata_df = metadata_df.sort_index()
+
         return metadata_df
 
     def generate_data_and_write_csv(
