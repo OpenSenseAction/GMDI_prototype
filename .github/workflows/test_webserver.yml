@@ -1,0 +1,44 @@
+name: Webserver Tests
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'webserver/**'
+      - '.github/workflows/test_webserver.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'webserver/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        cd webserver
+        pip install -r requirements.txt
+        pip install -r requirements-test.txt
+    
+    - name: Run tests with coverage
+      run: |
+        cd webserver
+        pytest tests/ -v --cov=. --cov-report=xml --cov-report=term
+    
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./webserver/coverage.xml
+        flags: webserver
+        fail_ci_if_error: false
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
