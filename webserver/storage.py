@@ -109,7 +109,7 @@ class LocalStorageBackend(StorageBackend):
         Args:
             base_path: Base directory for all storage operations
         """
-        self.base_path = Path(base_path)
+        self.base_path = Path(base_path).resolve()
         self.base_path.mkdir(parents=True, exist_ok=True)
         logger.info(f"Initialized LocalStorageBackend with base_path: {self.base_path}")
 
