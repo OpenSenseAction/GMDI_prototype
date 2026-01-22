@@ -15,6 +15,7 @@ CREATE TABLE cml_metadata (
     site_1_lat REAL,
     frequency REAL,
     polarization TEXT,
+    length REAL,
     PRIMARY KEY (cml_id, sublink_id)
 );
 

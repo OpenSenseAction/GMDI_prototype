@@ -114,6 +114,7 @@ def test_write_metadata_success(mock_connection):
             "site_1_lat": [52.7, 52.8],
             "frequency": [38.0, 38.5],
             "polarization": ["H", "V"],
+            "length": [1200.0, 1500.0],
         }
     )
 

@@ -270,6 +270,7 @@ class CMLDataGenerator:
             "site_1_lat",
             "frequency",
             "polarization",
+            "length",
         ]
         # Filter to database columns (no deduplication needed)
         metadata_df = metadata_df[db_columns]

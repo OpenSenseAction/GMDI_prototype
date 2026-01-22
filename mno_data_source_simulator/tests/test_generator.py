@@ -126,7 +126,7 @@ def test_metadata_csv_generation(test_dir):
     # Load and validate CSV content
     loaded_df = pd.read_csv(filepath)
 
-    # Check required columns exist (including cml_id and sublink_id)
+    # Check required columns exist (matching database schema)
     required_columns = [
         "cml_id",
         "sublink_id",

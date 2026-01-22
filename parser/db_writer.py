@@ -138,6 +138,7 @@ class DBWriter:
             "site_1_lat",
             "frequency",
             "polarization",
+            "length",
         ]
         df_subset = df[cols].copy()
         df_subset["cml_id"] = df_subset["cml_id"].astype(str)
@@ -146,7 +147,7 @@ class DBWriter:
 
         sql = (
             "INSERT INTO cml_metadata "
-            "(cml_id, sublink_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat, frequency, polarization) "
+            "(cml_id, sublink_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat, frequency, polarization, length) "
             "VALUES %s "
             "ON CONFLICT (cml_id, sublink_id) DO UPDATE SET "
             "site_0_lon = EXCLUDED.site_0_lon, "
@@ -154,7 +155,8 @@ class DBWriter:
             "site_1_lon = EXCLUDED.site_1_lon, "
             "site_1_lat = EXCLUDED.site_1_lat, "
             "frequency = EXCLUDED.frequency, "
-            "polarization = EXCLUDED.polarization"
+            "polarization = EXCLUDED.polarization, "
+            "length = EXCLUDED.length"
         )
 
         cur = self.conn.cursor()
