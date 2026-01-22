@@ -72,10 +72,14 @@ jobs:
         timeout 60 bash -c 'until docker compose exec -T database pg_isready -U postgres; do sleep 1; done'
         echo "Database is ready"
         
-        # Give webserver time to connect to database
-        sleep 5
+        # Give services time to start and connect
+        sleep 10
         
-        # Wait for webserver to respond (ignore HTTP status, just check if it's listening)
+        # Check service status
+        echo "Checking service status..."
+        docker compose ps
+        
+        # Wait for webserver to respond
         echo "Waiting for webserver..."
         timeout 60 bash -c 'until curl -s http://localhost:5000/ >/dev/null 2>&1; do echo "Retrying..."; sleep 2; done'
         echo "Webserver is ready"
@@ -84,6 +88,18 @@ jobs:
         echo "Waiting for SFTP server..."
         timeout 30 bash -c 'until nc -z localhost 2222; do sleep 1; done'
         echo "SFTP server is ready"
+        
+        # Give MNO simulator time to generate first batch of data
+        echo "Waiting for MNO simulator first generation cycle (40 seconds)..."
+        sleep 40
+        
+        # Check if files appeared in SFTP
+        echo "Checking SFTP uploads directory..."
+        docker compose exec -T sftp_receiver ls -la /home/cml_user/uploads/ || echo "Could not list SFTP directory"
+        
+        # Check if parser sees the files
+        echo "Checking parser incoming directory..."
+        docker compose exec -T parser ls -la /app/data/incoming/ || echo "Could not list parser directory"
         
         echo "All services are ready"
     
@@ -94,16 +110,44 @@ jobs:
     - name: Show logs on failure
       if: failure()
       run: |
+        echo "=== Service Status ==="
+        docker compose ps
+        
+        echo ""
         echo "=== Database Logs ==="
         docker compose logs database
+        
+        echo ""
         echo "=== SFTP Receiver Logs ==="
         docker compose logs sftp_receiver
+        
+        echo ""
         echo "=== Parser Logs ==="
         docker compose logs parser
+        
+        echo ""
         echo "=== Webserver Logs ==="
         docker compose logs webserver
+        
+        echo ""
         echo "=== MNO Simulator Logs ==="
         docker compose logs mno_simulator
+        
+        echo ""
+        echo "=== SFTP Directory Contents ==="
+        docker compose exec -T sftp_receiver ls -la /home/cml_user/uploads/ || echo "Could not access SFTP directory"
+        
+        echo ""
+        echo "=== Parser Incoming Directory Contents ==="
+        docker compose exec -T parser ls -la /app/data/incoming/ || echo "Could not access parser directory"
+        
+        echo ""
+        echo "=== Parser Archived Directory Contents ==="
+        docker compose exec -T parser ls -la /app/data/archived/ || echo "Could not access parser archived directory"
+        
+        echo ""
+        echo "=== Parser Quarantine Directory Contents ==="
+        docker compose exec -T parser ls -la /app/data/quarantine/ || echo "Could not access parser quarantine directory"
     
     - name: Cleanup
       if: always()
