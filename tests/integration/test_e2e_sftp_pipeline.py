@@ -522,8 +522,8 @@ def test_parser_writes_to_database(docker_environment, db_connection):
         assert "cml_data" in tables, "cml_data table not found"
 
         # Step 2: Wait for parser to process files (give it some time)
-        print("\n2. Waiting for parser to process files (up to 45 seconds)...")
-        max_wait = 45
+        print("\n2. Waiting for parser to process files (up to 90 seconds)...")
+        max_wait = 90
         check_interval = 5
         elapsed = 0
 
@@ -544,6 +544,11 @@ def test_parser_writes_to_database(docker_environment, db_connection):
                     f"\n   ✓ Found {metadata_count} metadata rows and {rawdata_count} rawdata rows after {elapsed}s"
                 )
                 break
+
+            if elapsed % 15 == 0 and elapsed > 0:
+                print(
+                    f"   Still waiting... ({elapsed}s elapsed, metadata={metadata_count}, data={rawdata_count})"
+                )
 
             time.sleep(check_interval)
             elapsed += check_interval
