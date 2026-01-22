@@ -254,11 +254,14 @@ class CMLDataGenerator:
 
     def write_metadata_csv(self, filepath: str = None) -> str:
         """
-        Write CML metadata to a CSV file, with all required columns per sublink.
+        Write CML metadata to a CSV file, with one row per (cml_id, sublink_id).
+        Database schema now expects one row per (cml_id, sublink_id) to preserve
+        sublink-specific metadata like frequency and polarization.
         """
         metadata_df = self.get_metadata_dataframe()
-        # Ensure column order
-        column_order = [
+
+        # Keep only the columns needed for the database
+        db_columns = [
             "cml_id",
             "sublink_id",
             "site_0_lon",
@@ -267,10 +270,10 @@ class CMLDataGenerator:
             "site_1_lat",
             "frequency",
             "polarization",
-            "length",
         ]
-        column_order = [col for col in column_order if col in metadata_df.columns]
-        metadata_df = metadata_df[column_order]
+        # Filter to database columns (no deduplication needed)
+        metadata_df = metadata_df[db_columns]
+
         # Generate filepath if not provided
         if filepath is None:
             timestamp_str = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")

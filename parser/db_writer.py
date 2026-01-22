@@ -90,36 +90,36 @@ class DBWriter:
                 logger.exception("Error closing DB connection")
         self.conn = None
 
-    def get_existing_metadata_ids(self) -> Set[str]:
-        """Return set of cml_id values present in cml_metadata."""
+    def get_existing_metadata_ids(self) -> Set[Tuple[str, str]]:
+        """Return set of (cml_id, sublink_id) tuples present in cml_metadata."""
         if not self.is_connected():
             raise RuntimeError("Not connected to database")
 
         cur = self.conn.cursor()
         try:
-            cur.execute("SELECT cml_id FROM cml_metadata")
+            cur.execute("SELECT cml_id, sublink_id FROM cml_metadata")
             rows = cur.fetchall()
-            return {str(r[0]) for r in rows}
+            return {(str(r[0]), str(r[1])) for r in rows}
         finally:
             cur.close()
 
-    def validate_rawdata_references(self, df) -> Tuple[bool, List[str]]:
-        """Check that all cml_id values in df exist in cml_metadata.
+    def validate_rawdata_references(self, df) -> Tuple[bool, List[Tuple[str, str]]]:
+        """Check that all (cml_id, sublink_id) pairs in df exist in cml_metadata.
 
-        Returns (True, []) if all present, otherwise (False, missing_ids).
+        Returns (True, []) if all present, otherwise (False, missing_pairs).
         """
         if df is None or df.empty:
             return True, []
 
-        cml_ids = set(df["cml_id"].astype(str).unique())
+        cml_pairs = set(zip(df["cml_id"].astype(str), df["sublink_id"].astype(str)))
         existing = self.get_existing_metadata_ids()
-        missing = sorted(list(cml_ids - existing))
+        missing = sorted(list(cml_pairs - existing))
         return (len(missing) == 0, missing)
 
     def write_metadata(self, df) -> int:
         """Write metadata DataFrame to `cml_metadata`.
 
-        Uses `ON CONFLICT (cml_id) DO UPDATE` to be idempotent.
+        Uses `ON CONFLICT (cml_id, sublink_id) DO UPDATE` to be idempotent.
         Returns number of rows written (or updated).
         """
         if df is None or df.empty:
@@ -129,19 +129,32 @@ class DBWriter:
             raise RuntimeError("Not connected to database")
 
         # Convert DataFrame to list of tuples
-        cols = ["cml_id", "site_0_lon", "site_0_lat", "site_1_lon", "site_1_lat"]
+        cols = [
+            "cml_id",
+            "sublink_id",
+            "site_0_lon",
+            "site_0_lat",
+            "site_1_lon",
+            "site_1_lat",
+            "frequency",
+            "polarization",
+        ]
         df_subset = df[cols].copy()
         df_subset["cml_id"] = df_subset["cml_id"].astype(str)
+        df_subset["sublink_id"] = df_subset["sublink_id"].astype(str)
         records = [tuple(x) for x in df_subset.to_numpy()]
 
         sql = (
-            "INSERT INTO cml_metadata (cml_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat) "
+            "INSERT INTO cml_metadata "
+            "(cml_id, sublink_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat, frequency, polarization) "
             "VALUES %s "
-            "ON CONFLICT (cml_id) DO UPDATE SET "
+            "ON CONFLICT (cml_id, sublink_id) DO UPDATE SET "
             "site_0_lon = EXCLUDED.site_0_lon, "
             "site_0_lat = EXCLUDED.site_0_lat, "
             "site_1_lon = EXCLUDED.site_1_lon, "
-            "site_1_lat = EXCLUDED.site_1_lat"
+            "site_1_lat = EXCLUDED.site_1_lat, "
+            "frequency = EXCLUDED.frequency, "
+            "polarization = EXCLUDED.polarization"
         )
 
         cur = self.conn.cursor()

@@ -107,10 +107,13 @@ def test_write_metadata_success(mock_connection):
     df = pd.DataFrame(
         {
             "cml_id": ["123", "456"],
+            "sublink_id": ["sublink_1", "sublink_2"],
             "site_0_lon": [13.4, 13.5],
             "site_0_lat": [52.5, 52.6],
             "site_1_lon": [13.6, 13.7],
             "site_1_lat": [52.7, 52.8],
+            "frequency": [38.0, 38.5],
+            "polarization": ["H", "V"],
         }
     )
 
@@ -178,16 +181,25 @@ def test_validate_rawdata_references_with_missing(mock_connection):
     writer = DBWriter("postgresql://test")
     writer.conn = mock_connection
 
-    # Mock database has only ID "123"
+    # Mock database has only ("123", "sublink_1")
     cursor = mock_connection.cursor.return_value
-    cursor.fetchall.return_value = [("123",)]
+    cursor.fetchall.return_value = [("123", "sublink_1")]
 
-    df = pd.DataFrame({"cml_id": ["123", "456", "789"]})
+    df = pd.DataFrame(
+        {
+            "cml_id": ["123", "123", "456", "789"],
+            "sublink_id": ["sublink_1", "sublink_2", "sublink_1", "sublink_1"],
+        }
+    )
 
     ok, missing = writer.validate_rawdata_references(df)
 
     assert ok is False
-    assert set(missing) == {"456", "789"}
+    assert set(missing) == {
+        ("123", "sublink_2"),
+        ("456", "sublink_1"),
+        ("789", "sublink_1"),
+    }
 
 
 def test_close_connection(mock_connection):

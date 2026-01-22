@@ -21,14 +21,19 @@ sftp:
   known_hosts_path: "/app/ssh_keys/known_hosts"
   remote_path: "/uploads"
   # Upload frequency in seconds
-  upload_frequency_seconds: 60
+  upload_frequency_seconds: 30
   # Connection timeout in seconds
   connection_timeout: 30
 
 # Data generation configuration
 generator:
   # How often to generate new data points (in seconds)
-  generation_frequency_seconds: 60
+  generation_frequency_seconds: 30
+  # Number of timestamps to include in each generated file
+  # (timestamps will be spaced by time_resolution_seconds)
+  timestamps_per_file: 3
+  # Time resolution between timestamps within a file (in seconds)
+  time_resolution_seconds: 10
   # Directory where generated CSV files will be written
   output_dir: "data_to_upload"
 

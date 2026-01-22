@@ -7,10 +7,11 @@ import os
 import time
 import logging
 from pathlib import Path
-from parser.file_watcher import FileWatcher
-from parser.file_manager import FileManager
-from parser.db_writer import DBWriter
-from parser.service_logic import process_cml_file
+
+from .file_watcher import FileWatcher
+from .file_manager import FileManager
+from .db_writer import DBWriter
+from .service_logic import process_cml_file
 
 
 class Config:
