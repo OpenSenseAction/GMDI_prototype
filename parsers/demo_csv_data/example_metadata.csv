@@ -1,0 +1,5 @@
+cml_id,sublink_id,site_0_lon,site_0_lat,site_1_lon,site_1_lat,frequency,polarization,length
+10001,sublink_1,13.4,52.5,13.5,52.6,18.0,H,2.1
+10001,sublink_2,13.4,52.5,13.5,52.6,19.0,V,2.1
+10002,sublink_1,13.5,52.6,13.6,52.7,18.0,H,2.2
+10002,sublink_2,13.5,52.6,13.6,52.7,19.0,V,2.2
