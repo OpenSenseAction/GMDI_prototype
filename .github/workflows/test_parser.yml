@@ -1,0 +1,43 @@
+name: Parser Unit Tests
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'parser/**'
+      - '.github/workflows/test_parser.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'parser/**'
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        cd parser
+        pip install -r requirements.txt
+
+    - name: Run parser unit tests with coverage
+      run: |
+        cd parser
+        pytest tests/ -v --cov=. --cov-report=xml --cov-report=term
+
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./parser/coverage.xml
+        flags: parser
+        fail_ci_if_error: false
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
