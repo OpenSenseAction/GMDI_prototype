@@ -6,6 +6,7 @@ on:
     paths:
       - 'tests/**'
       - 'docker-compose.yml'
+      - 'parser/**'
       - 'webserver/**'
       - 'mno_data_source_simulator/**'
       - 'database/**'
@@ -15,6 +16,7 @@ on:
     paths:
       - 'tests/**'
       - 'docker-compose.yml'
+      - 'parser/**'
       - 'webserver/**'
       - 'mno_data_source_simulator/**'
       - 'database/**'
@@ -60,7 +62,7 @@ jobs:
     
     - name: Start services
       run: |
-        docker compose up -d sftp_receiver webserver mno_simulator
+        docker compose up -d database sftp_receiver parser webserver mno_simulator
         sleep 10
     
     - name: Wait for services to be ready
@@ -92,14 +94,16 @@ jobs:
     - name: Show logs on failure
       if: failure()
       run: |
+        echo "=== Database Logs ==="
+        docker compose logs database
         echo "=== SFTP Receiver Logs ==="
         docker compose logs sftp_receiver
+        echo "=== Parser Logs ==="
+        docker compose logs parser
         echo "=== Webserver Logs ==="
         docker compose logs webserver
         echo "=== MNO Simulator Logs ==="
         docker compose logs mno_simulator
-        echo "=== Database Logs ==="
-        docker compose logs database
     
     - name: Cleanup
       if: always()

@@ -263,10 +263,15 @@ def test_mno_simulator_uploading_files(docker_environment, db_connection):
                 print(f"\n   ✓ Found data after {elapsed}s")
                 break
 
+            if elapsed % 15 == 0 and elapsed > 0:
+                print(
+                    f"   Still waiting... ({elapsed}s elapsed, data={data_count}, metadata={metadata_count})"
+                )
+
             time.sleep(check_interval)
             elapsed += check_interval
 
-        print(f"1. Database contains {data_count} data rows")
+        print(f"\n1. Database contains {data_count} data rows")
         print(f"2. Database contains {metadata_count} metadata rows")
 
         # We expect data to be present if MNO simulator is uploading and parser is working
