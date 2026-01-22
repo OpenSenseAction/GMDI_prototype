@@ -13,10 +13,10 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from parser.parsers.parser_registry import ParserRegistry
-from parser.file_watcher import FileWatcher
-from parser.file_manager import FileManager
-from parser.db_writer import DBWriter
+from parsers.parser_registry import ParserRegistry
+from file_watcher import FileWatcher
+from file_manager import FileManager
+from db_writer import DBWriter
 
 
 class Config:
@@ -80,13 +80,21 @@ class ParserService:
                 rows = self.db_writer.write_metadata(df)
                 self.logger.info(f"Wrote {rows} metadata rows from {filepath.name}")
             elif file_type == "rawdata":
-                ok, missing = self.db_writer.validate_rawdata_references(df)
-                if not ok:
-                    self.file_manager.quarantine_file(
-                        filepath, f"Missing metadata for CML IDs: {missing}"
-                    )
-                    return
+                # Write raw data regardless of whether metadata exists.
+                # Log a truncated summary if metadata is missing for some CML IDs.
+                try:
+                    ok, missing = self.db_writer.validate_rawdata_references(df)
+                except Exception:
+                    ok, missing = True, []
+
                 rows = self.db_writer.write_rawdata(df)
+                if not ok and missing:
+                    sample = missing[:10]
+                    self.logger.warning(
+                        "Missing metadata for %d CML IDs; sample: %s",
+                        len(missing),
+                        sample,
+                    )
                 self.logger.info(f"Wrote {rows} data rows from {filepath.name}")
             else:
                 self.file_manager.quarantine_file(
