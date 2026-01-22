@@ -51,10 +51,52 @@ Environment variables (defaults in parentheses):
 | `PROCESS_EXISTING_ON_STARTUP` | Process existing files at startup | `True` |
 | `LOG_LEVEL` | Logging verbosity | `INFO` |
 
+## Expected File Formats
+
+**Metadata CSV** (`cml_metadata_*.csv`):
+```csv
+cml_id,sublink_id,site_0_lon,site_0_lat,site_1_lon,site_1_lat,frequency,polarization,length
+10001,sublink_1,13.3888,52.5170,13.4050,52.5200,38000.0,H,1200.5
+10001,sublink_2,13.3888,52.5170,13.4050,52.5200,38500.0,V,1200.5
+```
+
+**Raw Data CSV** (`cml_data_*.csv`):
+```csv
+time,cml_id,sublink_id,tsl,rsl
+2026-01-22T10:00:00Z,10001,sublink_1,10.5,-45.2
+2026-01-22T10:00:00Z,10001,sublink_2,11.2,-46.8
+```
+
+## Database Schema
+
+```sql
+CREATE TABLE cml_metadata (
+    cml_id TEXT NOT NULL,
+    sublink_id TEXT NOT NULL,
+    site_0_lon REAL,
+    site_0_lat REAL,
+    site_1_lon REAL,
+    site_1_lat REAL,
+    frequency REAL,
+    polarization TEXT,
+    length REAL,
+    PRIMARY KEY (cml_id, sublink_id)
+);
+
+CREATE TABLE cml_data (
+    time TIMESTAMPTZ NOT NULL,
+    cml_id TEXT NOT NULL,
+    sublink_id TEXT NOT NULL,
+    rsl REAL,
+    tsl REAL
+);
+```
+
 ## Behavior Details
 
-- **Missing metadata:** Raw data is written even when metadata is missing; warnings logged with sample IDs
-- **Idempotency:** Metadata writes use `ON CONFLICT DO UPDATE`; safe to reprocess files
+- **Composite key:** Metadata uses `(cml_id, sublink_id)` as primary key to preserve sublink-specific properties
+- **Missing metadata:** Raw data is written even when metadata is missing; warnings logged with sample `(cml_id, sublink_id)` pairs
+- **Idempotency:** Metadata writes use `ON CONFLICT (cml_id, sublink_id) DO UPDATE`; safe to reprocess files
 - **File moves:** Attempts move, falls back to copy for cross-device mounts
 - **DB retry:** 3 connection attempts with exponential backoff
 - **Extensibility:** Add parsers by implementing `BaseParser` and registering in `parser_registry.py`

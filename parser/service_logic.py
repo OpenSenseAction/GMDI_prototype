@@ -50,7 +50,7 @@ def process_cml_file(filepath: Path, db_writer, file_manager, logger=None):
             if not ok and missing:
                 sample = missing[:10]
                 logger.warning(
-                    "Missing metadata for %d CML IDs; sample: %s",
+                    "Missing metadata for %d (cml_id, sublink_id) pairs; sample: %s",
                     len(missing),
                     sample,
                 )

@@ -95,7 +95,7 @@ The integration tests validate different aspects of the data pipeline. Tests fal
 **Purpose:** Validates MNO simulator generates data and parser processes it into the database  
 **What it checks:**
 - Database contains data rows (proof of successful upload→parse→DB flow)
-- Database contains metadata rows
+- Database contains metadata rows (expected ~728 with composite key schema: 2 sublinks per CML)
 - Data timestamps are recent (sanity check)
 
 **Note:** This validates the **full upload-to-database flow** by checking the end result (data in DB) rather than intermediate steps.
@@ -126,7 +126,7 @@ The integration tests validate different aspects of the data pipeline. Tests fal
 **Purpose:** Validates complete data flow from source to database with integrity checks  
 **What it checks:**
 - Database contains both data and metadata
-- All data records have corresponding metadata (referential integrity)
+- All data records have corresponding metadata (referential integrity using composite key: cml_id + sublink_id)
 - No orphaned records exist
 
 **Note:** This test validates **data integrity** across the full pipeline.
@@ -135,7 +135,11 @@ The integration tests validate different aspects of the data pipeline. Tests fal
 - Check data/metadata counts in test output
 - Verify referential integrity: `docker compose exec database psql -U myuser -d mydatabase`
   ```sql
-  SELECT COUNT(*) FROM cml_data WHERE cml_id NOT IN (SELECT cml_id FROM cml_metadata);
+  SELECT COUNT(*) FROM cml_data r
+  WHERE NOT EXISTS (
+    SELECT 1 FROM cml_metadata m 
+    WHERE m.cml_id = r.cml_id AND m.sublink_id = r.sublink_id
+  );
   ```
 - Check for parser errors: `docker compose logs parser | grep ERROR`
 
@@ -159,7 +163,7 @@ The integration tests validate different aspects of the data pipeline. Tests fal
 1. **Table existence:** `cml_metadata` and `cml_data` tables exist
 2. **Data presence:** Both tables contain records
 3. **Data structure:** Sample queries validate column structure
-4. **Referential integrity:** All `cml_id`s in data table have metadata
+4. **Referential integrity:** All `(cml_id, sublink_id)` pairs in data table have metadata (composite key)
 5. **Data correctness:** TSL/RSL values are numeric, timestamps are valid
 
 **Note:** This is the **end-to-end validation** - if this passes, data successfully flowed from MNO → SFTP → Parser → Database.
