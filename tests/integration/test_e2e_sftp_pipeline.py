@@ -241,12 +241,30 @@ def test_mno_simulator_uploading_files(docker_environment, db_connection):
 
         cursor = db_connection.cursor()
 
-        # Check if data exists in database (proof of successful pipeline)
-        cursor.execute("SELECT COUNT(*) FROM cml_data")
-        data_count = cursor.fetchone()[0]
+        # Wait for MNO simulator to generate and upload data, and parser to process it
+        print(
+            "\nWaiting for MNO simulator to generate/upload and parser to process (up to 90 seconds)..."
+        )
+        max_wait = 90
+        check_interval = 5
+        elapsed = 0
 
-        cursor.execute("SELECT COUNT(*) FROM cml_metadata")
-        metadata_count = cursor.fetchone()[0]
+        data_count = 0
+        metadata_count = 0
+
+        while elapsed < max_wait:
+            cursor.execute("SELECT COUNT(*) FROM cml_data")
+            data_count = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM cml_metadata")
+            metadata_count = cursor.fetchone()[0]
+
+            if data_count > 0 and metadata_count > 0:
+                print(f"\n   ✓ Found data after {elapsed}s")
+                break
+
+            time.sleep(check_interval)
+            elapsed += check_interval
 
         print(f"1. Database contains {data_count} data rows")
         print(f"2. Database contains {metadata_count} metadata rows")
@@ -360,12 +378,28 @@ def test_sftp_to_parser_pipeline(docker_environment, db_connection):
     try:
         cursor = db_connection.cursor()
 
-        # Verify both tables have data
-        cursor.execute("SELECT COUNT(*) FROM cml_data")
-        data_count = cursor.fetchone()[0]
+        # Wait for full pipeline to process data
+        print("\nWaiting for full pipeline to process data (up to 90 seconds)...")
+        max_wait = 90
+        check_interval = 5
+        elapsed = 0
 
-        cursor.execute("SELECT COUNT(*) FROM cml_metadata")
-        metadata_count = cursor.fetchone()[0]
+        data_count = 0
+        metadata_count = 0
+
+        while elapsed < max_wait:
+            cursor.execute("SELECT COUNT(*) FROM cml_data")
+            data_count = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM cml_metadata")
+            metadata_count = cursor.fetchone()[0]
+
+            if data_count > 0 and metadata_count > 0:
+                print(f"\n   ✓ Pipeline processed data after {elapsed}s")
+                break
+
+            time.sleep(check_interval)
+            elapsed += check_interval
 
         print(f"1. Database contains {data_count} data rows")
         print(f"2. Database contains {metadata_count} metadata rows")
