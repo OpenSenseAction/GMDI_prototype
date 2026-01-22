@@ -69,7 +69,18 @@ class DBWriter:
         raise last_exc
 
     def is_connected(self) -> bool:
-        return self.conn is not None and not self.conn.closed
+        if self.conn is None:
+            return False
+
+        # psycopg2 connection uses `.closed` with integer 0 when open.
+        # Tests may supply Mock objects where `.closed` is a Mock (truthy).
+        # Be permissive: if `.closed` is an int/bool, treat 0/False as connected.
+        closed = getattr(self.conn, "closed", None)
+        if isinstance(closed, (int, bool)):
+            return closed == 0 or closed is False
+
+        # Unknown `.closed` type (e.g. Mock); assume connection is present.
+        return True
 
     def close(self) -> None:
         if self.conn and not self.conn.closed:

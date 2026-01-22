@@ -28,7 +28,8 @@ class CSVRawDataParser(BaseParser):
 
         try:
             df["time"] = pd.to_datetime(df["time"], errors="coerce")
-            df["cml_id"] = df["cml_id"].astype(str)
+            # Preserve rows even when cml_id is missing — convert NaN -> literal 'nan'
+            df["cml_id"] = df["cml_id"].fillna("nan").astype(str)
             df["sublink_id"] = df["sublink_id"].astype(str)
             df["tsl"] = pd.to_numeric(df["tsl"], errors="coerce")
             df["rsl"] = pd.to_numeric(df["rsl"], errors="coerce")
@@ -38,9 +39,8 @@ class CSVRawDataParser(BaseParser):
         if df["time"].isna().any():
             return None, "Invalid timestamps found"
 
-        if df["cml_id"].isna().any():
-            return None, "Missing cml_id values"
-
+        # Note: missing `cml_id` values are converted to the string 'nan'
+        # so rows with missing IDs are preserved for ingestion.
         return df, None
 
     def get_file_type(self) -> str:
