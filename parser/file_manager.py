@@ -27,6 +27,21 @@ class FileManager:
         subdir.mkdir(parents=True, exist_ok=True)
         return subdir
 
+    def _safe_move(self, filepath: Path, dest: Path) -> bool:
+        """Attempt to move file; fall back to copy if move fails. Returns True if successful."""
+        try:
+            shutil.move(str(filepath), str(dest))
+            logger.info(f"Moved file {filepath} → {dest}")
+            return True
+        except Exception:
+            try:
+                shutil.copy2(str(filepath), str(dest))
+                logger.info(f"Copied file {filepath} → {dest}")
+                return True
+            except Exception:
+                logger.exception("Failed to move or copy file")
+                return False
+
     def archive_file(self, filepath: Path) -> Path:
         """Move `filepath` to archive/YYYY-MM-DD/ and return destination path."""
         filepath = Path(filepath)
@@ -35,17 +50,8 @@ class FileManager:
 
         dest_dir = self._archive_subdir()
         dest = dest_dir / filepath.name
-        try:
-            shutil.move(str(filepath), str(dest))
-            logger.info(f"Archived file {filepath} → {dest}")
-        except Exception:
-            # Fall back to copy if move across devices fails or filesystem is read-only
-            try:
-                shutil.copy2(str(filepath), str(dest))
-                logger.info(f"Copied file to archive {filepath} → {dest}")
-            except Exception:
-                logger.exception("Failed to archive file (move and copy both failed)")
-                raise
+        if not self._safe_move(filepath, dest):
+            raise RuntimeError(f"Failed to archive file {filepath}")
         return dest
 
     def quarantine_file(self, filepath: Path, error: str) -> Path:
@@ -61,23 +67,9 @@ class FileManager:
             return note_path
 
         dest = self.quarantine_dir / filepath.name
-
-        try:
-            shutil.move(str(filepath), str(dest))
-            moved = True
-        except Exception:
-            moved = False
-            logger.debug("Move failed; attempting to copy to quarantine instead")
-
-        if not moved:
-            try:
-                # Attempt to copy the file to quarantine; do not delete source if it's read-only
-                shutil.copy2(str(filepath), str(dest))
-                logger.info(f"Copied file to quarantine {filepath} → {dest}")
-            except Exception:
-                logger.exception("Failed to copy file to quarantine")
-                # As a last resort, write an error note mentioning original path
-                dest = self.quarantine_dir / (filepath.name + ".orphan")
+        if not self._safe_move(filepath, dest):
+            # As a last resort, write an error note mentioning original path
+            dest = self.quarantine_dir / (filepath.name + ".orphan")
 
         # Create an error metadata file containing the reason
         note_path = self.quarantine_dir / (dest.name + ".error.txt")
@@ -88,7 +80,9 @@ class FileManager:
             # Fallback to naive UTC if timezone is unavailable
             now = datetime.datetime.utcnow().isoformat() + "Z"
 
-        note_contents = f"Quarantined at: {now}\nError: {error}\nOriginalPath: {filepath}\n"
+        note_contents = (
+            f"Quarantined at: {now}\nError: {error}\nOriginalPath: {filepath}\n"
+        )
         try:
             note_path.write_text(note_contents)
         except Exception:
@@ -101,27 +95,3 @@ class FileManager:
         """Return the destination archive path for a given filepath (without moving)."""
         subdir = self._archive_subdir()
         return subdir / Path(filepath).name
-
-    def is_valid_file(
-        self, filepath: Path, allowed_exts=None, max_size_bytes: int = None
-    ) -> bool:
-        """Basic checks whether a file should be processed.
-
-        - allowed_exts: list of extensions like ['.csv', '.nc'] or None
-        - max_size_bytes: maximum allowed file size or None
-        """
-        filepath = Path(filepath)
-        if not filepath.exists() or not filepath.is_file():
-            return False
-
-        if allowed_exts and filepath.suffix.lower() not in allowed_exts:
-            return False
-
-        if max_size_bytes is not None:
-            try:
-                if filepath.stat().st_size > max_size_bytes:
-                    return False
-            except OSError:
-                return False
-
-        return True

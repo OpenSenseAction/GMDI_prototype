@@ -41,9 +41,6 @@ class CSVRawDataParser(BaseParser):
         if df["cml_id"].isna().any():
             return None, "Missing cml_id values"
 
-        # Keep only expected columns and order them
-        df = df.loc[:, self.REQUIRED_COLUMNS]
-
         return df, None
 
     def get_file_type(self) -> str:

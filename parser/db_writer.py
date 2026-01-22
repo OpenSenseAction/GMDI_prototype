@@ -9,6 +9,7 @@ exiting the process so the caller can decide how to handle failures.
 """
 
 from typing import List, Tuple, Optional, Set
+import time
 import psycopg2
 import psycopg2.extras
 import logging
@@ -36,32 +37,35 @@ class DBWriter:
         self.max_retries = 3
         self.retry_backoff_seconds = 2
 
+    def _attempt_connect(self) -> psycopg2.extensions.connection:
+        """Attempt a single database connection."""
+        return psycopg2.connect(self.db_url, connect_timeout=self.connect_timeout)
+
     def connect(self) -> None:
         if self.conn:
             return
 
         logger.debug("Connecting to database with retries")
-        attempt = 0
         last_exc = None
-        while attempt < self.max_retries:
+        for attempt in range(1, self.max_retries + 1):
             try:
-                self.conn = psycopg2.connect(self.db_url, connect_timeout=self.connect_timeout)
+                self.conn = self._attempt_connect()
                 logger.debug("Database connection established")
                 return
             except Exception as e:
                 last_exc = e
-                attempt += 1
-                logger.warning("Database connection attempt %d/%d failed: %s", attempt, self.max_retries, e)
+                logger.warning(
+                    "Database connection attempt %d/%d failed: %s",
+                    attempt,
+                    self.max_retries,
+                    e,
+                )
                 if attempt < self.max_retries:
                     sleep_time = self.retry_backoff_seconds * (2 ** (attempt - 1))
                     logger.debug("Sleeping %s seconds before retry", sleep_time)
-                    time_to_sleep = sleep_time
-                    import time
-
-                    time.sleep(time_to_sleep)
+                    time.sleep(sleep_time)
 
         logger.exception("All database connection attempts failed")
-        # re-raise the last exception so callers can handle it
         raise last_exc
 
     def is_connected(self) -> bool:
@@ -113,33 +117,11 @@ class DBWriter:
         if not self.is_connected():
             raise RuntimeError("Not connected to database")
 
-        records = []
-        for _, row in df.iterrows():
-            records.append(
-                (
-                    str(row.get("cml_id")),
-                    (
-                        float(row.get("site_0_lon"))
-                        if row.get("site_0_lon") is not None
-                        else None
-                    ),
-                    (
-                        float(row.get("site_0_lat"))
-                        if row.get("site_0_lat") is not None
-                        else None
-                    ),
-                    (
-                        float(row.get("site_1_lon"))
-                        if row.get("site_1_lon") is not None
-                        else None
-                    ),
-                    (
-                        float(row.get("site_1_lat"))
-                        if row.get("site_1_lat") is not None
-                        else None
-                    ),
-                )
-            )
+        # Convert DataFrame to list of tuples
+        cols = ["cml_id", "site_0_lon", "site_0_lat", "site_1_lon", "site_1_lat"]
+        df_subset = df[cols].copy()
+        df_subset["cml_id"] = df_subset["cml_id"].astype(str)
+        records = [tuple(x) for x in df_subset.to_numpy()]
 
         sql = (
             "INSERT INTO cml_metadata (cml_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat) "
@@ -177,32 +159,14 @@ class DBWriter:
         if not self.is_connected():
             raise RuntimeError("Not connected to database")
 
-        records = []
-        for _, row in df.iterrows():
-            # psycopg2 will accept Python datetimes or ISO strings
-            records.append(
-                (
-                    row.get("time"),
-                    str(row.get("cml_id")),
-                    (
-                        str(row.get("sublink_id"))
-                        if row.get("sublink_id") is not None
-                        else None
-                    ),
-                    (
-                        float(row.get("rsl"))
-                        if row.get("rsl") is not None
-                        and not (str(row.get("rsl")) == "nan")
-                        else None
-                    ),
-                    (
-                        float(row.get("tsl"))
-                        if row.get("tsl") is not None
-                        and not (str(row.get("tsl")) == "nan")
-                        else None
-                    ),
-                )
-            )
+        # Convert DataFrame to list of tuples
+        cols = ["time", "cml_id", "sublink_id", "rsl", "tsl"]
+        df_subset = df[cols].copy()
+        df_subset["cml_id"] = df_subset["cml_id"].astype(str)
+        df_subset["sublink_id"] = (
+            df_subset["sublink_id"].astype(str).replace("nan", None)
+        )
+        records = [tuple(x) for x in df_subset.to_numpy()]
 
         sql = "INSERT INTO cml_data (time, cml_id, sublink_id, rsl, tsl) VALUES %s"
 

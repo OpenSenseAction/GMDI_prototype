@@ -28,11 +28,10 @@ class Config:
     ARCHIVED_DIR = Path(os.getenv("PARSER_ARCHIVED_DIR", "/app/data/archived"))
     QUARANTINE_DIR = Path(os.getenv("PARSER_QUARANTINE_DIR", "/app/data/quarantine"))
 
-    def _env_bool(key: str, default: bool) -> bool:
-        return os.getenv(key, str(default)).lower() in ("1", "true", "yes")
-
-    PARSER_ENABLED = _env_bool("PARSER_ENABLED", True)
-    PROCESS_EXISTING_ON_STARTUP = _env_bool("PROCESS_EXISTING_ON_STARTUP", True)
+    PARSER_ENABLED = os.getenv("PARSER_ENABLED", "True").lower() in ("1", "true", "yes")
+    PROCESS_EXISTING_ON_STARTUP = os.getenv(
+        "PROCESS_EXISTING_ON_STARTUP", "True"
+    ).lower() in ("1", "true", "yes")
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 
@@ -110,10 +109,7 @@ class ParserService:
 
         except Exception as e:
             self.logger.exception("Error handling file")
-            try:
-                self.file_manager.quarantine_file(filepath, str(e))
-            except Exception:
-                self.logger.exception("Failed to quarantine after error")
+            self.file_manager.quarantine_file(filepath, str(e))
 
     def process_existing_files(self):
         incoming = list(Config.INCOMING_DIR.glob("*"))
