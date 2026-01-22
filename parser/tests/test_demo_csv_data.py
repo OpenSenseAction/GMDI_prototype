@@ -2,8 +2,8 @@
 
 import pandas as pd
 from pathlib import Path
-from parsers.demo_csv_data.parse_raw import parse_rawdata_csv
-from parsers.demo_csv_data.parse_metadata import parse_metadata_csv
+from ..parsers.demo_csv_data.parse_raw import parse_rawdata_csv
+from ..parsers.demo_csv_data.parse_metadata import parse_metadata_csv
 from ..validate_dataframe import validate_dataframe
 
 
