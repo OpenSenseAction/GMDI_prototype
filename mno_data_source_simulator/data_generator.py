@@ -163,28 +163,30 @@ class CMLDataGenerator:
 
     def get_metadata_dataframe(self) -> pd.DataFrame:
         """
-        Get CML metadata as a pandas DataFrame.
-
-        Extracts all metadata coordinates from the NetCDF dataset
-        (excluding dimension coordinates like time, cml_id, sublink_id).
-
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame with CML metadata.
+        Get CML metadata as a pandas DataFrame, with one row per (cml_id, sublink_id).
+        Includes: cml_id, sublink_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat, frequency, polarization, length
         """
-        # Identify metadata coordinates (non-dimension coordinates)
-        dimension_coords = set(self.dataset.sizes.keys())
-        all_coords = set(self.dataset.coords.keys())
-        metadata_coord_names = list(all_coords - dimension_coords)
-
-        # Extract metadata as DataFrame
-        metadata_df = self.dataset[metadata_coord_names].to_dataframe()
-
-        # Sort by index to ensure deterministic order across different systems
-        metadata_df = metadata_df.sort_index()
-
-        return metadata_df
+        # Extract all coordinates and variables needed for metadata
+        # Assume sublink_id is a dimension, so we need to reset index to get it as a column
+        # This will produce one row per (cml_id, sublink_id)
+        required_columns = [
+            "cml_id",
+            "sublink_id",
+            "site_0_lon",
+            "site_0_lat",
+            "site_1_lon",
+            "site_1_lat",
+            "frequency",
+            "polarization",
+            "length",
+        ]
+        # Convert to DataFrame
+        df = self.dataset[required_columns].to_dataframe().reset_index()
+        # Remove duplicate columns if present
+        df = df.loc[:, ~df.columns.duplicated()]
+        # Sort for deterministic output
+        df = df.sort_values(["cml_id", "sublink_id"]).reset_index(drop=True)
+        return df
 
     def generate_data_and_write_csv(
         self,
@@ -252,27 +254,10 @@ class CMLDataGenerator:
 
     def write_metadata_csv(self, filepath: str = None) -> str:
         """
-        Write CML metadata to a CSV file.
-
-        Parameters
-        ----------
-        filepath : str, optional
-            Full path to the output CSV file. If not provided, generates
-            a filename with timestamp in the output directory.
-
-        Returns
-        -------
-        str
-            Path to the generated metadata CSV file.
+        Write CML metadata to a CSV file, with all required columns per sublink.
         """
-        # Get metadata as DataFrame
         metadata_df = self.get_metadata_dataframe()
-
-        # Reset index to include cml_id and sublink_id as columns
-        # This ensures the sorted order is preserved in the CSV
-        metadata_df = metadata_df.reset_index()
-
-        # Reorder columns: cml_id, sublink_id, site_0 (lon, lat), site_1 (lon, lat), frequency, polarization, length
+        # Ensure column order
         column_order = [
             "cml_id",
             "sublink_id",
@@ -284,22 +269,17 @@ class CMLDataGenerator:
             "polarization",
             "length",
         ]
-        # Only include columns that exist in the dataframe
         column_order = [col for col in column_order if col in metadata_df.columns]
         metadata_df = metadata_df[column_order]
-
         # Generate filepath if not provided
         if filepath is None:
             timestamp_str = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
             filename = f"cml_metadata_{timestamp_str}.csv"
             filepath = self.output_dir / filename
-
-        # Write to CSV
         metadata_df.to_csv(filepath, index=False)
         logger.info(
             f"Generated metadata CSV file: {filepath} ({len(metadata_df)} rows)"
         )
-
         return str(filepath)
 
     def close(self):

@@ -15,7 +15,17 @@ def validate_dataframe(df: pd.DataFrame, kind: Literal["rawdata", "metadata"]) -
         if df["time"].isna().any():
             return False
     elif kind == "metadata":
-        required = ["cml_id", "site_0_lon", "site_0_lat", "site_1_lon", "site_1_lat"]
+        required = [
+            "cml_id",
+            "sublink_id",
+            "site_0_lon",
+            "site_0_lat",
+            "site_1_lon",
+            "site_1_lat",
+            "frequency",
+            "polarization",
+            "length",
+        ]
         for col in required:
             if col not in df.columns:
                 return False

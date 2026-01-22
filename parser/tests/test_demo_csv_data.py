@@ -22,11 +22,23 @@ def test_parse_rawdata_csv(tmp_path):
 def test_parse_metadata_csv(tmp_path):
     csv = tmp_path / "meta.csv"
     csv.write_text(
-        "cml_id,site_0_lon,site_0_lat,site_1_lon,site_1_lat\n10001,13.4,52.5,13.5,52.6\n"
+        "cml_id,sublink_id,site_0_lon,site_0_lat,site_1_lon,site_1_lat,frequency,polarization,length\n"
+        "10001,sublink_1,13.4,52.5,13.5,52.6,18.0,H,2.1\n"
     )
     df = parse_metadata_csv(csv)
     assert isinstance(df, pd.DataFrame)
-    assert "cml_id" in df.columns
+    for col in [
+        "cml_id",
+        "sublink_id",
+        "site_0_lon",
+        "site_0_lat",
+        "site_1_lon",
+        "site_1_lat",
+        "frequency",
+        "polarization",
+        "length",
+    ]:
+        assert col in df.columns
     assert df.shape[0] == 1
     assert validate_dataframe(df, "metadata")
 
