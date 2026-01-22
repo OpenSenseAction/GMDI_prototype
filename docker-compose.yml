@@ -29,7 +29,7 @@ services:
       - PROCESS_EXISTING_ON_STARTUP=true
       - LOG_LEVEL=INFO
     volumes:
-      - sftp_uploads:/app/data/incoming:ro
+      - sftp_uploads:/app/data/incoming
       - parser_archived:/app/data/archived
       - parser_quarantine:/app/data/quarantine
 

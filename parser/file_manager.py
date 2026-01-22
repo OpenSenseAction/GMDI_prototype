@@ -35,8 +35,17 @@ class FileManager:
 
         dest_dir = self._archive_subdir()
         dest = dest_dir / filepath.name
-        shutil.move(str(filepath), str(dest))
-        logger.info(f"Archived file {filepath} → {dest}")
+        try:
+            shutil.move(str(filepath), str(dest))
+            logger.info(f"Archived file {filepath} → {dest}")
+        except Exception:
+            # Fall back to copy if move across devices fails or filesystem is read-only
+            try:
+                shutil.copy2(str(filepath), str(dest))
+                logger.info(f"Copied file to archive {filepath} → {dest}")
+            except Exception:
+                logger.exception("Failed to archive file (move and copy both failed)")
+                raise
         return dest
 
     def quarantine_file(self, filepath: Path, error: str) -> Path:
@@ -52,10 +61,27 @@ class FileManager:
             return note_path
 
         dest = self.quarantine_dir / filepath.name
-        shutil.move(str(filepath), str(dest))
+
+        try:
+            shutil.move(str(filepath), str(dest))
+            moved = True
+        except Exception:
+            moved = False
+            logger.debug("Move failed; attempting to copy to quarantine instead")
+
+        if not moved:
+            try:
+                # Attempt to copy the file to quarantine; do not delete source if it's read-only
+                shutil.copy2(str(filepath), str(dest))
+                logger.info(f"Copied file to quarantine {filepath} → {dest}")
+            except Exception:
+                logger.exception("Failed to copy file to quarantine")
+                # As a last resort, write an error note mentioning original path
+                dest = self.quarantine_dir / (filepath.name + ".orphan")
+
         # Create an error metadata file containing the reason
         note_path = self.quarantine_dir / (dest.name + ".error.txt")
-        note_contents = f"Quarantined at: {datetime.datetime.utcnow().isoformat()}Z\nError: {error}\n"
+        note_contents = f"Quarantined at: {datetime.datetime.utcnow().isoformat()}Z\nError: {error}\nOriginalPath: {filepath}\n"
         try:
             note_path.write_text(note_contents)
         except Exception:
