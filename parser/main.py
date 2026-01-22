@@ -1,146 +1,157 @@
-import requests
-import psycopg2
+"""Parser service entrypoint and orchestration.
+
+This module wires together the ParserRegistry, FileWatcher, DBWriter and
+FileManager to implement the parser service. It is intentionally
+lightweight and delegates parsing logic to parser implementations in
+`parsers/`.
+"""
+
+import sys
 import os
 import time
+import logging
+from pathlib import Path
+from typing import Optional
+
+from parser.parsers.parser_registry import ParserRegistry
+from parser.file_watcher import FileWatcher
+from parser.file_manager import FileManager
+from parser.db_writer import DBWriter
 
 
-def get_dataframe_from_cml_dataset(ds):
-    """Return data as DataFrame from a CML xarray.Dataset
-
-    Parameters
-    ----------
-    ds : CMLDataset
-        The CML dataset to convert.
-
-    Returns
-    -------
-    pandas.DataFrame
-        A DataFrame containing the 'tsl' and 'rsl' columns.
-
-    Notes
-    -----
-        This function assumes that the CML dataset has a 'time' index and columns 'cml_id' and 'sublink_id'.
-        The 'time' index is reordered to 'time', 'cml_id', and 'sublink_id', and the DataFrame is sorted
-        by these columns. The 'tsl' and 'rsl' columns are extracted from the DataFrame.
-    """
-    df = ds.to_dataframe()
-    df = df.reorder_levels(order=["time", "cml_id", "sublink_id"])
-    df = df.sort_values(by=["time", "cml_id"])
-    return df.loc[:, ["tsl", "rsl"]]
+class Config:
+    DATABASE_URL = os.getenv(
+        "DATABASE_URL", "postgresql://myuser:mypassword@database:5432/mydatabase"
+    )
+    # Fallbacks to simple defaults; can be overridden via env vars at container level
+    INCOMING_DIR = Path("/app/data/incoming")
+    ARCHIVED_DIR = Path("/app/data/archived")
+    QUARANTINE_DIR = Path("/app/data/quarantine")
+    PARSER_ENABLED = True
+    PROCESS_EXISTING_ON_STARTUP = True
+    LOG_LEVEL = "INFO"
 
 
-def get_metadata_dataframe_from_cml_dataset(ds):
-    """Return a DataFrame containing metadata from a CML xarray.Dataset
-
-    Parameters
-    ----------
-    ds : xr.Dataset
-        The CML dataset to retrieve metadata from, assuming that the
-        OpenSense naming conventions and structure are used.
-
-    Returns
-    -------
-    pd.DataFrame
-        A DataFrame containing the metadata from the CML dataset.
-    """
-    return ds.drop_vars(ds.data_vars).drop_dims("time").to_dataframe()
+def setup_logging():
+    logging.basicConfig(
+        level=getattr(logging, Config.LOG_LEVEL),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
 
 
-def _write_to_db(df, table_name, df_columns, table_columns):
-    # Connect to the database
-    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
-
-    # Create a cursor object
-    cur = conn.cursor()
-
-    if len(df_columns) != len(table_columns):
-        raise ValueError(
-            "The number of DataFrame columns and table columns must be the same."
+class ParserService:
+    def __init__(self):
+        setup_logging()
+        self.logger = logging.getLogger("parser.service")
+        self.registry = ParserRegistry()
+        self.file_manager = FileManager(
+            str(Config.INCOMING_DIR),
+            str(Config.ARCHIVED_DIR),
+            str(Config.QUARANTINE_DIR),
         )
+        self.db_writer = DBWriter(Config.DATABASE_URL)
+        self.watcher: Optional[FileWatcher] = None
 
-    # Prepare the SQL query
-    placeholders = ", ".join(["%s"] * len(df_columns))
-    table_columns_str = ", ".join(table_columns)
-    sql_query = (
-        f"INSERT INTO {table_name} ({table_columns_str}) VALUES ({placeholders})"
-    )
+    def process_file(self, filepath: Path):
+        self.logger.info(f"Processing file: {filepath}")
+        parser = self.registry.get_parser(filepath)
+        if not parser:
+            err = f"No parser available for {filepath.name}"
+            self.logger.error(err)
+            self.file_manager.quarantine_file(filepath, err)
+            return
 
-    # Iterate through the DataFrame and insert the data into the database
-    for tup in df.reset_index().itertuples():
-        cur.execute(sql_query, tuple(getattr(tup, col) for col in df_columns))
-    conn.commit()
+        df, parse_error = parser.parse(filepath)
+        if parse_error:
+            self.logger.error(f"Parse error for {filepath.name}: {parse_error}")
+            self.file_manager.quarantine_file(filepath, parse_error)
+            return
 
-    cur.close()
-    conn.close()
+        file_type = parser.get_file_type()
+        try:
+            self.db_writer.connect()
+        except Exception as e:
+            self.logger.exception("Failed to connect to DB")
+            self.file_manager.quarantine_file(filepath, f"DB connection failed: {e}")
+            return
+
+        try:
+            if file_type == "metadata":
+                rows = self.db_writer.write_metadata(df)
+                self.logger.info(f"Wrote {rows} metadata rows from {filepath.name}")
+            elif file_type == "rawdata":
+                ok, missing = self.db_writer.validate_rawdata_references(df)
+                if not ok:
+                    self.file_manager.quarantine_file(
+                        filepath, f"Missing metadata for CML IDs: {missing}"
+                    )
+                    return
+                rows = self.db_writer.write_rawdata(df)
+                self.logger.info(f"Wrote {rows} data rows from {filepath.name}")
+            else:
+                self.file_manager.quarantine_file(
+                    filepath, f"Unsupported file type: {file_type}"
+                )
+                return
+
+            self.file_manager.archive_file(filepath)
+
+        except Exception as e:
+            self.logger.exception("Error handling file")
+            try:
+                self.file_manager.quarantine_file(filepath, str(e))
+            except Exception:
+                self.logger.exception("Failed to quarantine after error")
+
+    def process_existing_files(self):
+        incoming = list(Config.INCOMING_DIR.glob("*"))
+        for f in incoming:
+            if (
+                f.is_file()
+                and f.suffix.lower() in self.registry.get_supported_extensions()
+            ):
+                self.process_file(f)
+
+    def start(self):
+        self.logger.info("Starting parser service")
+        Config.INCOMING_DIR.mkdir(parents=True, exist_ok=True)
+        Config.ARCHIVED_DIR.mkdir(parents=True, exist_ok=True)
+        Config.QUARANTINE_DIR.mkdir(parents=True, exist_ok=True)
+
+        if not Config.PARSER_ENABLED:
+            self.logger.warning("Parser is disabled via configuration. Exiting.")
+            return
+
+        try:
+            self.db_writer.connect()
+        except Exception:
+            self.logger.exception("Unable to connect to DB at startup")
+
+        if Config.PROCESS_EXISTING_ON_STARTUP:
+            self.process_existing_files()
+
+        self.watcher = FileWatcher(
+            str(Config.INCOMING_DIR),
+            self.process_file,
+            self.registry.get_supported_extensions(),
+        )
+        self.watcher.start()
+
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            self.logger.info("Shutting down parser service")
+        finally:
+            if self.watcher:
+                self.watcher.stop()
+            self.db_writer.close()
 
 
-def write_cml_data_to_db(df):
-    # Ensure cml_id is stored as string
-    df = df.copy()
-    df["cml_id"] = df["cml_id"].astype(str)
-    _write_to_db(
-        df=df,
-        table_name="cml_data",
-        df_columns=["time", "cml_id", "sublink_id", "rsl", "tsl"],
-        table_columns=["time", "cml_id", "sublink_id", "rsl", "tsl"],
-    )
-
-
-def write_cml_metadata_to_db(df):
-    # Ensure cml_id is stored as string
-    df = df.copy()
-    df["cml_id"] = df["cml_id"].astype(str)
-    _write_to_db(
-        df=df,
-        table_name="cml_metadata",
-        df_columns=["cml_id", "site_0_lon", "site_0_lat", "site_1_lon", "site_1_lat"],
-        table_columns=[
-            "cml_id",
-            "site_0_lon",
-            "site_0_lat",
-            "site_1_lon",
-            "site_1_lat",
-        ],
-    )
-
-
-def _create_dummy_data():
-    import pandas as pd
-    import numpy as np
-    from datetime import datetime, timedelta
-
-    # Create dummy data
-    cml_ids = [f"cml_{i:03d}" for i in range(1, 11)]
-    timestamps = pd.date_range(
-        start=datetime.now() - timedelta(hours=1), periods=60, freq="min"
-    )
-
-    # Create a list to hold the DataFrames for each sensor_id
-    dfs = []
-
-    # Loop through each sensor_id and create a DataFrame for it
-    for i, cml_id in enumerate(cml_ids):
-        df = pd.DataFrame(index=timestamps)
-        df["rsl"] = np.random.randn(len(df.index)) + i
-        df["tsl"] = np.random.randn(len(df.index)) + i
-        df["cml_id"] = cml_id
-        dfs.append(df)
-
-    # Concatenate the DataFrames into one long DataFrame
-    df = pd.concat(dfs)
-
-    df = df.reset_index(names="time")
-
-    return df
+def main():
+    svc = ParserService()
+    svc.start()
 
 
 if __name__ == "__main__":
-    # Currently required so that the DB container is ready before we start parsing
-    time.sleep(5)
-    import xarray as xr
-
-    ds = xr.open_dataset("openMRG_cmls_20150827_12hours.nc")
-    df = get_dataframe_from_cml_dataset(ds)
-    df_metadata = get_metadata_dataframe_from_cml_dataset(ds.isel(sublink_id=0))
-    write_cml_data_to_db(df.head(10000))
-    write_cml_metadata_to_db(df_metadata)
+    main()
