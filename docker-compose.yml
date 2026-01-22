@@ -25,6 +25,13 @@ services:
       - database
     environment:
       - DATABASE_URL=postgresql://myuser:mypassword@database:5432/mydatabase
+      - PARSER_ENABLED=true
+      - PROCESS_EXISTING_ON_STARTUP=true
+      - LOG_LEVEL=INFO
+    volumes:
+      - sftp_uploads:/app/data/incoming:ro
+      - parser_archived:/app/data/archived
+      - parser_quarantine:/app/data/quarantine
 
 
   metadata_processor:
@@ -150,4 +157,6 @@ volumes:
   grafana_data:
   mno_data_to_upload:
   mno_data_uploaded:
+  parser_archived:
+  parser_quarantine:
   # minio_data:  # Uncomment if using MinIO
