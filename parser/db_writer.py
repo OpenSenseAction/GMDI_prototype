@@ -32,11 +32,37 @@ class DBWriter:
         self.connect_timeout = connect_timeout
         self.conn: Optional[psycopg2.extensions.connection] = None
 
+        # Retry configuration
+        self.max_retries = 3
+        self.retry_backoff_seconds = 2
+
     def connect(self) -> None:
         if self.conn:
             return
-        logger.debug("Connecting to database")
-        self.conn = psycopg2.connect(self.db_url, connect_timeout=self.connect_timeout)
+
+        logger.debug("Connecting to database with retries")
+        attempt = 0
+        last_exc = None
+        while attempt < self.max_retries:
+            try:
+                self.conn = psycopg2.connect(self.db_url, connect_timeout=self.connect_timeout)
+                logger.debug("Database connection established")
+                return
+            except Exception as e:
+                last_exc = e
+                attempt += 1
+                logger.warning("Database connection attempt %d/%d failed: %s", attempt, self.max_retries, e)
+                if attempt < self.max_retries:
+                    sleep_time = self.retry_backoff_seconds * (2 ** (attempt - 1))
+                    logger.debug("Sleeping %s seconds before retry", sleep_time)
+                    time_to_sleep = sleep_time
+                    import time
+
+                    time.sleep(time_to_sleep)
+
+        logger.exception("All database connection attempts failed")
+        # re-raise the last exception so callers can handle it
+        raise last_exc
 
     def is_connected(self) -> bool:
         return self.conn is not None and not self.conn.closed

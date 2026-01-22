@@ -24,12 +24,16 @@ class Config:
         "DATABASE_URL", "postgresql://myuser:mypassword@database:5432/mydatabase"
     )
     # Fallbacks to simple defaults; can be overridden via env vars at container level
-    INCOMING_DIR = Path("/app/data/incoming")
-    ARCHIVED_DIR = Path("/app/data/archived")
-    QUARANTINE_DIR = Path("/app/data/quarantine")
-    PARSER_ENABLED = True
-    PROCESS_EXISTING_ON_STARTUP = True
-    LOG_LEVEL = "INFO"
+    INCOMING_DIR = Path(os.getenv("PARSER_INCOMING_DIR", "/app/data/incoming"))
+    ARCHIVED_DIR = Path(os.getenv("PARSER_ARCHIVED_DIR", "/app/data/archived"))
+    QUARANTINE_DIR = Path(os.getenv("PARSER_QUARANTINE_DIR", "/app/data/quarantine"))
+
+    def _env_bool(key: str, default: bool) -> bool:
+        return os.getenv(key, str(default)).lower() in ("1", "true", "yes")
+
+    PARSER_ENABLED = _env_bool("PARSER_ENABLED", True)
+    PROCESS_EXISTING_ON_STARTUP = _env_bool("PROCESS_EXISTING_ON_STARTUP", True)
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 
 def setup_logging():

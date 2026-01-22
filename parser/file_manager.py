@@ -81,7 +81,14 @@ class FileManager:
 
         # Create an error metadata file containing the reason
         note_path = self.quarantine_dir / (dest.name + ".error.txt")
-        note_contents = f"Quarantined at: {datetime.datetime.utcnow().isoformat()}Z\nError: {error}\nOriginalPath: {filepath}\n"
+        # Use timezone-aware UTC timestamp instead of deprecated utcnow()
+        try:
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        except Exception:
+            # Fallback to naive UTC if timezone is unavailable
+            now = datetime.datetime.utcnow().isoformat() + "Z"
+
+        note_contents = f"Quarantined at: {now}\nError: {error}\nOriginalPath: {filepath}\n"
         try:
             note_path.write_text(note_contents)
         except Exception:
