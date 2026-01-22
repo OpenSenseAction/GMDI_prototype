@@ -1,7 +1,7 @@
 from pathlib import Path
 import os
 
-from parser.file_manager import FileManager
+from ..file_manager import FileManager
 
 
 def test_archive_and_quarantine(tmp_path):

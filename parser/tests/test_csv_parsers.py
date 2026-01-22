@@ -1,8 +1,8 @@
 import pandas as pd
 from pathlib import Path
 
-from parser.parsers.csv_rawdata_parser import CSVRawDataParser
-from parser.parsers.csv_metadata_parser import CSVMetadataParser
+from ..parsers.csv_rawdata_parser import CSVRawDataParser
+from ..parsers.csv_metadata_parser import CSVMetadataParser
 
 
 def test_csv_rawdata_parser_valid(tmp_path):
