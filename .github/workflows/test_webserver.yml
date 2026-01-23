@@ -3,13 +3,8 @@ name: Webserver Tests
 on:
   push:
     branches: [ main ]
-    paths:
-      - 'webserver/**'
-      - '.github/workflows/test_webserver.yml'
   pull_request:
     branches: [ main ]
-    paths:
-      - 'webserver/**'
 
 jobs:
   test:

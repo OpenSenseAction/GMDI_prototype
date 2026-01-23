@@ -3,13 +3,8 @@ name: MNO Simulator Tests
 on:
   push:
     branches: [ main ]
-    paths:
-      - 'mno_data_source_simulator/**'
-      - '.github/workflows/test_mno_data_source_simulator.yml'
   pull_request:
     branches: [ main ]
-    paths:
-      - 'mno_data_source_simulator/**'
 
 jobs:
   unit-tests:

@@ -3,13 +3,8 @@ name: Parser Unit Tests
 on:
   push:
     branches: [ main ]
-    paths:
-      - 'parser/**'
-      - '.github/workflows/test_parser.yml'
   pull_request:
     branches: [ main ]
-    paths:
-      - 'parser/**'
 
 jobs:
   unit-tests:
