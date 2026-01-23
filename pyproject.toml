@@ -12,11 +12,19 @@ addopts = """
     --strict-markers
     --tb=short
 """
-timeout = 120
+# timeout option removed to avoid PytestConfigWarning when pytest-timeout
+# plugin is not installed in certain CI environments. Install
+# `pytest-timeout` if you need per-test timeouts.
 
 [tool.coverage.run]
 source = ["tests"]
-omit = ["*/venv/*", "*/__pycache__/*", "*/virtualenv/*"]
+omit = [
+    "*/venv/*",
+    "*/__pycache__/*",
+    "*/virtualenv/*",
+    "*/tests/*",
+    "*/test_*.py",
+]
 
 [tool.coverage.report]
 exclude_lines = [

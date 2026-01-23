@@ -6,6 +6,8 @@ COPY requirements.txt ./
 COPY example_data/openMRG_cmls_20150827_12hours.nc ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY . ./parser
 
-CMD ["python", "main.py"]
+ENV PYTHONPATH=/app
+
+CMD ["python", "-m", "parser.main"]

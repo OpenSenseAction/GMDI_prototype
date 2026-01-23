@@ -9,6 +9,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from datetime import datetime, timedelta
 import yaml
 
 from data_generator import CMLDataGenerator
@@ -114,13 +115,45 @@ def main():
     upload_frequency = config["sftp"]["upload_frequency_seconds"]
     last_upload_time = time.time()
 
+    # Get generation configuration
+    timestamps_per_file = config["generator"].get("timestamps_per_file", 1)
+    time_resolution_seconds = config["generator"].get("time_resolution_seconds", 60)
+
+    # Generate metadata file at startup (metadata is static)
+    try:
+        metadata_file = generator.write_metadata_csv()
+        logger.info(f"Generated metadata file: {metadata_file}")
+
+        # If SFTP uploader is available, upload the metadata file immediately
+        if sftp_uploader:
+            try:
+                uploaded_count = sftp_uploader.upload_pending_files()
+                if uploaded_count > 0:
+                    logger.info(f"Uploaded {uploaded_count} file(s) including metadata")
+                    last_upload_time = time.time()
+            except Exception as e:
+                logger.error(f"Failed to upload initial metadata: {e}")
+    except Exception as e:
+        logger.error(f"Failed to generate metadata file: {e}")
+
     try:
         logger.info("Entering main loop")
 
         while True:
             try:
+                # Generate timestamps for this cycle
+                current_time = datetime.now()
+                if timestamps_per_file > 1:
+                    # Generate multiple timestamps with specified resolution
+                    timestamps = [
+                        current_time + timedelta(seconds=i * time_resolution_seconds)
+                        for i in range(timestamps_per_file)
+                    ]
+                else:
+                    timestamps = None  # Will use current time
+
                 # Generate data and write to CSV file
-                csv_file = generator.generate_data_and_write_csv()
+                csv_file = generator.generate_data_and_write_csv(timestamps=timestamps)
                 logger.info(f"Generated CSV file: {csv_file}")
 
                 # Check if it's time to upload
