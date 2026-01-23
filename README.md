@@ -1,19 +1,20 @@
 This monorepo contains the following components:
-1. **Data Parser** - Extracts CML measurements from NetCDF datasets
-2. **Metadata Processor** - Handles CML network metadata
-3. **Database** - TimescaleDB for storing time series data and metadata
-4. **Data Processor** - Analyzes and processes stored data
-5. **Webserver** - Main user-facing web application with three pages
-6. **Visualization** - Low-level visualization and analysis tools (Leaflet)
-7. **MNO Data Source Simulator** - Simulates real-time CML data from MNO sources via SFTP
+1. **Data Parser** - Parses CML data and metadata CSV files from SFTP uploads into the database
+2. **Database** - TimescaleDB for storing time series data and metadata
+3. **Data Processor** - **(Stub implementation)** Placeholder for future data analysis and processing logic
+4. **Webserver** - Main user-facing web application with interactive visualizations
+5. **Grafana** - Real-time dashboards for CML data visualization
+6. **MNO Data Source Simulator** - Simulates real-time CML data from MNO sources via SFTP
+7. **SFTP Receiver** - Receives uploaded CML data files
 
 ## Webserver Pages
 
-The webserver provides an intuitive interface with three main pages:
+The webserver provides an intuitive interface with four main pages:
 
 - **Landing Page** (`/`) - System overview with data statistics and processing status
-- **Real-Time Data** (`/realtime`) - Interactive CML network map and live time series plots
+- **Real-Time Data** (`/realtime`) - Interactive CML network map with Grafana-embedded time series plots
 - **Archive** (`/archive`) - Long-term archive statistics and data distribution analysis
+- **Data Uploads** (`/data-uploads`) - File upload interface for CML data files
 
 ## Getting Started
 
@@ -44,21 +45,19 @@ The webserver provides an intuitive interface with three main pages:
 4. Access the services:
    
    - **Webserver (Main UI)**: http://localhost:5000
-   - **Metadata Parser**: http://localhost:5001
-   - **Processor**: http://localhost:5002
-   - **Visualization Tools**: http://localhost:5003
-   - **Parser**: http://localhost:5004
    - **Grafana Dashboards**: http://localhost:3000
    - **Database**: localhost:5432
    - **SFTP Server**: localhost:2222
+   
+   *Note: The processor service (port 5002) is currently a minimal stub implementation.*
 
 ## Data Flow
 
-1. **MNO Simulator** → generates fake CML data from NetCDF files
-2. **MNO Simulator** → uploads data via SFTP to **SFTP Receiver**
-3. **Webserver** → monitors SFTP uploads directory
-4. **Webserver** → processes and stores data in **Database**
-5. **Grafana** → visualizes real-time data from database
+1. **MNO Simulator** → generates CML data from NetCDF files and uploads via SFTP to **SFTP Receiver**
+2. **Parser** → watches SFTP upload directory and processes CSV files (both metadata and data)
+3. **Parser** → validates and writes parsed data to **Database** (TimescaleDB)
+4. **Webserver** → serves UI and provides API access to database
+5. **Grafana** → visualizes real-time data from database with embedded dashboards
 
 ## Storage Backend
 
