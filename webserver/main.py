@@ -101,7 +101,7 @@ def generate_cml_map():
 
         cur = conn.cursor()
         cur.execute(
-            "SELECT cml_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat FROM cml_metadata ORDER BY cml_id"
+            "SELECT DISTINCT ON (cml_id) cml_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat FROM cml_metadata ORDER BY cml_id"
         )
         data = cur.fetchall()
         cur.close()
@@ -264,7 +264,7 @@ def get_available_cmls():
             return []
 
         cur = conn.cursor()
-        cur.execute("SELECT cml_id FROM cml_metadata ORDER BY cml_id")
+        cur.execute("SELECT DISTINCT cml_id FROM cml_metadata ORDER BY cml_id")
         cmls = [row[0] for row in cur.fetchall()]
         cur.close()
         conn.close()
@@ -392,7 +392,7 @@ def api_cml_metadata():
 
         cur = conn.cursor()
         cur.execute(
-            "SELECT cml_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat FROM cml_metadata ORDER BY cml_id"
+            "SELECT DISTINCT ON (cml_id) cml_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat FROM cml_metadata ORDER BY cml_id"
         )
         data = cur.fetchall()
         cur.close()
@@ -424,7 +424,7 @@ def api_cml_map():
 
         cur = conn.cursor()
         cur.execute(
-            "SELECT cml_id::text, site_0_lon, site_0_lat, site_1_lon, site_1_lat FROM cml_metadata ORDER BY cml_id"
+            "SELECT DISTINCT ON (cml_id) cml_id::text, site_0_lon, site_0_lat, site_1_lon, site_1_lat FROM cml_metadata ORDER BY cml_id"
         )
         data = cur.fetchall()
         cur.close()

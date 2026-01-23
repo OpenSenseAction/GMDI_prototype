@@ -54,7 +54,7 @@ echo "=== Step 4: Wait for services to be ready ==="
 
 echo "Waiting for database..."
 for i in {1..60}; do
-    if docker compose exec -T database pg_isready -U postgres >/dev/null 2>&1; then
+    if docker compose exec -T database pg_isready -U myuser >/dev/null 2>&1; then
         break
     fi
     sleep 1
