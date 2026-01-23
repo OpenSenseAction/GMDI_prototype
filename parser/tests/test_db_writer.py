@@ -91,11 +91,24 @@ def test_write_metadata_empty_dataframe(mock_connection):
 
 
 def test_write_metadata_not_connected():
-    """Test write_metadata raises error when not connected."""
+    """Test write_metadata attempts reconnection when not connected."""
     writer = DBWriter("postgresql://test")
-    df = pd.DataFrame({"cml_id": ["123"], "site_0_lon": [13.4]})
+    df = pd.DataFrame(
+        {
+            "cml_id": ["123"],
+            "sublink_id": ["A"],
+            "site_0_lon": [13.4],
+            "site_0_lat": [52.5],
+            "site_1_lon": [13.5],
+            "site_1_lat": [52.6],
+            "frequency": [20.0],
+            "polarization": ["H"],
+            "length": [1.5],
+        }
+    )
 
-    with pytest.raises(RuntimeError, match="Not connected"):
+    # Should attempt to connect but fail with bad URL
+    with pytest.raises(psycopg2.OperationalError):
         writer.write_metadata(df)
 
 

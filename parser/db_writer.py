@@ -8,13 +8,16 @@ This module is intentionally minimal and logs errors rather than
 exiting the process so the caller can decide how to handle failures.
 """
 
-from typing import List, Tuple, Optional, Set
+from typing import List, Tuple, Optional, Set, Callable, TypeVar
 import time
+import functools
 import psycopg2
 import psycopg2.extras
 import logging
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 
 class DBWriter:
@@ -116,6 +119,76 @@ class DBWriter:
         missing = sorted(list(cml_pairs - existing))
         return (len(missing) == 0, missing)
 
+    def _ensure_connected(self) -> None:
+        """Ensure database connection is active, reconnecting if necessary."""
+        if not self.is_connected():
+            logger.warning("Database connection lost, attempting to reconnect...")
+            self.conn = None  # Clear stale connection
+            self.connect()
+
+    def _with_connection_retry(self, func: Callable[[], T]) -> T:
+        """Execute a database operation with automatic reconnection on connection loss.
+
+        Args:
+            func: A callable that performs the database operation
+
+        Returns:
+            The result of the function call
+
+        Raises:
+            The exception from the function if it's not a connection error,
+            or after retry fails
+        """
+        self._ensure_connected()
+
+        try:
+            return func()
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            # Connection lost - try to reconnect and retry once
+            logger.warning(
+                "Database connection lost during operation, reconnecting: %s", e
+            )
+            try:
+                if self.conn:
+                    self.conn.rollback()
+            except Exception:
+                pass  # Connection already closed
+
+            # Reconnect and retry once
+            self.conn = None
+            self._ensure_connected()
+
+            # Retry the operation
+            return func()
+
+    def _execute_batch_insert(
+        self, sql: str, records: List[Tuple], operation_name: str
+    ) -> int:
+        """Execute a batch insert operation with proper error handling.
+
+        Args:
+            sql: The SQL INSERT statement
+            records: List of tuples to insert
+            operation_name: Name of the operation for error logging
+
+        Returns:
+            Number of records inserted
+        """
+        cur = self.conn.cursor()
+        try:
+            psycopg2.extras.execute_values(
+                cur, sql, records, template=None, page_size=1000
+            )
+            self.conn.commit()
+            return len(records)
+        except Exception:
+            self.conn.rollback()
+            logger.exception("Failed to %s", operation_name)
+            raise
+        finally:
+            if cur and not cur.closed:
+                cur.close()
+
     def write_metadata(self, df) -> int:
         """Write metadata DataFrame to `cml_metadata`.
 
@@ -124,9 +197,6 @@ class DBWriter:
         """
         if df is None or df.empty:
             return 0
-
-        if not self.is_connected():
-            raise RuntimeError("Not connected to database")
 
         # Convert DataFrame to list of tuples
         cols = [
@@ -159,19 +229,11 @@ class DBWriter:
             "length = EXCLUDED.length"
         )
 
-        cur = self.conn.cursor()
-        try:
-            psycopg2.extras.execute_values(
-                cur, sql, records, template=None, page_size=1000
+        return self._with_connection_retry(
+            lambda: self._execute_batch_insert(
+                sql, records, "write metadata to database"
             )
-            self.conn.commit()
-            return len(records)
-        except Exception:
-            self.conn.rollback()
-            logger.exception("Failed to write metadata to database")
-            raise
-        finally:
-            cur.close()
+        )
 
     def write_rawdata(self, df) -> int:
         """Write raw time series DataFrame to `cml_data`.
@@ -181,9 +243,6 @@ class DBWriter:
         """
         if df is None or df.empty:
             return 0
-
-        if not self.is_connected():
-            raise RuntimeError("Not connected to database")
 
         # Convert DataFrame to list of tuples
         cols = ["time", "cml_id", "sublink_id", "rsl", "tsl"]
@@ -196,16 +255,8 @@ class DBWriter:
 
         sql = "INSERT INTO cml_data (time, cml_id, sublink_id, rsl, tsl) VALUES %s"
 
-        cur = self.conn.cursor()
-        try:
-            psycopg2.extras.execute_values(
-                cur, sql, records, template=None, page_size=1000
+        return self._with_connection_retry(
+            lambda: self._execute_batch_insert(
+                sql, records, "write raw data to database"
             )
-            self.conn.commit()
-            return len(records)
-        except Exception:
-            self.conn.rollback()
-            logger.exception("Failed to write raw data to database")
-            raise
-        finally:
-            cur.close()
+        )
