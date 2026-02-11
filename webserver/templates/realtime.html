@@ -5,136 +5,89 @@
 {% block extra_css %}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
-    #cml-map {
+    /* Full-screen layout below navbar */
+    html,
+    body {
+        height: 100vh;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+    }
+
+    main {
+        padding: 0 !important;
+        margin: 0 !important;
+        min-height: calc(100vh - 60px);
+        position: relative;
+    }
+
+    main .container {
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        min-height: calc(100vh - 60px);
         width: 100%;
-        aspect-ratio: 1 / 1;
-        height: auto;
-        border-radius: 0.5rem;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        margin-bottom: 1rem;
+    }
+
+    footer {
+        display: none !important;
+    }
+
+    .realtime-wrapper {
+        width: 100%;
+        min-height: calc(100vh - 60px);
+        display: flex;
+        flex-direction: column;
+        position: relative;
+    }
+
+    .map-container {
+        flex: 1;
+        min-height: 0;
+        position: relative;
+        width: 100%;
+    }
+
+    #cml-map {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: 100%;
+        height: 100%;
+    }
+
+    .chart-container {
+        height: 500px;
+        flex-shrink: 0;
+        position: relative;
+        width: 100%;
     }
 
     .grafana-container {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        border: none;
         width: 100%;
         height: 100%;
-        min-height: 300px;
-        border: none;
-        border-radius: 0.5rem;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    }
-
-    .map-info {
-        background-color: #f0f7ff;
-        border-left: 4px solid #0066cc;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin-bottom: 1rem;
-        display: none;
-    }
-
-    .map-info.active {
-        display: block;
-    }
-
-    .selected-cml-badge {
-        display: inline-block;
-        background-color: #0066cc;
-        color: white;
-        padding: 0.25rem 0.75rem;
-        border-radius: 1rem;
-        font-weight: 600;
-        margin-left: 0.5rem;
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-    <!-- Header -->
-    <section class="mb-5 pb-4 border-bottom">
-        <h1 class="mb-2">
-            <i class="fas fa-globe"></i> Real-Time Data Visualization
-        </h1>
-        <p class="text-secondary mb-0">Live CML network time series measurements</p>
-    </section>
-
-    <!-- CML Network Map + Time Series side-by-side -->
-    <section class="mb-5">
-        <div class="row gx-4">
-            <div class="col-12 col-lg-3">
-                <h2 class="mb-3">
-                    <i class="fas fa-map"></i> CML Network Map
-                </h2>
-
-                <div class="mb-3">
-                    <label for="coloringOption" class="form-label">Color CML lines by:</label>
-                    <select id="coloringOption" class="form-select">
-                        <option value="completeness" selected>Data Completeness</option>
-                        <option value="last_rsl">Last RSL Value</option>
-                        <option value="std_dev">RSL Std Dev (60min)</option>
-                    </select>
-                </div>
-
-                <p class="text-secondary mb-2">Click on a CML line to select it.</p>
-
-                <div class="map-info" id="mapInfo">
-                    <i class="fas fa-info-circle"></i>
-                    <strong>CML Selected:</strong>
-                    <span class="selected-cml-badge" id="selectedCmlBadge">-</span>
-                </div>
-
-                <div id="cml-map"></div>
-                <!-- Debug panel (visible) to help diagnose client-side loading issues -->
-                <div id="mapDebug"
-                    style="margin-top:0.5rem;padding:0.5rem;background:#fffbe6;border:1px solid #f5e0a8;border-radius:6px;font-size:0.9rem;color:#333;">
-                    <strong>Debug:</strong>
-                    <span id="debugStats">stats=N/A</span>
-                    &nbsp;|&nbsp;
-                    <span id="debugMap">mapData=N/A</span>
-                    &nbsp;|&nbsp;
-                    <span id="debugError">lastError=none</span>
-                </div>
-            </div>
-
-            <div class="col-12 col-lg-9 d-flex flex-column">
-                <h2 class="mb-3">
-                    <i class="fas fa-chart-line"></i> Time Series Data
-                </h2>
-                <p class="text-secondary mb-3">Click on a CML line in the map to select it and view its received signal
-                    level (RSL) measurements. The time series panel updates automatically.</p>
-
-                <div class="d-flex align-items-center mb-2" style="gap:0.75rem;">
-                    <p class="text-secondary mb-0">Use the time picker in the Grafana panel below to navigate to
-                        available data.</p>
-                    <button id="jumpToDataBtn" class="btn btn-sm btn-primary">
-                        <i class="fas fa-fast-forward"></i> Jump to Latest Data
-                    </button>
-                </div>
-
-                <div class="flex-grow-1 d-flex">
-                    <iframe class="grafana-container flex-fill" id="grafana-panel"
-                        src="http://localhost:3000/d/cml-realtime/cml-real-time-data?orgId=1&var-cml_id=10001&refresh=10s&theme=light&from=now-1h&to=now&viewPanel=2&kiosk"
-                        allowfullscreen style="border:0;"></iframe>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Info -->
-    <section class="mb-5">
-        <h2 class="mb-3">
-            <i class="fas fa-info-circle"></i> About This View
-        </h2>
-        <div class="card">
-            <div class="card-body">
-                <p class="text-secondary mb-0">
-                    Click on any CML line in the network map to select it and view its received signal level (RSL)
-                    measurements.
-                    The time series panel updates automatically. The dashboard refreshes every 10 seconds.
-                </p>
-            </div>
-        </div>
-    </section>
+<div class="realtime-wrapper">
+    <div class="map-container">
+        <div id="cml-map"></div>
+    </div>
+    <div class="chart-container">
+        <iframe class="grafana-container" id="grafana-panel"
+            src="http://localhost:3000/d/cml-realtime/cml-real-time-data?orgId=1&var-cml_id=10001&refresh=10s&theme=light&from=now-7d&to=now&viewPanel=2&kiosk"
+            allowfullscreen></iframe>
+    </div>
 </div>
 {% endblock %}
 
@@ -361,7 +314,7 @@
             'var-cml_id=' + encodeURIComponent(cmlId),
             'refresh=10s',
             'theme=light',
-            'from=now-1h',
+            'from=now-7d',
             'to=now',
             'viewPanel=2',
             'kiosk'
@@ -372,71 +325,6 @@
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', function () {
         initializeMap();
-
-        // Add event listener for Jump to Latest Data button
-        var jumpBtn = document.getElementById('jumpToDataBtn');
-        if (jumpBtn) {
-            jumpBtn.addEventListener('click', function () {
-                // Fetch the actual data time range from the database
-                fetch('/api/data-time-range')
-                    .then(function (response) { return response.json(); })
-                    .then(function (data) {
-                        if (data.earliest && data.latest) {
-                            var grafanaPanel = document.getElementById('grafana-panel');
-                            var base = 'http://localhost:3000/d/cml-realtime/cml-real-time-data';
-                            // Convert ISO strings to Unix timestamps in milliseconds
-                            var fromTimestamp = new Date(data.earliest).getTime();
-                            var toTimestamp = new Date(data.latest).getTime();
-                            var params = [
-                                'orgId=1',
-                                'var-cml_id=' + encodeURIComponent(selectedCmlId),
-                                'refresh=10s',
-                                'theme=light',
-                                'from=' + fromTimestamp,
-                                'to=' + toTimestamp,
-                                'viewPanel=2',
-                                'kiosk'
-                            ];
-                            grafanaPanel.src = base + '?' + params.join('&');
-                        } else {
-                            console.warn('No data time range available');
-                        }
-                    })
-                    .catch(function (error) {
-                        console.error('Error fetching data time range:', error);
-                    });
-            });
-        }
-
-        // Sync iframe height to the square map element so both columns match
-        function syncIframeHeight() {
-            try {
-                var mapEl = document.getElementById('cml-map');
-                var iframe = document.getElementById('grafana-panel');
-                if (mapEl && iframe) {
-                    // offsetHeight works after layout; give a small delay for map tiles
-                    setTimeout(function () {
-                        iframe.style.height = mapEl.offsetHeight + 'px';
-                    }, 150);
-                }
-            } catch (e) {
-                console.warn('syncIframeHeight error', e);
-            }
-        }
-
-        // Call after initial draw and when window resizes
-        window.addEventListener('resize', syncIframeHeight);
-
-        // Also call when map data has been loaded (after drawing)
-        var origLoadCmlData = loadCmlData;
-        loadCmlData = function () {
-            var p = origLoadCmlData();
-            syncIframeHeight();
-            return p;
-        };
-
-        // Ensure height synced after initial load
-        setTimeout(syncIframeHeight, 500);
     });
 </script>
 {% endblock %}
