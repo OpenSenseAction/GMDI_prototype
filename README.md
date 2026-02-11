@@ -61,21 +61,67 @@ The webserver provides an intuitive interface with four main pages:
 
 ## Archive Data
 
-The repository includes sample archive data that is automatically loaded on first database startup:
-- **Real CML data** from NetCDF example file with synthetic timestamps
-- **728 CML sublinks** (364 unique CML IDs)
+The database can be initialized with archive CML data using two methods:
+
+### Method 1: CSV Files (Default, Fast)
+
+Pre-generated CSV files included in the repository:
+- **728 CML sublinks** (364 unique CML IDs) covering Berlin area
 - **~1.5M data rows** at 5-minute intervals over 7 days
-- **Gzip-compressed** CSV files (~7.6 MB total, included in repo)
-- Loaded via PostgreSQL COPY in ~3 seconds
+- **Gzip-compressed** (~7.6 MB total, included in repo)
+- **Loads in ~3 seconds** via PostgreSQL COPY
 
-Archive data files are located in `/database/archive_data/` and included in version control.
+Files are located in `/database/archive_data/` and loaded automatically on first database startup.
 
-To regenerate archive data with different parameters:
+### Method 2: Load from NetCDF (For Larger/Higher Resolution Archives)
+
+Load data directly from the full 3-month NetCDF archive with configurable time range:
+
+#### Default: 7 Days at 10-Second Resolution (~44M rows, ~5 minutes)
+
+```sh
+# Rebuild parser if needed
+docker compose build parser
+
+# Start database
+docker compose up -d database
+
+# Load last 7 days from NetCDF
+docker compose run --rm -e DB_HOST=database parser python /app/parser/parse_netcdf_archive.py
+```
+
+#### Custom Time Range
+
+Use `ARCHIVE_MAX_DAYS` to control how much data to load:
+
+```sh
+# Load last 14 days (~88M rows, ~10 minutes)
+docker compose run --rm -e DB_HOST=database -e ARCHIVE_MAX_DAYS=14 parser python /app/parser/parse_netcdf_archive.py
+
+# Load full 3 months (~579M rows, ~1 hour)
+docker compose run --rm -e DB_HOST=database -e ARCHIVE_MAX_DAYS=0 parser python /app/parser/parse_netcdf_archive.py
+```
+
+**Note**: Set `ARCHIVE_MAX_DAYS=0` to disable the time limit and load the entire dataset. Larger datasets require more database memory (recommend at least 4GB RAM for full 3-month archive).
+
+**Features**:
+- Auto-downloads 3-month NetCDF file (~209 MB) on first run
+- **10-second resolution** (vs 5-minute for CSV method)
+- **Automatic timestamp shifting** - data ends at current time
+- **Progress reporting** with batch-by-batch status (~155K rows/sec)
+- PostgreSQL COPY for maximum performance
+- Configurable time window to balance demo realism vs load time
+
+The NetCDF file is downloaded to `parser/example_data/openMRG_cmls_20150827_3months.nc` and gitignored.
+
+### Managing Archive Data
+
+To regenerate CSV archive data:
 ```sh
 python mno_data_source_simulator/generate_archive.py
 ```
 
-**Note:** Archive data is only loaded on fresh database initialization. To reload:
+To reload archive data (either method):
 ```sh
 docker compose down -v  # Remove volumes
 docker compose up -d    # Restart with fresh database
