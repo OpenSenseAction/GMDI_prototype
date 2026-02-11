@@ -137,6 +137,36 @@
         return '#0066cc';
     }
 
+    function buildPopupText(cmlId, stats) {
+        var popupText = '<strong>CML ' + cmlId + '</strong><br>';
+        if (stats) {
+            popupText += 'Completeness: ' + stats.completeness_percent + '%<br>';
+            popupText += 'Valid records: ' + stats.valid_records + '/' + stats.total_records + '<br>';
+            if (stats.last_rsl !== null) {
+                popupText += 'Last RSL: ' + stats.last_rsl + ' dBm<br>';
+            }
+            if (stats.stddev_last_60min !== null) {
+                popupText += 'Std Dev (60min): ' + stats.stddev_last_60min + '<br>';
+            }
+        }
+        return popupText;
+    }
+
+    function applyStatsToLine(cmlId, stats) {
+        var polyline = cmlLayers[cmlId];
+        if (!polyline) return;
+
+        polyline._stats = stats;
+        var color = getColor(stats, currentColoringOption);
+        polyline.setStyle({ color: color });
+
+        if (polyline.getPopup()) {
+            polyline.setPopupContent(buildPopupText(cmlId, stats));
+        } else {
+            polyline.bindPopup(buildPopupText(cmlId, stats));
+        }
+    }
+
     // Initialize map
     function initializeMap() {
         console.log('Initializing map...');
@@ -182,7 +212,10 @@
             });
             map.addControl(new ColorControl());
 
-            // Fetch stats first
+            // Start map rendering immediately
+            loadCmlData();
+
+            // Fetch stats in parallel and update colors/popups when ready
             console.log('Fetching CML stats...');
             try {
                 fetch('/api/cml-stats')
@@ -196,10 +229,10 @@
                         console.log('Received stats for ' + stats.length + ' CMLs');
                         stats.forEach(function (stat) {
                             cmlStats[stat.cml_id] = stat;
+                            applyStatsToLine(stat.cml_id, stat);
                         });
                         var el2 = document.getElementById('debugStats');
                         if (el2) el2.textContent = 'stats=ok:' + stats.length;
-                        loadCmlData();
                     })
                     .catch(function (error) {
                         console.error('Error loading stats:', error);
@@ -207,13 +240,11 @@
                         if (errEl) errEl.textContent = 'lastError=stats:' + (error && error.message ? error.message : String(error));
                         var el3 = document.getElementById('debugStats');
                         if (el3) el3.textContent = 'stats=error';
-                        loadCmlData(); // Try loading without stats
                     });
             } catch (e) {
                 console.error('Exception when fetching stats:', e);
                 var errEl = document.getElementById('debugError');
                 if (errEl) errEl.textContent = 'lastError=stats-ex:' + String(e);
-                loadCmlData();
             }
         } catch (e) {
             console.error('Error in initializeMap:', e);
@@ -286,19 +317,8 @@
         polyline._cmlId = cmlId;
         polyline._stats = stats;
 
-        // Create popup with stats
-        var popupText = '<strong>CML ' + cmlId + '</strong><br>';
-        if (stats) {
-            popupText += 'Completeness: ' + stats.completeness_percent + '%<br>';
-            popupText += 'Valid records: ' + stats.valid_records + '/' + stats.total_records + '<br>';
-            if (stats.last_rsl !== null) {
-                popupText += 'Last RSL: ' + stats.last_rsl + ' dBm<br>';
-            }
-            if (stats.stddev_last_60min !== null) {
-                popupText += 'Std Dev (60min): ' + stats.stddev_last_60min + '<br>';
-            }
-        }
-        polyline.bindPopup(popupText);
+        // Create popup with stats (or placeholder until stats arrive)
+        polyline.bindPopup(buildPopupText(cmlId, stats));
 
         // Add click handler
         polyline.on('click', function () {
