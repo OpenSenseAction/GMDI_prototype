@@ -59,6 +59,28 @@ The webserver provides an intuitive interface with four main pages:
 4. **Webserver** → serves UI and provides API access to database
 5. **Grafana** → visualizes real-time data from database with embedded dashboards
 
+## Archive Data
+
+The repository includes sample archive data that is automatically loaded on first database startup:
+- **Real CML data** from NetCDF example file with synthetic timestamps
+- **728 CML sublinks** (364 unique CML IDs)
+- **~1.5M data rows** at 5-minute intervals over 7 days
+- **Gzip-compressed** CSV files (~7.6 MB total, included in repo)
+- Loaded via PostgreSQL COPY in ~3 seconds
+
+Archive data files are located in `/database/archive_data/` and included in version control.
+
+To regenerate archive data with different parameters:
+```sh
+python mno_data_source_simulator/generate_archive.py
+```
+
+**Note:** Archive data is only loaded on fresh database initialization. To reload:
+```sh
+docker compose down -v  # Remove volumes
+docker compose up -d    # Restart with fresh database
+```
+
 ## Storage Backend
 
 The webserver supports multiple storage backends for received files:
