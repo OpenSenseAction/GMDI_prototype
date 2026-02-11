@@ -150,6 +150,38 @@
             }).addTo(map);
             console.log('Map created');
 
+            // Add custom control for CML coloring
+            var ColorControl = L.Control.extend({
+                options: {
+                    position: 'topright'
+                },
+                onAdd: function (map) {
+                    var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-custom');
+                    container.style.backgroundColor = 'white';
+                    container.style.padding = '10px';
+                    container.style.fontSize = '14px';
+
+                    var label = L.DomUtil.create('div', '', container);
+                    label.innerHTML = '<strong>Color by:</strong>';
+                    label.style.marginBottom = '5px';
+
+                    var select = L.DomUtil.create('select', '', container);
+                    select.id = 'coloringOption';
+                    select.innerHTML = `
+                        <option value="completeness" selected>Data Completeness</option>
+                        <option value="last_rsl">Last RSL Value</option>
+                        <option value="std_dev">RSL Std Dev (60min)</option>
+                    `;
+
+                    // Prevent map interactions when using the select
+                    L.DomEvent.disableClickPropagation(container);
+                    L.DomEvent.disableScrollPropagation(container);
+
+                    return container;
+                }
+            });
+            map.addControl(new ColorControl());
+
             // Fetch stats first
             console.log('Fetching CML stats...');
             try {
@@ -301,10 +333,6 @@
     function selectCml(cmlId) {
         console.log('Selected CML: ' + cmlId);
         selectedCmlId = cmlId;
-
-        // Update badge
-        document.getElementById('selectedCmlBadge').textContent = cmlId;
-        document.getElementById('mapInfo').classList.add('active');
 
         // Update Grafana iframe URL with new CML ID
         var grafanaPanel = document.getElementById('grafana-panel');
