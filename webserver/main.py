@@ -6,7 +6,7 @@ import pandas as pd
 import folium
 import altair as alt
 import requests
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response, redirect
 from datetime import datetime, timedelta
 from pathlib import Path
 import uuid
@@ -351,35 +351,50 @@ def realtime():
     )
 
 
-@app.route("/grafana-dashboard")
-def grafana_dashboard():
-    """Proxy to Grafana dashboard solo panel"""
-    try:
-        # Proxy a request to the full Grafana dashboard (not d-solo) so the timepicker is available.
-        # Forward query params from the incoming request to Grafana.
-        base = "http://grafana:3000/d/cml-realtime/cml-real-time-data"
-        params = request.args.to_dict(flat=True)
-        # Ensure a theme is provided (default to light)
-        params.setdefault("theme", "light")
-        params.setdefault("orgId", "1")
+@app.route("/grafana")
+def grafana_root_redirect():
+    """Redirect /grafana to /grafana/ for proper subpath routing."""
+    return redirect("/grafana/", code=302)
 
-        # Build Grafana URL
-        from urllib.parse import urlencode
 
-        grafana_url = base + "?" + urlencode(params)
+@app.route(
+    "/grafana/",
+    defaults={"path": ""},
+    methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+)
+@app.route(
+    "/grafana/<path:path>", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+)
+def grafana_proxy(path):
+    """Proxy all requests to Grafana container."""
+    grafana_url = f"http://grafana:3000/grafana/{path}"
+    method = request.method
+    headers = {key: value for key, value in request.headers if key.lower() != "host"}
+    data = request.get_data()
+    params = request.args
 
-        resp = requests.get(grafana_url, timeout=10)
-        resp.raise_for_status()
+    resp = requests.request(
+        method,
+        grafana_url,
+        headers=headers,
+        params=params,
+        data=data,
+        cookies=request.cookies,
+        allow_redirects=False,
+    )
 
-        content = resp.text
-
-        # Return response with header allowing embedding
-        response = app.response_class(content, mimetype="text/html")
-        response.headers["X-Frame-Options"] = "ALLOWALL"
-        return response
-    except Exception as e:
-        print(f"Error proxying Grafana dashboard: {e}")
-        return f"<div style='padding: 2rem; color: red;'>Error loading Grafana dashboard: {e}</div>"
+    excluded_headers = [
+        "content-encoding",
+        "content-length",
+        "transfer-encoding",
+        "connection",
+    ]
+    response_headers = [
+        (name, value)
+        for name, value in resp.headers.items()
+        if name.lower() not in excluded_headers
+    ]
+    return Response(resp.content, resp.status_code, response_headers)
 
 
 @app.route("/api/cml-metadata")
