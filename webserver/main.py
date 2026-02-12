@@ -18,9 +18,15 @@ DATA_INCOMING_DIR = "/app/data_incoming"
 DATA_STAGED_FOR_PARSING_DIR = "/app/data_staged_for_parsing"
 DATA_ARCHIVED_DIR = "/app/data_archived"
 
-# Create directories if they don't exist
-for directory in [DATA_INCOMING_DIR, DATA_STAGED_FOR_PARSING_DIR, DATA_ARCHIVED_DIR]:
-    Path(directory).mkdir(parents=True, exist_ok=True)
+
+def ensure_data_directories():
+    """Create data directories if they don't exist."""
+    for directory in [
+        DATA_INCOMING_DIR,
+        DATA_STAGED_FOR_PARSING_DIR,
+        DATA_ARCHIVED_DIR,
+    ]:
+        Path(directory).mkdir(parents=True, exist_ok=True)
 
 
 def safe_float(value):
@@ -801,6 +807,8 @@ def server_error(error):
 # ==================== START SERVER ====================
 
 if __name__ == "__main__":
+    # Create data directories
+    ensure_data_directories()
     # Wait for database to be ready
     time.sleep(10)
     app.run(host="0.0.0.0", port=5000, debug=True)
