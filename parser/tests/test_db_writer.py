@@ -234,3 +234,86 @@ def test_close_already_closed():
 
     writer.close()  # Should not raise
     assert writer.conn is None
+
+
+def test_write_rawdata_execute_values_failure_triggers_rollback(mock_connection):
+    """When execute_values raises, write_rawdata should rollback and propagate."""
+    writer = DBWriter("postgresql://test")
+    writer.conn = mock_connection
+
+    df = pd.DataFrame(
+        {
+            "time": pd.to_datetime(["2026-01-22 10:00:00"]),
+            "cml_id": ["123"],
+            "sublink_id": ["A"],
+            "rsl": [-45.0],
+            "tsl": [1.0],
+        }
+    )
+
+    with patch(
+        "parser.db_writer.psycopg2.extras.execute_values",
+        side_effect=Exception("DB error"),
+    ):
+        with pytest.raises(Exception, match="DB error"):
+            writer.write_rawdata(df)
+
+    # rollback should have been called by the error handler
+    mock_connection.rollback.assert_called()
+
+
+def test_write_metadata_execute_values_failure_triggers_rollback(mock_connection):
+    """When execute_values raises during metadata write, rollback is performed."""
+    writer = DBWriter("postgresql://test")
+    writer.conn = mock_connection
+
+    df = pd.DataFrame(
+        {
+            "cml_id": ["123"],
+            "sublink_id": ["A"],
+            "site_0_lon": [13.4],
+            "site_0_lat": [52.5],
+            "site_1_lon": [13.6],
+            "site_1_lat": [52.7],
+            "frequency": [38.0],
+            "polarization": ["H"],
+            "length": [1200.0],
+        }
+    )
+
+    with patch(
+        "parser.db_writer.psycopg2.extras.execute_values",
+        side_effect=Exception("meta error"),
+    ):
+        with pytest.raises(Exception, match="meta error"):
+            writer.write_metadata(df)
+
+    mock_connection.rollback.assert_called()
+
+
+def test__update_stats_for_cmls_executes_queries_without_commit(mock_connection):
+    """Ensure _update_stats_for_cmls executes update function per CML and does not commit."""
+    writer = DBWriter("postgresql://test")
+    writer.conn = mock_connection
+
+    cml_ids = ["100", "200"]
+    writer._update_stats_for_cmls(cml_ids)
+
+    cur = mock_connection.cursor.return_value
+    assert cur.execute.call_count == len(cml_ids)
+    # commit should not be called by the helper
+    mock_connection.commit.assert_not_called()
+
+
+def test__update_stats_for_cmls_rollback_on_error(mock_connection):
+    """If executing update function raises, ensure rollback is attempted and exception propagated."""
+    writer = DBWriter("postgresql://test")
+    writer.conn = mock_connection
+
+    cur = mock_connection.cursor.return_value
+    cur.execute.side_effect = Exception("update failed")
+
+    with pytest.raises(Exception, match="update failed"):
+        writer._update_stats_for_cmls(["100"])
+
+    mock_connection.rollback.assert_called()
