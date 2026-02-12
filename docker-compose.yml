@@ -40,6 +40,9 @@ services:
     build: ./database
     ports:
       - "5432:5432"
+    volumes:
+      - ./database/archive_data:/docker-entrypoint-initdb.d/archive_data:ro
+      - ./database/init_archive_data.sh:/docker-entrypoint-initdb.d/99-load-archive.sh:ro
 
   processor:
     build: ./processor

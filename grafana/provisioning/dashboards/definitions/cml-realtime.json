@@ -15,7 +15,7 @@
             }
         ]
     },
-    "editable": true,
+    "editable": false,
     "fiscalYearStartMonth": 0,
     "graphTooltip": 0,
     "id": 1,
@@ -156,7 +156,7 @@
                     },
                     "format": "time_series",
                     "rawQuery": true,
-                    "rawSql": "SELECT\n  time AS \"time\",\n  sublink_id AS \"metric\",\n  rsl AS \"value\"\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nORDER BY \"time\" ASC",
+                    "rawSql": "SELECT\n  time AS \"time\",\n  sublink_id AS \"metric\",\n  rsl AS \"value\"\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND '${aggregation}' = 'RAW'\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nUNION ALL\nSELECT\n  time_bucket((CASE WHEN '${interval}' = 'auto' THEN (${__interval_ms} || ' milliseconds') ELSE '${interval}' END)::interval, time) AS \"time\",\n  sublink_id AS \"metric\",\n  CASE\n    WHEN '${aggregation}' = 'MEDIAN' THEN PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY rsl)\n    WHEN '${aggregation}' = 'AVG' THEN AVG(rsl)\n    WHEN '${aggregation}' = 'MIN' THEN MIN(rsl)\n    WHEN '${aggregation}' = 'MAX' THEN MAX(rsl)\n    WHEN '${aggregation}' = 'STDDEV' THEN STDDEV(rsl)\n  END AS \"value\"\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND '${aggregation}' <> 'RAW'\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nGROUP BY time_bucket((CASE WHEN '${interval}' = 'auto' THEN (${__interval_ms} || ' milliseconds') ELSE '${interval}' END)::interval, time), sublink_id\nORDER BY \"time\" ASC",
                     "refId": "A"
                 }
             ],
@@ -244,7 +244,7 @@
                     },
                     "format": "time_series",
                     "rawQuery": true,
-                    "rawSql": "SELECT\n  time AS \"time\",\n  sublink_id AS \"metric\",\n  tsl AS \"value\"\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nORDER BY \"time\" ASC",
+                    "rawSql": "SELECT\n  time AS \"time\",\n  sublink_id AS \"metric\",\n  tsl AS \"value\"\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND '${aggregation}' = 'RAW'\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nUNION ALL\nSELECT\n  time_bucket((CASE WHEN '${interval}' = 'auto' THEN (${__interval_ms} || ' milliseconds') ELSE '${interval}' END)::interval, time) AS \"time\",\n  sublink_id AS \"metric\",\n  CASE\n    WHEN '${aggregation}' = 'MEDIAN' THEN PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY tsl)\n    WHEN '${aggregation}' = 'AVG' THEN AVG(tsl)\n    WHEN '${aggregation}' = 'MIN' THEN MIN(tsl)\n    WHEN '${aggregation}' = 'MAX' THEN MAX(tsl)\n    WHEN '${aggregation}' = 'STDDEV' THEN STDDEV(tsl)\n  END AS \"value\"\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND '${aggregation}' <> 'RAW'\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nGROUP BY time_bucket((CASE WHEN '${interval}' = 'auto' THEN (${__interval_ms} || ' milliseconds') ELSE '${interval}' END)::interval, time), sublink_id\nORDER BY \"time\" ASC",
                     "refId": "A"
                 }
             ],
@@ -392,18 +392,121 @@
                 "query": "SELECT DISTINCT cml_id::text FROM cml_metadata ORDER BY cml_id",
                 "refresh": 1,
                 "regex": "",
-                "skipUrlSync": false,
+                "skipUrlSync": true,
                 "sort": 0,
                 "tagValuesQuery": "",
                 "tagsQuery": "",
                 "type": "query",
                 "useTags": false
+            },
+            {
+                "current": {
+                    "selected": true,
+                    "text": "1min",
+                    "value": "1 minute"
+                },
+                "description": "Time aggregation interval for downsampling data",
+                "hide": 0,
+                "includeAll": false,
+                "label": "Interval",
+                "multi": false,
+                "name": "interval",
+                "options": [
+                    {
+                        "selected": false,
+                        "text": "Auto",
+                        "value": "auto"
+                    },
+                    {
+                        "selected": true,
+                        "text": "1min",
+                        "value": "1 minute"
+                    },
+                    {
+                        "selected": false,
+                        "text": "5min",
+                        "value": "5 minutes"
+                    },
+                    {
+                        "selected": false,
+                        "text": "15min",
+                        "value": "15 minutes"
+                    },
+                    {
+                        "selected": false,
+                        "text": "1h",
+                        "value": "1 hour"
+                    },
+                    {
+                        "selected": false,
+                        "text": "6h",
+                        "value": "6 hours"
+                    },
+                    {
+                        "selected": false,
+                        "text": "1d",
+                        "value": "1 day"
+                    }
+                ],
+                "query": "Auto : auto,1min : 1 minute,5min : 5 minutes,15min : 15 minutes,1h : 1 hour,6h : 6 hours,1d : 1 day",
+                "queryValue": "",
+                "skipUrlSync": true,
+                "type": "custom"
+            },
+            {
+                "current": {
+                    "selected": true,
+                    "text": "Mean",
+                    "value": "AVG"
+                },
+                "description": "Aggregation function for downsampling",
+                "hide": 0,
+                "includeAll": false,
+                "label": "Aggregation",
+                "multi": false,
+                "name": "aggregation",
+                "options": [
+                    {
+                        "selected": true,
+                        "text": "Mean",
+                        "value": "AVG"
+                    },
+                    {
+                        "selected": false,
+                        "text": "Raw (no aggregation)",
+                        "value": "RAW"
+                    },
+                    {
+                        "selected": false,
+                        "text": "Min",
+                        "value": "MIN"
+                    },
+                    {
+                        "selected": false,
+                        "text": "Max",
+                        "value": "MAX"
+                    },
+                    {
+                        "selected": false,
+                        "text": "Median",
+                        "value": "MEDIAN"
+                    },
+                    {
+                        "selected": false,
+                        "text": "StdDev",
+                        "value": "STDDEV"
+                    }
+                ],
+                "query": "Mean : AVG,Raw (no aggregation) : RAW,Min : MIN,Max : MAX,Median : MEDIAN,StdDev : STDDEV",
+                "queryValue": "",
+                "skipUrlSync": true,
+                "type": "custom"
             }
         ]
     },
     "time": {
-        "from": "2015-08-27T00:00:00Z",
-        "to": "2015-08-27T00:30:00Z"
+        "from": "now-7d",
+        "to": "now"
     },
     "timepicker": {},
     "timezone": "",

@@ -6,6 +6,7 @@ ENV POSTGRES_USER=myuser
 ENV POSTGRES_PASSWORD=mypassword
 
 # Copy the initialization script to set up the database schema
-COPY init.sql /docker-entrypoint-initdb.d/
+# Files are executed in alphabetical order, so we prefix with numbers
+COPY init.sql /docker-entrypoint-initdb.d/01-init-schema.sql
 
 EXPOSE 5432
