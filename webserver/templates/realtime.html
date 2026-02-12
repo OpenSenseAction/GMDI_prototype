@@ -59,10 +59,33 @@
     }
 
     .chart-container {
-        height: 500px;
+        height: 400px;
         flex-shrink: 0;
         position: relative;
         width: 100%;
+        min-height: 200px;
+        max-height: 80vh;
+    }
+
+    .resizer {
+        height: 12px;
+        background: #ddd;
+        cursor: ns-resize;
+        position: relative;
+        z-index: 10;
+        border-top: 2px solid #bbb;
+        border-bottom: 2px solid #bbb;
+        margin: -2px 0;
+        /* Extend clickable area */
+        transition: background-color 0.2s ease;
+    }
+
+    .resizer:hover {
+        background: #aaa;
+    }
+
+    .resizer.active {
+        background: #888;
     }
 
     .grafana-container {
@@ -83,6 +106,7 @@
     <div class="map-container">
         <div id="cml-map"></div>
     </div>
+    <div class="resizer" id="resizer"></div>
     <div class="chart-container">
         <iframe class="grafana-container" id="grafana-panel"
             src="/grafana/d/cml-realtime/cml-real-time-data?orgId=1&var-cml_id=10001&refresh=10s&theme=light&from=now-7d&to=now&viewPanel=2&kiosk"
@@ -354,16 +378,14 @@
         console.log('Selected CML: ' + cmlId);
         selectedCmlId = cmlId;
 
-        // Update Grafana iframe URL with new CML ID
+        // Update Grafana iframe URL with new CML ID, preserving current time range
         var grafanaPanel = document.getElementById('grafana-panel');
-        var base = 'http://localhost:3000/d/cml-realtime/cml-real-time-data';
+        var base = '/grafana/d/cml-realtime/cml-real-time-data';
         var params = [
             'orgId=1',
             'var-cml_id=' + encodeURIComponent(cmlId),
             'refresh=10s',
             'theme=light',
-            'from=now-7d',
-            'to=now',
             'viewPanel=2',
             'kiosk'
         ];
@@ -373,6 +395,88 @@
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', function () {
         initializeMap();
+        initializeResizer();
     });
+
+    // Initialize resizer for chart height
+    function initializeResizer() {
+        const resizer = document.getElementById('resizer');
+        const chartContainer = document.querySelector('.chart-container');
+        let isResizing = false;
+        let startY;
+        let startHeight;
+        let lastHeight = 400; // Default height
+        let resizeTimeout;
+
+        function startResize(e) {
+            isResizing = true;
+            startY = e.clientY;
+            startHeight = chartContainer.offsetHeight;
+            lastHeight = startHeight;
+            resizer.classList.add('active');
+            document.body.style.cursor = 'ns-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+
+            // Set up failsafe timeout
+            if (resizeTimeout) clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                if (isResizing) {
+                    console.warn('Resize timeout - forcing stop');
+                    stopResize();
+                }
+            }, 10000); // 10 second failsafe
+        }
+
+        function doResize(e) {
+            if (!isResizing) return;
+
+            const deltaY = startY - e.clientY;
+            const newHeight = startHeight + deltaY;
+
+            // Constrain height between min and max
+            const minHeight = 200;
+            const maxHeight = window.innerHeight * 0.8;
+            const constrainedHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
+
+            // Only update if the change is significant (reduce sensitivity)
+            if (Math.abs(constrainedHeight - lastHeight) >= 1) {
+                chartContainer.style.height = constrainedHeight + 'px';
+                lastHeight = constrainedHeight;
+            }
+        }
+
+        function stopResize() {
+            if (isResizing) {
+                isResizing = false;
+                resizer.classList.remove('active');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                // Force reset cursor on html element too
+                document.documentElement.style.cursor = '';
+                // Clear failsafe timeout
+                if (resizeTimeout) {
+                    clearTimeout(resizeTimeout);
+                    resizeTimeout = null;
+                }
+            }
+        }
+
+        // Event listeners - use capture phase for more reliable event handling
+        resizer.addEventListener('mousedown', startResize, true);
+        window.addEventListener('mousemove', doResize, true);
+        window.addEventListener('mouseup', stopResize, true);
+
+        // Additional safety: handle mouse leaving window
+        window.addEventListener('mouseleave', stopResize, true);
+
+        // Failsafe: if resize gets stuck, allow clicking resizer to reset
+        resizer.addEventListener('click', function (e) {
+            if (isResizing) {
+                e.preventDefault();
+                stopResize();
+            }
+        });
+    }
 </script>
 {% endblock %}
