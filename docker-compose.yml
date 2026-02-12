@@ -70,7 +70,7 @@ services:
       - webserver_data_archived:/app/data/archived
 
   sftp_receiver:
-    image: atmoz/sftp:latest
+    build: ./sftp_receiver
     ports:
       - "2222:22"
     volumes:
@@ -78,8 +78,6 @@ services:
       - ./ssh_keys/sftp_host_ed25519_key:/etc/ssh/ssh_host_ed25519_key:ro
       - ./ssh_keys/sftp_host_rsa_key:/etc/ssh/ssh_host_rsa_key:ro
       - ./ssh_keys/authorized_keys:/home/cml_user/.ssh/keys/authorized_keys:ro
-      - ./sftp_receiver/entrypoint.sh:/custom-entrypoint.sh:ro
-    entrypoint: ["/custom-entrypoint.sh"]
     command: cml_user::1001:1001:uploads
 
   # Optional: MinIO for S3-compatible object storage (uncomment to use)
