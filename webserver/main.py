@@ -397,37 +397,6 @@ def grafana_proxy(path):
     return Response(resp.content, resp.status_code, response_headers)
 
 
-@app.route("/grafana-dashboard")
-def grafana_dashboard():
-    """Proxy to Grafana dashboard solo panel"""
-    try:
-        # Proxy a request to the full Grafana dashboard (not d-solo) so the timepicker is available.
-        # Forward query params from the incoming request to Grafana.
-        base = "http://grafana:3000/d/cml-realtime/cml-real-time-data"
-        params = request.args.to_dict(flat=True)
-        # Ensure a theme is provided (default to light)
-        params.setdefault("theme", "light")
-        params.setdefault("orgId", "1")
-
-        # Build Grafana URL
-        from urllib.parse import urlencode
-
-        grafana_url = base + "?" + urlencode(params)
-
-        resp = requests.get(grafana_url, timeout=10)
-        resp.raise_for_status()
-
-        content = resp.text
-
-        # Return response with header allowing embedding
-        response = app.response_class(content, mimetype="text/html")
-        response.headers["X-Frame-Options"] = "ALLOWALL"
-        return response
-    except Exception as e:
-        print(f"Error proxying Grafana dashboard: {e}")
-        return f"<div style='padding: 2rem; color: red;'>Error loading Grafana dashboard: {e}</div>"
-
-
 @app.route("/api/cml-metadata")
 def api_cml_metadata():
     """API endpoint for fetching CML metadata"""
