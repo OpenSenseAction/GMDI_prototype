@@ -76,7 +76,6 @@
         border-top: 2px solid #bbb;
         border-bottom: 2px solid #bbb;
         margin: -2px 0;
-        /* Extend clickable area */
         transition: background-color 0.2s ease;
     }
 
@@ -123,7 +122,6 @@
     let cmlStats = {};
     let selectedCmlId = '10001';
     let currentColoringOption = 'completeness';
-    let lastTimeRange = null; // Store last known time range from URL
 
     // Color functions for each option
     const colorFunctions = {
@@ -374,7 +372,7 @@
         }
     }
 
-    // Select CML and update interface
+    // Select CML and update Grafana dashboard
     function selectCml(cmlId) {
         console.log('Selected CML: ' + cmlId);
         selectedCmlId = cmlId;
@@ -382,42 +380,30 @@
         var grafanaPanel = document.getElementById('grafana-panel');
 
         try {
-            // Access the iframe's window
+            // Update iframe URL via pushState to avoid full reload
             var iframeWindow = grafanaPanel.contentWindow;
             var currentUrl = new URL(iframeWindow.location.href);
-
-            // Update only the cml_id parameter
             currentUrl.searchParams.set('var-cml_id', cmlId);
 
-            // Use history.pushState to update URL without reload
             iframeWindow.history.pushState(null, '', currentUrl.toString());
-
-            // Dispatch a popstate event to trigger Grafana's variable refresh
-            var popStateEvent = new PopStateEvent('popstate', { state: null });
-            iframeWindow.dispatchEvent(popStateEvent);
+            iframeWindow.dispatchEvent(new PopStateEvent('popstate', { state: null }));
 
             console.log('Updated CML ID via pushState');
         } catch (e) {
-            console.warn('Could not access iframe (cross-origin?), using fallback', e);
+            // Fallback: rebuild URL with time range preservation
+            console.warn('Could not access iframe, using fallback', e);
 
-            // Fallback: extract time range and rebuild URL
-            var currentSrc = grafanaPanel.src;
             var fromParam = null;
             var toParam = null;
 
             try {
-                var url = new URL(currentSrc);
+                var url = new URL(grafanaPanel.src);
                 fromParam = url.searchParams.get('from');
                 toParam = url.searchParams.get('to');
-
-                if (fromParam && toParam) {
-                    lastTimeRange = { from: fromParam, to: toParam };
-                }
             } catch (e2) {
                 console.warn('Could not parse iframe URL', e2);
             }
 
-            // Build new URL
             var base = '/grafana/d/cml-realtime/cml-real-time-data';
             var params = [
                 'orgId=1',
@@ -428,47 +414,36 @@
                 'kiosk'
             ];
 
-            if (lastTimeRange && lastTimeRange.from && lastTimeRange.to) {
-                params.push('from=' + encodeURIComponent(lastTimeRange.from));
-                params.push('to=' + encodeURIComponent(lastTimeRange.to));
+            if (fromParam && toParam) {
+                params.push('from=' + encodeURIComponent(fromParam));
+                params.push('to=' + encodeURIComponent(toParam));
             }
 
             grafanaPanel.src = base + '?' + params.join('&');
         }
-    }    // Initialize on page load
+    }
+
+    // Initialize on page load
     document.addEventListener('DOMContentLoaded', function () {
         initializeMap();
         initializeResizer();
     });
 
-    // Initialize resizer for chart height
+    // Initialize resizer for adjustable dashboard height
     function initializeResizer() {
         const resizer = document.getElementById('resizer');
         const chartContainer = document.querySelector('.chart-container');
         let isResizing = false;
-        let startY;
-        let startHeight;
-        let lastHeight = 400; // Default height
-        let resizeTimeout;
+        let startY, startHeight;
 
         function startResize(e) {
             isResizing = true;
             startY = e.clientY;
             startHeight = chartContainer.offsetHeight;
-            lastHeight = startHeight;
             resizer.classList.add('active');
             document.body.style.cursor = 'ns-resize';
             document.body.style.userSelect = 'none';
             e.preventDefault();
-
-            // Set up failsafe timeout
-            if (resizeTimeout) clearTimeout(resizeTimeout);
-            resizeTimeout = setTimeout(() => {
-                if (isResizing) {
-                    console.warn('Resize timeout - forcing stop');
-                    stopResize();
-                }
-            }, 10000); // 10 second failsafe
         }
 
         function doResize(e) {
@@ -476,17 +451,11 @@
 
             const deltaY = startY - e.clientY;
             const newHeight = startHeight + deltaY;
-
-            // Constrain height between min and max
             const minHeight = 200;
             const maxHeight = window.innerHeight * 0.8;
             const constrainedHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
 
-            // Only update if the change is significant (reduce sensitivity)
-            if (Math.abs(constrainedHeight - lastHeight) >= 1) {
-                chartContainer.style.height = constrainedHeight + 'px';
-                lastHeight = constrainedHeight;
-            }
+            chartContainer.style.height = constrainedHeight + 'px';
         }
 
         function stopResize() {
@@ -495,31 +464,14 @@
                 resizer.classList.remove('active');
                 document.body.style.cursor = '';
                 document.body.style.userSelect = '';
-                // Force reset cursor on html element too
-                document.documentElement.style.cursor = '';
-                // Clear failsafe timeout
-                if (resizeTimeout) {
-                    clearTimeout(resizeTimeout);
-                    resizeTimeout = null;
-                }
             }
         }
 
-        // Event listeners - use capture phase for more reliable event handling
+        // Use capture phase and window-level events for reliability
         resizer.addEventListener('mousedown', startResize, true);
         window.addEventListener('mousemove', doResize, true);
         window.addEventListener('mouseup', stopResize, true);
-
-        // Additional safety: handle mouse leaving window
         window.addEventListener('mouseleave', stopResize, true);
-
-        // Failsafe: if resize gets stuck, allow clicking resizer to reset
-        resizer.addEventListener('click', function (e) {
-            if (isResizing) {
-                e.preventDefault();
-                stopResize();
-            }
-        });
     }
 </script>
 {% endblock %}
