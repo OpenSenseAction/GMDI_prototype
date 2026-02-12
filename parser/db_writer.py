@@ -179,10 +179,13 @@ class DBWriter:
             psycopg2.extras.execute_values(
                 cur, sql, records, template=None, page_size=1000
             )
-            self.conn.commit()
+            # Do not commit here; caller will commit once to allow batching
             return len(records)
         except Exception:
-            self.conn.rollback()
+            try:
+                self.conn.rollback()
+            except Exception:
+                logger.exception("Failed rollback after %s error", operation_name)
             logger.exception("Failed to %s", operation_name)
             raise
         finally:
@@ -198,10 +201,13 @@ class DBWriter:
         try:
             for cml_id in cml_ids:
                 cur.execute("SELECT update_cml_stats(%s)", (cml_id,))
-            self.conn.commit()
-            logger.info("Updated stats for %d CMLs", len(cml_ids))
+            # Do not commit here; caller should commit once after batch operations
+            logger.info("Executed update_cml_stats for %d CMLs", len(cml_ids))
         except Exception:
-            self.conn.rollback()
+            try:
+                self.conn.rollback()
+            except Exception:
+                logger.exception("Rollback failed while handling stats update error")
             logger.exception("Failed to update stats for CMLs: %s", cml_ids)
             raise
         finally:
@@ -248,11 +254,21 @@ class DBWriter:
             "length = EXCLUDED.length"
         )
 
-        return self._with_connection_retry(
+        rows_written = self._with_connection_retry(
             lambda: self._execute_batch_insert(
                 sql, records, "write metadata to database"
             )
         )
+
+        # Commit once after batch operation
+        try:
+            if self.conn:
+                self.conn.commit()
+        except Exception:
+            logger.exception("Failed to commit metadata write")
+            raise
+
+        return rows_written
 
     def write_rawdata(self, df) -> int:
         """Write raw time series DataFrame to `cml_data`.
@@ -283,8 +299,15 @@ class DBWriter:
             )
         )
 
-        # Update stats for affected CMLs
+        # Update stats for affected CMLs and commit once afterward
         if rows_written > 0 and unique_cml_ids:
             self._update_stats_for_cmls(unique_cml_ids)
+
+        try:
+            if self.conn:
+                self.conn.commit()
+        except Exception:
+            logger.exception("Failed to commit raw data + stats update")
+            raise
 
         return rows_written
