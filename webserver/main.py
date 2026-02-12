@@ -469,27 +469,28 @@ def api_cml_stats():
         cur = conn.cursor()
         cur.execute(
             """
-            WITH latest_60min AS (
-                SELECT cml_id, rsl, time
+            SELECT
+                cs.cml_id::text,
+                cs.total_records,
+                cs.valid_records,
+                cs.null_records,
+                cs.completeness_percent,
+                cs.min_rsl,
+                cs.max_rsl,
+                cs.mean_rsl,
+                cs.stddev_rsl,
+                cs.last_rsl,
+                ROUND(STDDEV(cd.rsl)::numeric, 2) as stddev_last_60min
+            FROM cml_stats cs
+            LEFT JOIN (
+                SELECT cml_id, rsl
                 FROM cml_data
                 WHERE time >= (SELECT MAX(time) FROM cml_data) - INTERVAL '60 minutes'
-            )
-            SELECT
-                cd.cml_id::text,
-                COUNT(*) as total_records,
-                COUNT(CASE WHEN cd.rsl IS NOT NULL THEN 1 END) as valid_records,
-                COUNT(CASE WHEN cd.rsl IS NULL THEN 1 END) as null_records,
-                ROUND(100.0 * COUNT(CASE WHEN cd.rsl IS NOT NULL THEN 1 END) / COUNT(*), 2) as completeness_percent,
-                MIN(cd.rsl) as min_rsl,
-                MAX(cd.rsl) as max_rsl,
-                ROUND(AVG(cd.rsl)::numeric, 2) as mean_rsl,
-                ROUND(STDDEV(cd.rsl)::numeric, 2) as stddev_rsl,
-                (SELECT rsl FROM cml_data WHERE cml_id = cd.cml_id ORDER BY time DESC LIMIT 1) as last_rsl,
-                ROUND(STDDEV(l60.rsl)::numeric, 2) as stddev_last_60min
-            FROM cml_data cd
-            LEFT JOIN latest_60min l60 ON cd.cml_id = l60.cml_id
-            GROUP BY cd.cml_id
-            ORDER BY cd.cml_id
+            ) cd ON cs.cml_id = cd.cml_id
+            GROUP BY cs.cml_id, cs.total_records, cs.valid_records, cs.null_records,
+                     cs.completeness_percent, cs.min_rsl, cs.max_rsl, cs.mean_rsl,
+                     cs.stddev_rsl, cs.last_rsl
+            ORDER BY cs.cml_id
         """
         )
         data = cur.fetchall()

@@ -189,6 +189,25 @@ class DBWriter:
             if cur and not cur.closed:
                 cur.close()
 
+    def _update_stats_for_cmls(self, cml_ids: List[str]) -> None:
+        """Update cml_stats for the given CML IDs."""
+        if not cml_ids:
+            return
+
+        cur = self.conn.cursor()
+        try:
+            for cml_id in cml_ids:
+                cur.execute("SELECT update_cml_stats(%s)", (cml_id,))
+            self.conn.commit()
+            logger.info("Updated stats for %d CMLs", len(cml_ids))
+        except Exception:
+            self.conn.rollback()
+            logger.exception("Failed to update stats for CMLs: %s", cml_ids)
+            raise
+        finally:
+            if cur and not cur.closed:
+                cur.close()
+
     def write_metadata(self, df) -> int:
         """Write metadata DataFrame to `cml_metadata`.
 
@@ -253,10 +272,19 @@ class DBWriter:
         )
         records = [tuple(x) for x in df_subset.to_numpy()]
 
+        # Get unique CML IDs for stats update
+        unique_cml_ids = df_subset["cml_id"].unique().tolist()
+
         sql = "INSERT INTO cml_data (time, cml_id, sublink_id, rsl, tsl) VALUES %s"
 
-        return self._with_connection_retry(
+        rows_written = self._with_connection_retry(
             lambda: self._execute_batch_insert(
                 sql, records, "write raw data to database"
             )
         )
+
+        # Update stats for affected CMLs
+        if rows_written > 0 and unique_cml_ids:
+            self._update_stats_for_cmls(unique_cml_ids)
+
+        return rows_written
