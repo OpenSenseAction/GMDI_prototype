@@ -11,17 +11,13 @@ sys.modules.setdefault("requests", Mock())
 
 
 def test_api_cml_stats_returns_cached_stats(monkeypatch):
-    # Load the webserver `main.py` module directly by path to avoid modifying
-    # sys.path (which can cause permission issues in some CI/container setups).
+    # Make the webserver package modules importable (tests add webserver/ to sys.path)
     import os
-    import importlib.util
 
-    main_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "main.py")
-    )
-    spec = importlib.util.spec_from_file_location("wm_main", main_path)
-    wm = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(wm)
+    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+    # Import main module from webserver package directory
+    import main as wm
 
     # Prepare mock DB connection and cursor
     mock_conn = Mock()
