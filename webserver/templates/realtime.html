@@ -25,8 +25,6 @@
         max-width: 100% !important;
         padding: 0 !important;
         margin: 0 !important;
-        min-height: calc(100vh - 60px);
-        width: 100%;
     }
 
     footer {
@@ -36,44 +34,62 @@
     .realtime-wrapper {
         width: 100%;
         min-height: calc(100vh - 60px);
-        display: flex;
-        flex-direction: column;
         position: relative;
     }
 
     .map-container {
-        flex: 1;
-        min-height: 0;
-        position: relative;
-        width: 100%;
-    }
-
-    #cml-map {
         position: absolute;
         top: 0;
         left: 0;
         right: 0;
         bottom: 0;
+        z-index: 1;
+    }
+
+    #cml-map {
         width: 100%;
         height: 100%;
     }
 
     .chart-container {
-        height: 500px;
-        flex-shrink: 0;
-        position: relative;
-        width: 100%;
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 400px;
+        min-height: 200px;
+        max-height: 80vh;
+        z-index: 100;
+        background: white;
+    }
+
+    .resizer {
+        position: absolute;
+        bottom: 400px;
+        left: 0;
+        right: 0;
+        height: 6px;
+        background: #ccc;
+        cursor: ns-resize;
+        z-index: 200;
+        transition: background-color 0.2s ease;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
+    .resizer:hover {
+        background: #aaa;
+    }
+
+    .resizer.active {
+        background: #888;
     }
 
     .grafana-container {
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
+        position: relative;
         border: none;
         width: 100%;
         height: 100%;
+        display: block;
     }
 </style>
 {% endblock %}
@@ -83,9 +99,10 @@
     <div class="map-container">
         <div id="cml-map"></div>
     </div>
+    <div class="resizer" id="resizer"></div>
     <div class="chart-container">
         <iframe class="grafana-container" id="grafana-panel"
-            src="/grafana/d/cml-realtime/cml-real-time-data?orgId=1&var-cml_id=10001&refresh=10s&theme=light&from=now-7d&to=now&viewPanel=2&kiosk"
+            src="/grafana/d/cml-realtime/cml-real-time-data?orgId=1&var-cml_id=10001&refresh=10s&theme=light&viewPanel=2&kiosk"
             allowfullscreen></iframe>
     </div>
 </div>
@@ -349,30 +366,80 @@
         }
     }
 
-    // Select CML and update interface
+    // Select CML and update Grafana dashboard
     function selectCml(cmlId) {
-        console.log('Selected CML: ' + cmlId);
         selectedCmlId = cmlId;
 
-        // Update Grafana iframe URL with new CML ID
         var grafanaPanel = document.getElementById('grafana-panel');
-        var base = 'http://localhost:3000/d/cml-realtime/cml-real-time-data';
-        var params = [
-            'orgId=1',
-            'var-cml_id=' + encodeURIComponent(cmlId),
-            'refresh=10s',
-            'theme=light',
-            'from=now-7d',
-            'to=now',
-            'viewPanel=2',
-            'kiosk'
-        ];
-        grafanaPanel.src = base + '?' + params.join('&');
+        var iframeWindow = grafanaPanel.contentWindow;
+        var currentUrl = new URL(iframeWindow.location.href);
+        currentUrl.searchParams.set('var-cml_id', cmlId);
+
+        iframeWindow.history.pushState(null, '', currentUrl.toString());
+        iframeWindow.dispatchEvent(new PopStateEvent('popstate', { state: null }));
     }
 
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', function () {
         initializeMap();
+        initializeResizer();
     });
+
+    // Initialize resizer for adjustable dashboard height
+    function initializeResizer() {
+        const resizer = document.getElementById('resizer');
+        const chartContainer = document.querySelector('.chart-container');
+        let isResizing = false;
+        let startY, startHeight;
+
+        function startResize(e) {
+            isResizing = true;
+            startY = e.clientY;
+            startHeight = chartContainer.offsetHeight;
+            resizer.classList.add('active');
+            document.body.style.cursor = 'ns-resize';
+            document.body.style.userSelect = 'none';
+
+            // Prevent iframe from capturing mouse events
+            const iframe = document.querySelector('.grafana-container');
+            if (iframe) {
+                iframe.style.pointerEvents = 'none';
+            }
+
+            e.preventDefault();
+        }
+
+        function doResize(e) {
+            if (!isResizing) return;
+            e.preventDefault();
+
+            const deltaY = startY - e.clientY;
+            const newHeight = startHeight + deltaY;
+            const minHeight = 200;
+            const maxHeight = window.innerHeight * 0.8;
+            const constrainedHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
+
+            chartContainer.style.height = constrainedHeight + 'px';
+            resizer.style.bottom = constrainedHeight + 'px';
+        }
+
+        function stopResize() {
+            if (!isResizing) return;
+            isResizing = false;
+            resizer.classList.remove('active');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+
+            // Re-enable iframe interactions
+            const iframe = document.querySelector('.grafana-container');
+            if (iframe) {
+                iframe.style.pointerEvents = 'auto';
+            }
+        }
+
+        resizer.addEventListener('mousedown', startResize);
+        document.addEventListener('mousemove', doResize);
+        document.addEventListener('mouseup', stopResize);
+    }
 </script>
 {% endblock %}
