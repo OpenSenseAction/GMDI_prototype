@@ -6,7 +6,7 @@ import pandas as pd
 import folium
 import altair as alt
 import requests
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response, redirect
 from datetime import datetime, timedelta
 from pathlib import Path
 import uuid
@@ -349,6 +349,52 @@ def realtime():
         selected_cml=default_cml,
         plot_html=plot_html,
     )
+
+
+@app.route("/grafana")
+def grafana_root_redirect():
+    """Redirect /grafana to /grafana/ for proper subpath routing."""
+    return redirect("/grafana/", code=302)
+
+
+@app.route(
+    "/grafana/",
+    defaults={"path": ""},
+    methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+)
+@app.route(
+    "/grafana/<path:path>", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+)
+def grafana_proxy(path):
+    """Proxy all requests to Grafana container."""
+    grafana_url = f"http://grafana:3000/grafana/{path}"
+    method = request.method
+    headers = {key: value for key, value in request.headers if key.lower() != "host"}
+    data = request.get_data()
+    params = request.args
+
+    resp = requests.request(
+        method,
+        grafana_url,
+        headers=headers,
+        params=params,
+        data=data,
+        cookies=request.cookies,
+        allow_redirects=False,
+    )
+
+    excluded_headers = [
+        "content-encoding",
+        "content-length",
+        "transfer-encoding",
+        "connection",
+    ]
+    response_headers = [
+        (name, value)
+        for name, value in resp.headers.items()
+        if name.lower() not in excluded_headers
+    ]
+    return Response(resp.content, resp.status_code, response_headers)
 
 
 @app.route("/grafana-dashboard")
