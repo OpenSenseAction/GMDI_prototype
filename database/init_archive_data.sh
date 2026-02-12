@@ -49,4 +49,13 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     FROM cml_data;
 EOSQL
 
+# Populate cml_stats for all loaded CMLs
+echo "Populating CML statistics..."
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+    SELECT update_cml_stats(cml_id::text) FROM (SELECT DISTINCT cml_id FROM cml_metadata) t;
+EOSQL
+
+STATS_COUNT=$(psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -t -c "SELECT COUNT(*) FROM cml_stats;")
+echo "Generated statistics for $STATS_COUNT CMLs"
+
 echo "Archive data successfully loaded!"
