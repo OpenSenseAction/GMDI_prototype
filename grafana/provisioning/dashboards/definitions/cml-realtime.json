@@ -392,7 +392,7 @@
                 "query": "SELECT DISTINCT cml_id::text FROM cml_metadata ORDER BY cml_id",
                 "refresh": 1,
                 "regex": "",
-                "skipUrlSync": true,
+                "skipUrlSync": false,
                 "sort": 0,
                 "tagValuesQuery": "",
                 "tagsQuery": "",
