@@ -39,20 +39,29 @@ python main.py
 
 ## Configuration
 
-Edit `config.yml`:
+Edit `config.yml` for local/standalone use, or set environment variables for Docker deployment:
+
 ```yaml
 data_source:
-  loop_duration_seconds: 3600  # How fast to replay historical data
+  netcdf_file: "/app/example_data/openMRG_cmls_20150827_3months.nc"
+  loop_duration_seconds: 3600  # Lookback window for real-time replay
 
 generator:
-  generation_frequency_seconds: 60  # How often to generate files
+  generation_frequency_seconds: 10  # How often to generate files
 
 sftp:
   enabled: true
-  upload_frequency_seconds: 60  # How often to upload
+  upload_frequency_seconds: 10  # How often to upload
   private_key_path: "/path/to/ssh/key"  # Recommended
   known_hosts_path: "/path/to/known_hosts"  # For host verification
 ```
+
+**Key environment variables** (override config.yml in Docker):
+
+| Variable | Description |
+|---|---|
+| `NETCDF_FILE` | Path to the NetCDF source file |
+| `NETCDF_FILE_URL` | URL to download the file if not already present |
 
 ### Authentication
 

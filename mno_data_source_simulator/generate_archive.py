@@ -83,7 +83,7 @@ def generate_archive_data(
     # Initialize the data generator
     generator = CMLDataGenerator(
         netcdf_file=str(netcdf_path),
-        loop_duration_seconds=archive_days * 24 * 3600,  # Loop over archive period
+        loop_duration_seconds=archive_days * 24 * 3600,  # bounds the replay window
     )
 
     # Generate and save metadata using existing function
