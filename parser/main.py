@@ -101,6 +101,12 @@ def main():
         except Exception:
             logger.exception("Stats thread: could not connect to DB")
             return
+        # Run immediately on startup so Grafana has fresh stats without
+        # waiting a full interval after the backlog is processed.
+        try:
+            stats_db.refresh_stats()
+        except Exception:
+            logger.exception("Stats thread: initial refresh_stats failed")
         while not stop_event.wait(Config.STATS_REFRESH_INTERVAL):
             try:
                 stats_db.refresh_stats()
