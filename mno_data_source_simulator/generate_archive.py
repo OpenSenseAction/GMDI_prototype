@@ -19,10 +19,10 @@ Environment variables (fallbacks for CLI args):
 import argparse
 import os
 import sys
-import gzip
 from pathlib import Path
 from datetime import datetime, timedelta
 import logging
+import numpy as np
 import pandas as pd
 
 from data_generator import CMLDataGenerator
@@ -40,9 +40,9 @@ DEFAULT_OUTPUT_DIR = "../database/archive_data"
 DEFAULT_ARCHIVE_DAYS = 7
 DEFAULT_INTERVAL_SECONDS = 300  # 5-minute default; use 10 for raw real-time resolution
 
-# Output files (gzipped)
-METADATA_OUTPUT = "metadata_archive.csv.gz"
-DATA_OUTPUT = "data_archive.csv.gz"
+# Output files
+METADATA_OUTPUT = "metadata_archive.csv"
+DATA_OUTPUT = "data_archive.csv"
 
 
 def generate_archive_data(archive_days, output_dir, netcdf_file, interval_seconds):
@@ -84,8 +84,7 @@ def generate_archive_data(archive_days, output_dir, netcdf_file, interval_second
     metadata_path = output_path / METADATA_OUTPUT
     metadata_df = generator.get_metadata_dataframe()
 
-    with gzip.open(metadata_path, "wt") as f:
-        metadata_df.to_csv(f, index=False)
+    metadata_df.to_csv(metadata_path, index=False)
 
     logger.info(f"Saved {len(metadata_df)} metadata rows to {metadata_path}")
     logger.info(f"  Unique CML IDs: {metadata_df['cml_id'].nunique()}")
@@ -106,29 +105,72 @@ def generate_archive_data(archive_days, output_dir, netcdf_file, interval_second
     # Set the generator's loop start time to archive start
     generator.loop_start_time = archive_start_date
 
-    # Generate data in batches using existing generate_data function
-    batch_size = 100
+    # --- Fast numpy-cached generation ---
+    # Map each archive timestamp to a NetCDF index (cycles through 720 steps)
+    all_indices = np.array(
+        [generator._get_netcdf_index_for_timestamp(ts) for ts in timestamps]
+    )
+    unique_indices = np.unique(all_indices)
+    logger.info(
+        f"  Unique NetCDF time slices needed: {len(unique_indices)} "
+        f"(of {len(generator.original_time_points)} in file)"
+    )
+
+    # Pre-cache RSL/TSL arrays for each unique NetCDF index (one isel call each)
+    logger.info("  Pre-caching NetCDF slices...")
+    base_df = (
+        generator.dataset.isel(time=int(unique_indices[0]))
+        .to_dataframe()
+        .reset_index()[["cml_id", "sublink_id", "tsl", "rsl"]]
+    )
+    cml_ids = base_df["cml_id"].values
+    sublink_ids = base_df["sublink_id"].values
+    n_links = len(cml_ids)
+
+    rsl_cache = {}
+    tsl_cache = {}
+    for idx in unique_indices:
+        df_slice = (
+            generator.dataset.isel(time=int(idx)).to_dataframe().reset_index()
+        )
+        rsl_cache[idx] = df_slice["rsl"].values
+        tsl_cache[idx] = df_slice["tsl"].values
+    logger.info(f"  Cached {len(unique_indices)} slices, generating output...")
+
+    # Write in batches using pre-cached numpy arrays
+    batch_size = 5000  # timestamps per batch (not rows)
     total_rows = 0
     data_path = output_path / DATA_OUTPUT
 
-    with gzip.open(data_path, "wt") as f:
+    with open(data_path, "w") as f:
         first_batch = True
-
         for i in range(0, len(timestamps), batch_size):
-            batch_timestamps = timestamps[i : i + batch_size]
+            batch_ts = timestamps[i : i + batch_size]
+            batch_indices = all_indices[i : i + batch_size]
+            batch_n = len(batch_ts)
 
-            # Use existing generate_data function
-            df = generator.generate_data(batch_timestamps)
+            time_col = np.repeat(batch_ts.values, n_links)
+            cml_col = np.tile(cml_ids, batch_n)
+            sub_col = np.tile(sublink_ids, batch_n)
+            tsl_col = np.concatenate([tsl_cache[idx] for idx in batch_indices])
+            rsl_col = np.concatenate([rsl_cache[idx] for idx in batch_indices])
 
-            # Write to gzipped CSV
+            df = pd.DataFrame(
+                {
+                    "time": time_col,
+                    "cml_id": cml_col,
+                    "sublink_id": sub_col,
+                    "tsl": tsl_col,
+                    "rsl": rsl_col,
+                }
+            )
             df.to_csv(f, index=False, header=first_batch)
             first_batch = False
-
             total_rows += len(df)
 
-            # Progress indicator every 10%
-            if (i + batch_size) % (len(timestamps) // 10) < batch_size:
-                progress = min(100, ((i + batch_size) / len(timestamps)) * 100)
+            progress_interval = max(batch_size, len(timestamps) // 10)
+            if (i + batch_size) % progress_interval < batch_size:
+                progress = min(100, (i + batch_size) / len(timestamps) * 100)
                 logger.info(f"  Progress: {progress:.0f}% ({total_rows:,} rows)")
 
     logger.info(f"\nSaved {total_rows:,} data rows to {data_path}")

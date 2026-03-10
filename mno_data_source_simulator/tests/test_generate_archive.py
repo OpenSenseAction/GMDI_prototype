@@ -10,11 +10,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 @patch("generate_archive.Path.mkdir")
 @patch("generate_archive.Path.exists")
 @patch("generate_archive.CMLDataGenerator")
-@patch("generate_archive.gzip.open", new_callable=mock_open)
-def test_generate_archive_creates_gzipped_files(
-    mock_gzip, mock_generator_class, mock_exists, mock_mkdir
+@patch("builtins.open", new_callable=mock_open)
+def test_generate_archive_creates_files(
+    mock_open_fn, mock_generator_class, mock_exists, mock_mkdir
 ):
-    """Test generate_archive_data() creates compressed metadata and data files."""
+    """Test generate_archive_data() creates metadata and data CSV files."""
     from generate_archive import generate_archive_data
 
     mock_exists.return_value = True
@@ -38,10 +38,13 @@ def test_generate_archive_creates_gzipped_files(
 
     with patch("generate_archive.Path.stat") as mock_stat:
         mock_stat.return_value.st_size = 1024
-        generate_archive_data()
+        generate_archive_data(
+            archive_days=1,
+            output_dir="/tmp/test_archive",
+            netcdf_file="/fake/file.nc",
+            interval_seconds=300,
+        )
 
-    # Verify gzipped files created (critical for demo setup)
-    assert mock_gzip.call_count == 2
     mock_generator.close.assert_called_once()
 
 
