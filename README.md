@@ -61,71 +61,50 @@ The webserver provides an intuitive interface with four main pages:
 
 ## Archive Data
 
-The database can be initialized with archive CML data using two methods:
+On `docker compose up` the `archive_generator` service automatically generates
+a 1-day archive at 10-second resolution from the 3-month OpenMRG NetCDF file
+and the `archive_loader` service bulk-loads it into the database.
 
-### Method 1: CSV Files (Default, Fast)
-
-Pre-generated CSV files included in the repository:
+**Defaults** (overridable via environment variables):
 - **728 CML sublinks** (364 unique CML IDs) covering Berlin area
-- **~1.5M data rows** at 5-minute intervals over 7 days
-- **Gzip-compressed** (~7.6 MB total, included in repo)
-- **Loads in ~3 seconds** via PostgreSQL COPY
+- **~6.3M data rows** at 10-second intervals over 1 day
+- Generates in ~15 s, loads in ~15 s
 
-Files are located in `/database/archive_data/` and loaded automatically on first database startup.
+**NetCDF source file** (`openMRG_cmls_20150827_3months.nc`, ~193 MB) is
+gitignored. If not present in `parser/example_data/`, it is downloaded
+automatically at startup via `NETCDF_FILE_URL`.
 
-### Method 2: Load from NetCDF (For Larger/Higher Resolution Archives)
-
-Load data directly from the full 3-month NetCDF archive with configurable time range:
-
-#### Default: 7 Days at 10-Second Resolution (~44M rows, ~5 minutes)
+### Configuring the archive
 
 ```sh
-# Rebuild parser if needed
-docker compose build parser
-
-# Start database
-docker compose up -d database
-
-# Load last 7 days from NetCDF
-docker compose run --rm -e DB_HOST=database parser python /app/parser/parse_netcdf_archive.py
+# Longer archive or different resolution via environment variables:
+ARCHIVE_DAYS=7 ARCHIVE_INTERVAL_SECONDS=60 docker compose up -d
 ```
 
-#### Custom Time Range
+| Variable | Default | Description |
+|---|---|---|
+| `ARCHIVE_DAYS` | `1` | Days of history to generate |
+| `ARCHIVE_INTERVAL_SECONDS` | `10` | Time step in seconds |
+| `NETCDF_FILE_URL` | KIT download link | URL to fetch the NetCDF file if absent |
 
-Use `ARCHIVE_MAX_DAYS` to control how much data to load:
+### Reloading archive data
 
-```sh
-# Load last 14 days (~88M rows, ~10 minutes)
-docker compose run --rm -e DB_HOST=database -e ARCHIVE_MAX_DAYS=14 parser python /app/parser/parse_netcdf_archive.py
-
-# Load full 3 months (~579M rows, ~1 hour)
-docker compose run --rm -e DB_HOST=database -e ARCHIVE_MAX_DAYS=0 parser python /app/parser/parse_netcdf_archive.py
-```
-
-**Note**: Set `ARCHIVE_MAX_DAYS=0` to disable the time limit and load the entire dataset. Larger datasets require more database memory (recommend at least 4GB RAM for full 3-month archive).
-
-**Features**:
-- Auto-downloads 3-month NetCDF file (~209 MB) on first run
-- **10-second resolution** (vs 5-minute for CSV method)
-- **Automatic timestamp shifting** - data ends at current time
-- **Progress reporting** with batch-by-batch status (~155K rows/sec)
-- PostgreSQL COPY for maximum performance
-- Configurable time window to balance demo realism vs load time
-
-The NetCDF file is downloaded to `parser/example_data/openMRG_cmls_20150827_3months.nc` and gitignored.
-
-### Managing Archive Data
-
-To regenerate CSV archive data:
-```sh
-python mno_data_source_simulator/generate_archive.py
-```
-
-To reload archive data (either method):
 ```sh
 docker compose down -v  # Remove volumes
-docker compose up -d    # Restart with fresh database
+docker compose up -d    # Regenerate and reload from scratch
 ```
+
+### Loading a larger archive directly from NetCDF
+
+For a full 3-month archive at native 10-second resolution (~579M rows):
+
+```sh
+docker compose run --rm -e DB_HOST=database parser \
+  python /app/parser/parse_netcdf_archive.py
+```
+
+Use `ARCHIVE_MAX_DAYS` to limit the time window (default: 7 days,
+`0` = no limit). Requires at least 4 GB RAM for the full dataset.
 
 ## Storage Backend
 

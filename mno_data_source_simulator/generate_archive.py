@@ -25,7 +25,7 @@ import logging
 import numpy as np
 import pandas as pd
 
-from data_generator import CMLDataGenerator
+from data_generator import CMLDataGenerator, ensure_netcdf_file
 
 # Configure logging
 logging.basicConfig(
@@ -35,17 +35,22 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Defaults (overridable via CLI args or environment variables)
-DEFAULT_NETCDF_FILE = "../parser/example_data/openMRG_cmls_20150827_12hours.nc"
+# Production uses the 3-month / 10-second-resolution file (downloaded at startup).
+# Tests point to the small 12-hour file directly via the --netcdf-file flag.
+DEFAULT_NETCDF_FILE = "../parser/example_data/openMRG_cmls_20150827_3months.nc"
+DEFAULT_NETCDF_FILE_URL = "https://bwsyncandshare.kit.edu/s/jSAFftGXcJjQbSJ/download"
 DEFAULT_OUTPUT_DIR = "../database/archive_data"
-DEFAULT_ARCHIVE_DAYS = 7
-DEFAULT_INTERVAL_SECONDS = 300  # 5-minute default; use 10 for raw real-time resolution
+DEFAULT_ARCHIVE_DAYS = 1
+DEFAULT_INTERVAL_SECONDS = 10
 
 # Output files
 METADATA_OUTPUT = "metadata_archive.csv"
 DATA_OUTPUT = "data_archive.csv"
 
 
-def generate_archive_data(archive_days, output_dir, netcdf_file, interval_seconds):
+def generate_archive_data(
+    archive_days, output_dir, netcdf_file, interval_seconds, netcdf_file_url=None
+):
     """Generate archive metadata and time-series data."""
 
     netcdf_path = Path(netcdf_file)
@@ -55,6 +60,8 @@ def generate_archive_data(archive_days, output_dir, netcdf_file, interval_second
     output_path = Path(output_dir)
     if not output_path.is_absolute():
         output_path = Path(__file__).parent / output_dir
+
+    ensure_netcdf_file(netcdf_path, netcdf_file_url)
 
     if not netcdf_path.exists():
         logger.error(f"NetCDF file not found: {netcdf_path}")
@@ -76,7 +83,7 @@ def generate_archive_data(archive_days, output_dir, netcdf_file, interval_second
     # Initialize the data generator
     generator = CMLDataGenerator(
         netcdf_file=str(netcdf_path),
-        loop_duration_seconds=archive_days * 24 * 3600,  # Loop over archive period
+        loop_duration_seconds=archive_days * 24 * 3600,  # bounds the replay window
     )
 
     # Generate and save metadata using existing function
@@ -106,7 +113,7 @@ def generate_archive_data(archive_days, output_dir, netcdf_file, interval_second
     generator.loop_start_time = archive_start_date
 
     # --- Fast numpy-cached generation ---
-    # Map each archive timestamp to a NetCDF index (cycles through 720 steps)
+    # Map each archive timestamp to a NetCDF index.
     all_indices = np.array(
         [generator._get_netcdf_index_for_timestamp(ts) for ts in timestamps]
     )
@@ -116,26 +123,26 @@ def generate_archive_data(archive_days, output_dir, netcdf_file, interval_second
         f"(of {len(generator.original_time_points)} in file)"
     )
 
-    # Pre-cache RSL/TSL arrays for each unique NetCDF index (one isel call each)
-    logger.info("  Pre-caching NetCDF slices...")
-    base_df = (
-        generator.dataset.isel(time=int(unique_indices[0]))
-        .to_dataframe()
-        .reset_index()[["cml_id", "sublink_id", "tsl", "rsl"]]
-    )
-    cml_ids = base_df["cml_id"].values
-    sublink_ids = base_df["sublink_id"].values
+    # Load RSL/TSL for all needed time steps in one contiguous slice.
+    # unique_indices are always low-numbered (they start at 0 for any archive
+    # shorter than the source file), so reading slice(0, max+1) is a single
+    # sequential disk read — much faster than indexed/fancy access.
+    logger.info("  Loading RSL/TSL arrays from NetCDF (one contiguous slice)...")
+    max_idx = int(unique_indices.max())
+    ds_slice = generator.dataset[["rsl", "tsl"]].isel(time=slice(0, max_idx + 1))
+    ds_stacked = ds_slice.stack(link=("cml_id", "sublink_id"))
+    rsl_arr = ds_stacked["rsl"].values  # shape: (max_idx+1, n_links)
+    tsl_arr = ds_stacked["tsl"].values
+    # Recover per-link identifiers from the stacked MultiIndex
+    link_index = ds_stacked.indexes["link"]
+    cml_ids = np.array([v[0] for v in link_index])
+    sublink_ids = np.array([v[1] for v in link_index])
     n_links = len(cml_ids)
-
-    rsl_cache = {}
-    tsl_cache = {}
-    for idx in unique_indices:
-        df_slice = (
-            generator.dataset.isel(time=int(idx)).to_dataframe().reset_index()
-        )
-        rsl_cache[idx] = df_slice["rsl"].values
-        tsl_cache[idx] = df_slice["tsl"].values
-    logger.info(f"  Cached {len(unique_indices)} slices, generating output...")
+    # For a 0-based slice the original index IS the row in rsl_arr/tsl_arr
+    idx_to_row = {int(idx): int(idx) for idx in unique_indices}
+    logger.info(
+        f"  Loaded {max_idx + 1} time slices × {n_links} links, generating output..."
+    )
 
     # Write in batches using pre-cached numpy arrays
     batch_size = 5000  # timestamps per batch (not rows)
@@ -152,8 +159,9 @@ def generate_archive_data(archive_days, output_dir, netcdf_file, interval_second
             time_col = np.repeat(batch_ts.values, n_links)
             cml_col = np.tile(cml_ids, batch_n)
             sub_col = np.tile(sublink_ids, batch_n)
-            tsl_col = np.concatenate([tsl_cache[idx] for idx in batch_indices])
-            rsl_col = np.concatenate([rsl_cache[idx] for idx in batch_indices])
+            rows = [idx_to_row[int(idx)] for idx in batch_indices]
+            tsl_col = tsl_arr[rows, :].ravel()
+            rsl_col = rsl_arr[rows, :].ravel()
 
             df = pd.DataFrame(
                 {
@@ -202,7 +210,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--interval-seconds",
         type=int,
-        default=int(os.getenv("ARCHIVE_INTERVAL_SECONDS", str(DEFAULT_INTERVAL_SECONDS))),
+        default=int(
+            os.getenv("ARCHIVE_INTERVAL_SECONDS", str(DEFAULT_INTERVAL_SECONDS))
+        ),
         help=f"Time resolution in seconds between archive data points (default: {DEFAULT_INTERVAL_SECONDS}, or ARCHIVE_INTERVAL_SECONDS env var)",
     )
     parser.add_argument(
@@ -215,6 +225,11 @@ if __name__ == "__main__":
         default=os.getenv("NETCDF_FILE", DEFAULT_NETCDF_FILE),
         help="Path to the NetCDF source file (default: ../parser/example_data/..., or NETCDF_FILE env var)",
     )
+    parser.add_argument(
+        "--netcdf-file-url",
+        default=os.getenv("NETCDF_FILE_URL", DEFAULT_NETCDF_FILE_URL),
+        help="URL to download the NetCDF file if it is not already present (or NETCDF_FILE_URL env var)",
+    )
     args = parser.parse_args()
 
     generate_archive_data(
@@ -222,4 +237,5 @@ if __name__ == "__main__":
         output_dir=args.output_dir,
         netcdf_file=args.netcdf_file,
         interval_seconds=args.interval_seconds,
+        netcdf_file_url=args.netcdf_file_url,
     )
