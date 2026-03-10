@@ -78,3 +78,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 SELECT create_hypertable('cml_data', 'time');
+
+-- Index is created by the archive_loader service after bulk data load (faster COPY).
+-- If no archive data is loaded, create it manually:
+-- CREATE INDEX idx_cml_data_cml_id ON cml_data (cml_id, time DESC);

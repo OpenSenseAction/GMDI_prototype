@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY data_generator.py .
 COPY sftp_uploader.py .
 COPY main.py .
+COPY generate_archive.py .
 COPY config.yml .
 
 # Create directory for example data

@@ -288,9 +288,6 @@ class DBWriter:
         )
         records = [tuple(x) for x in df_subset.to_numpy()]
 
-        # Get unique CML IDs for stats update
-        unique_cml_ids = df_subset["cml_id"].unique().tolist()
-
         sql = "INSERT INTO cml_data (time, cml_id, sublink_id, rsl, tsl) VALUES %s"
 
         rows_written = self._with_connection_retry(
@@ -299,15 +296,33 @@ class DBWriter:
             )
         )
 
-        # Update stats for affected CMLs and commit once afterward
-        if rows_written > 0 and unique_cml_ids:
-            self._update_stats_for_cmls(unique_cml_ids)
-
+        # Commit immediately after insert; stats are updated separately
         try:
             if self.conn:
                 self.conn.commit()
         except Exception:
-            logger.exception("Failed to commit raw data + stats update")
+            logger.exception("Failed to commit raw data")
             raise
 
         return rows_written
+
+    def refresh_stats(self) -> None:
+        """Recalculate cml_stats for all known CMLs. Intended to be called
+        from a background thread on a slow timer so it never blocks inserts."""
+        cur = self.conn.cursor()
+        try:
+            cur.execute(
+                "SELECT update_cml_stats(cml_id::text) "
+                "FROM (SELECT DISTINCT cml_id FROM cml_metadata) t"
+            )
+            self.conn.commit()
+            logger.info("Refreshed cml_stats for all CMLs")
+        except Exception:
+            try:
+                self.conn.rollback()
+            except Exception:
+                pass
+            logger.exception("Failed to refresh cml_stats")
+        finally:
+            if cur and not cur.closed:
+                cur.close()
