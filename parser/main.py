@@ -96,11 +96,18 @@ def main():
         # Use a separate DBWriter connection so stats queries don't contend
         # with the insert connection.
         stats_db = DBWriter(Config.DATABASE_URL)
-        try:
-            stats_db.connect()
-        except Exception:
-            logger.exception("Stats thread: could not connect to DB")
+
+        # Keep retrying until the DB is reachable (e.g. if it starts slowly).
+        while not stop_event.is_set():
+            try:
+                stats_db.connect()
+                break
+            except Exception:
+                logger.warning("Stats thread: DB not ready, retrying in 5s...")
+                stop_event.wait(5)
+        if stop_event.is_set():
             return
+
         # Run immediately on startup so Grafana has fresh stats without
         # waiting a full interval after the backlog is processed.
         try:

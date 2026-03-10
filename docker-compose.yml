@@ -32,7 +32,8 @@ services:
     ports:
       - "5004:5004"
     depends_on:
-      - database
+      database:
+        condition: service_healthy
     environment:
       - DATABASE_URL=postgresql://myuser:mypassword@database:5432/mydatabase
       - PARSER_INCOMING_DIR=/app/data/incoming
@@ -46,16 +47,35 @@ services:
       - parser_archived:/app/data/archived
       - parser_quarantine:/app/data/quarantine
 
+  archive_loader:
+    image: timescale/timescaledb:latest-pg13
+    depends_on:
+      archive_generator:
+        condition: service_completed_successfully
+      database:
+        condition: service_healthy
+    environment:
+      - PGHOST=database
+      - PGUSER=myuser
+      - PGPASSWORD=mypassword
+      - PGDATABASE=mydatabase
+      - ARCHIVE_DATA_DIR=/archive_data
+    volumes:
+      - archive_data:/archive_data:ro
+      - ./database/init_archive_data.sh:/init_archive_data.sh:ro
+    command: ["/bin/bash", "/init_archive_data.sh"]
+    restart: "no"
+
   database:
     build: ./database
     ports:
       - "5432:5432"
-    depends_on:
-      archive_generator:
-        condition: service_completed_successfully
-    volumes:
-      - archive_data:/docker-entrypoint-initdb.d/archive_data:ro
-      - ./database/init_archive_data.sh:/docker-entrypoint-initdb.d/99-load-archive.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myuser -d mydatabase"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   processor:
     build: ./processor
