@@ -2,8 +2,11 @@
 
 # Data source configuration
 data_source:
-  # Path to the NetCDF file with CML data
-  netcdf_file: "/app/example_data/openMRG_cmls_20150827_12hours.nc"
+  # Path to the NetCDF file with CML data.
+  # The 3-month / 10-second-resolution file is used for production; it is
+  # downloaded automatically at startup if NETCDF_FILE_URL is set.
+  # Override via the NETCDF_FILE environment variable.
+  netcdf_file: "/app/example_data/openMRG_cmls_20150827_3months.nc"
   # Loop duration in seconds (1 hour = 3600 seconds)
   loop_duration_seconds: 3600
 

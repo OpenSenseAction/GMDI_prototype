@@ -1,12 +1,13 @@
 services:
   archive_generator:
     build: ./mno_data_source_simulator
-    command: python generate_archive.py --days ${ARCHIVE_DAYS:-30} --interval-seconds ${ARCHIVE_INTERVAL_SECONDS:-300}
+    command: python generate_archive.py --days ${ARCHIVE_DAYS:-1} --interval-seconds ${ARCHIVE_INTERVAL_SECONDS:-10}
     environment:
       - ARCHIVE_OUTPUT_DIR=/archive_output
-      - NETCDF_FILE=/app/example_data/openMRG_cmls_20150827_12hours.nc
+      - NETCDF_FILE=/app/example_data/openMRG_cmls_20150827_3months.nc
+      - NETCDF_FILE_URL=https://bwsyncandshare.kit.edu/s/jSAFftGXcJjQbSJ/download
     volumes:
-      - ./parser/example_data:/app/example_data:ro
+      - ./parser/example_data:/app/example_data  # writable so the file can be downloaded
       - archive_data:/archive_output
 
   mno_simulator:
@@ -14,11 +15,13 @@ services:
     depends_on:
       - sftp_receiver
     volumes:
-      - ./parser/example_data:/app/example_data:ro
+      - ./parser/example_data:/app/example_data  # writable so the file can be downloaded
       - mno_data_to_upload:/app/data_to_upload
       - mno_data_uploaded:/app/data_uploaded
       - ./ssh_keys:/app/ssh_keys:ro
     environment:
+      - NETCDF_FILE=/app/example_data/openMRG_cmls_20150827_3months.nc
+      - NETCDF_FILE_URL=https://bwsyncandshare.kit.edu/s/jSAFftGXcJjQbSJ/download
       - SFTP_HOST=sftp_receiver
       - SFTP_PORT=22
       - SFTP_USERNAME=cml_user
