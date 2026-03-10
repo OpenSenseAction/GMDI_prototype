@@ -78,3 +78,5 @@ END;
 $$ LANGUAGE plpgsql;
 
 SELECT create_hypertable('cml_data', 'time');
+
+CREATE INDEX idx_cml_data_cml_id ON cml_data (cml_id, time DESC);

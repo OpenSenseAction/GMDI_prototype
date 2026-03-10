@@ -6,6 +6,7 @@ This module wires together the FileWatcher, DBWriter and FileManager to implemen
 import os
 import time
 import logging
+import threading
 from pathlib import Path
 
 from .file_watcher import FileWatcher
@@ -26,6 +27,8 @@ class Config:
         "PROCESS_EXISTING_ON_STARTUP", "True"
     ).lower() in ("1", "true", "yes")
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+    # How often (seconds) to recalculate aggregate CML stats in the background
+    STATS_REFRESH_INTERVAL = int(os.getenv("STATS_REFRESH_INTERVAL", "60"))
 
 
 def setup_logging():
@@ -85,12 +88,36 @@ def main():
     )
     watcher.start()
 
+    # Background thread: refresh cml_stats on a slow timer so it never
+    # blocks file processing.
+    stop_event = threading.Event()
+
+    def stats_loop():
+        # Use a separate DBWriter connection so stats queries don't contend
+        # with the insert connection.
+        stats_db = DBWriter(Config.DATABASE_URL)
+        try:
+            stats_db.connect()
+        except Exception:
+            logger.exception("Stats thread: could not connect to DB")
+            return
+        while not stop_event.wait(Config.STATS_REFRESH_INTERVAL):
+            try:
+                stats_db.refresh_stats()
+            except Exception:
+                logger.exception("Stats thread: refresh_stats failed")
+        stats_db.close()
+
+    stats_thread = threading.Thread(target=stats_loop, daemon=True, name="stats-refresh")
+    stats_thread.start()
+
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         logger.info("Shutting down parser service")
     finally:
+        stop_event.set()
         watcher.stop()
         db_writer.close()
 
