@@ -2,6 +2,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock, mock_open
 import pandas as pd
+import numpy as np
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -19,6 +20,16 @@ def test_generate_archive_creates_files(
 
     mock_exists.return_value = True
 
+    # Minimal per-link DataFrame returned by dataset.isel().to_dataframe().reset_index()
+    slice_df = pd.DataFrame(
+        {
+            "cml_id": ["101", "102"],
+            "sublink_id": ["sublink_1", "sublink_1"],
+            "tsl": [50.0, 51.0],
+            "rsl": [-60.0, -61.0],
+        }
+    )
+
     mock_generator = MagicMock()
     mock_generator_class.return_value = mock_generator
     mock_generator.get_metadata_dataframe.return_value = pd.DataFrame(
@@ -27,16 +38,15 @@ def test_generate_archive_creates_files(
             "sublink_id": ["sublink_1", "sublink_1"],
         }
     )
-    mock_generator.generate_data.return_value = pd.DataFrame(
-        {
-            "time": pd.date_range("2024-01-01", periods=2, freq="5min"),
-            "cml_id": ["101", "101"],
-            "tsl": [50.0, 51.0],
-            "rsl": [-60.0, -61.0],
-        }
+    # Internal attributes used by the numpy-cached generation path
+    mock_generator.original_time_points = list(range(720))
+    mock_generator._get_netcdf_index_for_timestamp.return_value = 0
+    mock_generator.dataset.isel.return_value.to_dataframe.return_value.reset_index.return_value = (
+        slice_df
     )
 
-    with patch("generate_archive.Path.stat") as mock_stat:
+    with patch("generate_archive.Path.stat") as mock_stat, \
+         patch("pathlib.Path.is_dir", return_value=True):
         mock_stat.return_value.st_size = 1024
         generate_archive_data(
             archive_days=1,
@@ -56,4 +66,9 @@ def test_generate_archive_fails_if_netcdf_missing(mock_exists):
     mock_exists.return_value = False
 
     with pytest.raises(SystemExit):
-        generate_archive_data()
+        generate_archive_data(
+            archive_days=1,
+            output_dir="/tmp/test_archive",
+            netcdf_file="/fake/file.nc",
+            interval_seconds=300,
+        )
