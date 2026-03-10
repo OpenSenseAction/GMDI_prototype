@@ -5,6 +5,8 @@ This module reads CML data from a NetCDF file and generates fake real-time data
 by altering timestamps and looping through the existing data.
 """
 
+import urllib.request
+import urllib.error
 import xarray as xr
 import pandas as pd
 import numpy as np
@@ -13,6 +15,49 @@ import logging
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def ensure_netcdf_file(path: Path, url: str | None) -> None:
+    """Download the NetCDF file from *url* if *path* does not exist yet.
+
+    Downloads via a temp file so an interrupted transfer never leaves a
+    truncated file behind.  Does nothing if the file already exists or if no
+    URL is provided.
+    """
+    if path.exists():
+        logger.info(f"NetCDF file found: {path}")
+        return
+    if not url:
+        return  # caller's existence check will log the error
+    logger.info(f"NetCDF file not found at {path}")
+    logger.info(f"Downloading from: {url}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(".nc.download")
+    try:
+        with urllib.request.urlopen(url) as response, open(tmp_path, "wb") as out:
+            total_raw = response.headers.get("Content-Length")
+            total = int(total_raw) if total_raw else None
+            downloaded = 0
+            block_size = 8 * 1024 * 1024  # 8 MB chunks
+            while True:
+                block = response.read(block_size)
+                if not block:
+                    break
+                out.write(block)
+                downloaded += len(block)
+                if total:
+                    pct = downloaded / total * 100
+                    logger.info(
+                        f"  {pct:.0f}%  ({downloaded / 1e6:.0f} / {total / 1e6:.0f} MB)"
+                    )
+                else:
+                    logger.info(f"  {downloaded / 1e6:.0f} MB downloaded")
+        tmp_path.rename(path)
+        logger.info(f"Download complete: {path} ({path.stat().st_size / 1e6:.1f} MB)")
+    except Exception as exc:
+        tmp_path.unlink(missing_ok=True)
+        logger.error(f"Download failed: {exc}")
+        raise
 
 
 class CMLDataGenerator:
@@ -100,7 +145,12 @@ class CMLDataGenerator:
         ).total_seconds()
 
         if original_duration > 0:
-            time_fraction = loop_position / self.loop_duration_seconds
+            # Cycle through the source data at its native pace rather than
+            # stretching/compressing it to fill loop_duration_seconds.  This
+            # avoids long plateaus of identical values followed by sudden jumps
+            # when the archive period is much longer than the source file.
+            position_in_original = loop_position % original_duration
+            time_fraction = position_in_original / original_duration
             original_index = int(time_fraction * (len(self.original_time_points) - 1))
         else:
             original_index = 0

@@ -12,7 +12,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 import yaml
 
-from data_generator import CMLDataGenerator
+from data_generator import CMLDataGenerator, ensure_netcdf_file
 from sftp_uploader import SFTPUploader
 
 # Configure logging
@@ -55,9 +55,14 @@ def main():
     # Load configuration
     config = load_config()
 
+    # Resolve NetCDF file path (env var overrides config.yml for deployment)
+    netcdf_file = os.getenv("NETCDF_FILE") or config["data_source"]["netcdf_file"]
+    netcdf_file_url = os.getenv("NETCDF_FILE_URL")
+    ensure_netcdf_file(Path(netcdf_file), netcdf_file_url)
+
     # Initialize data generator
     generator = CMLDataGenerator(
-        netcdf_file=config["data_source"]["netcdf_file"],
+        netcdf_file=netcdf_file,
         loop_duration_seconds=config["data_source"]["loop_duration_seconds"],
         output_dir=config["generator"]["output_dir"],
     )
