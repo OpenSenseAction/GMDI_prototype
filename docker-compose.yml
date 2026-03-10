@@ -1,4 +1,14 @@
 services:
+  archive_generator:
+    build: ./mno_data_source_simulator
+    command: python generate_archive.py --days ${ARCHIVE_DAYS:-30} --interval-seconds ${ARCHIVE_INTERVAL_SECONDS:-300}
+    environment:
+      - ARCHIVE_OUTPUT_DIR=/archive_output
+      - NETCDF_FILE=/app/example_data/openMRG_cmls_20150827_12hours.nc
+    volumes:
+      - ./parser/example_data:/app/example_data:ro
+      - archive_data:/archive_output
+
   mno_simulator:
     build: ./mno_data_source_simulator
     depends_on:
@@ -40,8 +50,11 @@ services:
     build: ./database
     ports:
       - "5432:5432"
+    depends_on:
+      archive_generator:
+        condition: service_completed_successfully
     volumes:
-      - ./database/archive_data:/docker-entrypoint-initdb.d/archive_data:ro
+      - archive_data:/docker-entrypoint-initdb.d/archive_data:ro
       - ./database/init_archive_data.sh:/docker-entrypoint-initdb.d/99-load-archive.sh:ro
 
   processor:
@@ -143,6 +156,7 @@ services:
       - testing
 
 volumes:
+  archive_data:
   sftp_uploads:
   webserver_data_staged:
   webserver_data_archived:
