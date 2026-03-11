@@ -388,3 +388,62 @@ def test_generate_data_and_write_csv_with_split_freq(test_dir):
     assert len(df["time"].unique()) == 4
 
     generator.close()
+
+
+def test_loop_cycles_at_dataset_end_not_hourly(test_dir):
+    """Data must cycle at the end of the full dataset, not every hour.
+
+    Regression test: the old implementation computed
+        loop_position = elapsed % loop_duration_seconds   (3600 s)
+    and then mapped that position into the dataset, so the index reset every
+    hour and only the first ~1/12th of the 12-hour source file was ever used.
+
+    The fix replaces that with:
+        position_in_original = elapsed % original_duration
+    so the entire dataset is replayed before the cycle repeats.
+    """
+    generator = CMLDataGenerator(
+        netcdf_file=NETCDF_FILE,
+        output_dir=test_dir,
+    )
+
+    # Pin the loop start time for deterministic results.
+    t0 = pd.Timestamp("2026-01-01 00:00:00")
+    generator.loop_start_time = t0
+
+    original_duration_s = (
+        generator.original_time_points[-1] - generator.original_time_points[0]
+    ).total_seconds()
+
+    idx_at_start = generator._get_netcdf_index_for_timestamp(t0)
+
+    # One hour in: with the old code this would reset to 0 (new hourly cycle).
+    # With the fix the index must be strictly greater, showing we are progressing
+    # through the dataset rather than restarting.
+    idx_1h = generator._get_netcdf_index_for_timestamp(t0 + pd.Timedelta(hours=1))
+    assert idx_1h > idx_at_start, (
+        "Index after 1 hour must be greater than the starting index – "
+        "data must not loop every hour."
+    )
+
+    # Exactly one full dataset duration later the cycle should restart,
+    # yielding the same index as t0.
+    idx_after_full_cycle = generator._get_netcdf_index_for_timestamp(
+        t0 + pd.Timedelta(seconds=original_duration_s)
+    )
+    assert idx_after_full_cycle == idx_at_start, (
+        "Index after one full dataset duration must equal the starting index – "
+        "data must loop only at the end of the dataset."
+    )
+
+    # 1 hour into the second cycle must match 1 hour into the first cycle,
+    # confirming the loop period equals the dataset duration.
+    idx_1h_second_cycle = generator._get_netcdf_index_for_timestamp(
+        t0 + pd.Timedelta(seconds=original_duration_s) + pd.Timedelta(hours=1)
+    )
+    assert idx_1h_second_cycle == idx_1h, (
+        "Index 1 hour into the second cycle must equal the index 1 hour into "
+        "the first cycle."
+    )
+
+    generator.close()
