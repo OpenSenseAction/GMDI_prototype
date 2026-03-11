@@ -136,20 +136,14 @@ class CMLDataGenerator:
         # Calculate elapsed time since loop start
         elapsed = (timestamp - self.loop_start_time).total_seconds()
 
-        # Calculate position within the loop
-        loop_position = elapsed % self.loop_duration_seconds
-
-        # Map loop position to original data index
+        # Map elapsed time to original data index, cycling at the end of the
+        # full dataset so the entire source file is replayed before repeating.
         original_duration = (
             self.original_time_points[-1] - self.original_time_points[0]
         ).total_seconds()
 
         if original_duration > 0:
-            # Cycle through the source data at its native pace rather than
-            # stretching/compressing it to fill loop_duration_seconds.  This
-            # avoids long plateaus of identical values followed by sudden jumps
-            # when the archive period is much longer than the source file.
-            position_in_original = loop_position % original_duration
+            position_in_original = elapsed % original_duration
             time_fraction = position_in_original / original_duration
             original_index = int(time_fraction * (len(self.original_time_points) - 1))
         else:
