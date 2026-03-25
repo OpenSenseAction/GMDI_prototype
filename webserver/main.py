@@ -76,12 +76,12 @@ def overview():
             cur.execute("SELECT COUNT(DISTINCT cml_id) FROM cml_metadata")
             stats["total_cmls"] = cur.fetchone()[0]
 
-            # Get count of data records
-            cur.execute("SELECT COUNT(*) FROM cml_data")
+            # Get approximate count of data records (fast on large tables)
+            cur.execute("SELECT approximate_row_count('cml_data')")
             stats["total_records"] = cur.fetchone()[0]
 
-            # Get data date range
-            cur.execute("SELECT MIN(time), MAX(time) FROM cml_data")
+            # Get data date range (from 1h aggregate — fast, indexed)
+            cur.execute("SELECT MIN(bucket), MAX(bucket) FROM cml_data_1h")
             result = cur.fetchone()
             if result:
                 stats["data_start_date"] = result[0]
@@ -430,7 +430,7 @@ def api_cml_stats():
             LEFT JOIN (
                 SELECT cml_id, rsl
                 FROM cml_data
-                WHERE time >= (SELECT MAX(time) FROM cml_data) - INTERVAL '60 minutes'
+                WHERE time >= (SELECT MAX(bucket) FROM cml_data_1h) - INTERVAL '60 minutes'
             ) cd ON cs.cml_id = cd.cml_id
             GROUP BY cs.cml_id, cs.total_records, cs.valid_records, cs.null_records,
                      cs.completeness_percent, cs.min_rsl, cs.max_rsl, cs.mean_rsl,
@@ -473,7 +473,7 @@ def api_data_time_range():
             return jsonify({"earliest": None, "latest": None})
 
         cur = conn.cursor()
-        cur.execute("SELECT MIN(time), MAX(time) FROM cml_data")
+        cur.execute("SELECT MIN(bucket), MAX(bucket) FROM cml_data_1h")
         result = cur.fetchone()
         cur.close()
         conn.close()
@@ -509,28 +509,28 @@ def get_archive_statistics():
 
         cur = conn.cursor()
 
-        # Total records
-        cur.execute("SELECT COUNT(*) FROM cml_data")
+        # Total records (approximate, fast on large tables)
+        cur.execute("SELECT approximate_row_count('cml_data')")
         stats["total_records"] = cur.fetchone()[0]
 
         # CML count
         cur.execute("SELECT COUNT(DISTINCT cml_id) FROM cml_metadata")
         stats["cml_count"] = cur.fetchone()[0]
 
-        # Date range
-        cur.execute("SELECT MIN(time), MAX(time) FROM cml_data")
+        # Date range (from 1h aggregate — fast, indexed)
+        cur.execute("SELECT MIN(bucket), MAX(bucket) FROM cml_data_1h")
         result = cur.fetchone()
         if result:
             stats["date_range"]["start"] = result[0]
             stats["date_range"]["end"] = result[1]
 
-        # Records per CML
+        # Records per CML (from 1h aggregate — fast, no full table scan)
         cur.execute(
             """
-            SELECT cml_id, COUNT(*) as count 
-            FROM cml_data 
-            GROUP BY cml_id 
-            ORDER BY count DESC 
+            SELECT cml_id, COUNT(*) * 360 as count
+            FROM cml_data_1h
+            GROUP BY cml_id
+            ORDER BY count DESC
             LIMIT 10
         """
         )
