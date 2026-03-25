@@ -82,3 +82,34 @@ SELECT create_hypertable('cml_data', 'time');
 -- Index is created by the archive_loader service after bulk data load (faster COPY).
 -- If no archive data is loaded, create it manually:
 -- CREATE INDEX idx_cml_data_cml_id ON cml_data (cml_id, time DESC);
+
+-- ---------------------------------------------------------------------------
+-- 1-hour continuous aggregate for fast queries over large time ranges.
+-- Grafana and the webserver automatically switch to this view when the
+-- requested time range exceeds 3 days, reducing the scanned row count
+-- by ~360x (10-second raw data → 1-hour buckets).
+-- ---------------------------------------------------------------------------
+CREATE MATERIALIZED VIEW cml_data_1h
+WITH (timescaledb.continuous) AS
+SELECT
+    time_bucket('1 hour', time) AS bucket,
+    cml_id,
+    sublink_id,
+    MIN(rsl)  AS rsl_min,
+    MAX(rsl)  AS rsl_max,
+    AVG(rsl)  AS rsl_avg,
+    MIN(tsl)  AS tsl_min,
+    MAX(tsl)  AS tsl_max,
+    AVG(tsl)  AS tsl_avg
+FROM cml_data
+GROUP BY bucket, cml_id, sublink_id
+WITH NO DATA;
+
+-- Automatically refresh every hour, covering up to 2 days of history.
+-- The 1-hour end_offset prevents partial (in-progress) buckets from being
+-- materialised prematurely; very recent data reads through to raw cml_data.
+SELECT add_continuous_aggregate_policy('cml_data_1h',
+    start_offset      => INTERVAL '2 days',
+    end_offset        => INTERVAL '1 hour',
+    schedule_interval => INTERVAL '1 hour'
+);

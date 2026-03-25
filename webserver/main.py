@@ -280,80 +280,18 @@ def get_available_cmls():
         return []
 
 
-def generate_time_series_plot(cml_id, sublink_id="sublink_1", hours=168):
-    """Generate a time series plot for a specific CML (last 7 days by default)"""
-    try:
-        conn = get_db_connection()
-        if not conn:
-            return None
-
-        # Query data for the last 7 days (168 hours) relative to the latest data point
-        query = """
-            SELECT time, rsl 
-            FROM cml_data 
-            WHERE cml_id = %s AND sublink_id = %s
-            AND time >= (SELECT MAX(time) FROM cml_data WHERE cml_id = %s) - INTERVAL '7 days'
-            ORDER BY time
-        """
-        df = pd.read_sql_query(query, conn, params=(cml_id, sublink_id, cml_id))
-        conn.close()
-
-        if df.empty:
-            return None
-
-        # Ensure Altair uses the default (light) theme and create plot with light styling
-        try:
-            alt.themes.enable("default")
-        except Exception:
-            pass
-
-        df["time"] = pd.to_datetime(df["time"])
-        chart = (
-            alt.Chart(df)
-            .mark_line(color="#1f77b4", point=True)
-            .encode(x="time:T", y="rsl:Q", tooltip=["time:T", "rsl:Q"])
-            .properties(
-                width=800, height=400, title=f"Received Signal Level - CML {cml_id}"
-            )
-            .configure_view(
-                stroke="transparent",
-            )
-            .configure_title(fontSize=16, anchor="start", color="#111")
-            .configure_axis(labelColor="#333", titleColor="#333", gridColor="#e6e6e6")
-            .configure_legend(labelColor="#333", titleColor="#333")
-            .configure_background("#ffffff")
-            .interactive()
-        )
-
-        chart_html = chart.to_html()
-        # Ensure the embedded HTML uses a light background when inserted into pages
-        try:
-            if "</head>" in chart_html:
-                inject = "<style>body, .vega-embed { background: #ffffff !important; color: #111 !important; }</style>"
-                chart_html = chart_html.replace("</head>", inject + "</head>")
-        except Exception:
-            pass
-
-        return chart_html
-    except Exception as e:
-        print(f"Error generating time series plot: {e}")
-        return None
-
-
 @app.route("/realtime")
 def realtime():
     """Real-time data page"""
     map_html = generate_cml_map()
     cmls = get_available_cmls()
     default_cml = cmls[0] if cmls else None
-    plot_html = generate_time_series_plot(default_cml) if default_cml else None
 
     return render_template(
         "realtime.html",
         map_html=map_html,
         cmls=cmls,
         selected_cml=default_cml,
-        plot_html=plot_html,
     )
 
 
@@ -463,20 +401,6 @@ def api_cml_map():
     except Exception as e:
         print(f"Error fetching CML map data: {e}")
         return jsonify([])
-
-
-@app.route("/api/timeseries/<cml_id>")
-def api_timeseries(cml_id):
-    """API endpoint for fetching time series data"""
-    hours = request.args.get("hours", 24, type=int)
-    plot_html = generate_time_series_plot(cml_id, hours=hours)
-    if not plot_html:
-        return jsonify(
-            {
-                "html": "<div class='alert alert-info'><i class='fas fa-info-circle'></i> No data available for this CML</div>"
-            }
-        )
-    return jsonify({"html": plot_html})
 
 
 @app.route("/api/cml-stats")
