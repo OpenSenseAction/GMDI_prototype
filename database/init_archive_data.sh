@@ -84,3 +84,12 @@ EOSQL
 
 echo "Archive data successfully loaded!"
 # Note: cml_stats is populated by the parser's background stats thread on startup.
+
+# Refresh the 1-hour continuous aggregate so that Grafana and the webserver can
+# immediately serve pre-aggregated data for large time ranges without scanning
+# the full raw cml_data table.
+echo "Refreshing 1h continuous aggregate (cml_data_1h)..."
+psql $PSQL_FLAGS <<-EOSQL
+    CALL refresh_continuous_aggregate('cml_data_1h', NULL, NULL);
+EOSQL
+echo "Continuous aggregate refresh complete."

@@ -101,7 +101,7 @@
                         },
                         "lineInterpolation": "linear",
                         "lineWidth": 2,
-                        "pointSize": 5,
+                        "pointSize": 4,
                         "scaleDistribution": {
                             "type": "linear"
                         },
@@ -127,7 +127,224 @@
                     },
                     "unit": "dBm"
                 },
-                "overrides": []
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "sublink_1 min"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "blue",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.pointSize",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.hideFrom",
+                                "value": {
+                                    "tooltip": true,
+                                    "viz": false,
+                                    "legend": true
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "sublink_2 min"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "semi-dark-orange",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.pointSize",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.hideFrom",
+                                "value": {
+                                    "tooltip": true,
+                                    "viz": false,
+                                    "legend": true
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "sublink_1 max"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "blue",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 20
+                            },
+                            {
+                                "id": "custom.fillBelowTo",
+                                "value": "sublink_1 min"
+                            },
+                            {
+                                "id": "custom.hideFrom",
+                                "value": {
+                                    "tooltip": true,
+                                    "viz": false,
+                                    "legend": true
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "sublink_2 max"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "semi-dark-orange",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 20
+                            },
+                            {
+                                "id": "custom.fillBelowTo",
+                                "value": "sublink_2 min"
+                            },
+                            {
+                                "id": "custom.hideFrom",
+                                "value": {
+                                    "tooltip": true,
+                                    "viz": false,
+                                    "legend": true
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "sublink_1 avg"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "blue",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 2
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 0
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "sublink_2 avg"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "semi-dark-orange",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 2
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 0
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "sublink_1"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "blue",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "sublink_2"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "semi-dark-orange",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    }
+                ]
             },
             "gridPos": {
                 "h": 8,
@@ -144,7 +361,7 @@
                     "showLegend": true
                 },
                 "tooltip": {
-                    "mode": "single",
+                    "mode": "multi",
                     "sort": "none"
                 }
             },
@@ -156,8 +373,38 @@
                     },
                     "format": "time_series",
                     "rawQuery": true,
-                    "rawSql": "SELECT\n  time AS \"time\",\n  sublink_id AS \"metric\",\n  rsl AS \"value\"\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND '${aggregation}' = 'RAW'\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nUNION ALL\nSELECT\n  time_bucket((CASE WHEN '${interval}' = 'auto' THEN (${__interval_ms} || ' milliseconds') ELSE '${interval}' END)::interval, time) AS \"time\",\n  sublink_id AS \"metric\",\n  CASE\n    WHEN '${aggregation}' = 'MEDIAN' THEN PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY rsl)\n    WHEN '${aggregation}' = 'AVG' THEN AVG(rsl)\n    WHEN '${aggregation}' = 'MIN' THEN MIN(rsl)\n    WHEN '${aggregation}' = 'MAX' THEN MAX(rsl)\n    WHEN '${aggregation}' = 'STDDEV' THEN STDDEV(rsl)\n  END AS \"value\"\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND '${aggregation}' <> 'RAW'\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nGROUP BY time_bucket((CASE WHEN '${interval}' = 'auto' THEN (${__interval_ms} || ' milliseconds') ELSE '${interval}' END)::interval, time), sublink_id\nORDER BY \"time\" ASC",
+                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' min' AS metric,\n  rsl_min AS value\nFROM cml_data_1h\nWHERE cml_id = '${cml_id}'\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
                     "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "grafana-postgresql-datasource",
+                        "uid": "PostgreSQL"
+                    },
+                    "format": "time_series",
+                    "rawQuery": true,
+                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' max' AS metric,\n  rsl_max AS value\nFROM cml_data_1h\nWHERE cml_id = '${cml_id}'\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+                    "refId": "B"
+                },
+                {
+                    "datasource": {
+                        "type": "grafana-postgresql-datasource",
+                        "uid": "PostgreSQL"
+                    },
+                    "format": "time_series",
+                    "rawQuery": true,
+                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' avg' AS metric,\n  rsl_avg AS value\nFROM cml_data_1h\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+                    "refId": "C"
+                },
+                {
+                    "datasource": {
+                        "type": "grafana-postgresql-datasource",
+                        "uid": "PostgreSQL"
+                    },
+                    "format": "time_series",
+                    "rawQuery": true,
+                    "rawSql": "SELECT\n  time AS \"time\",\n  sublink_id AS metric,\n  rsl AS value\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND (\n    ('${interval}' = 'auto' AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) <= 259200)\n    OR '${interval}' = 'raw'\n  )\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+                    "refId": "D"
                 }
             ],
             "title": "CML Time Series - Received Signal Level",
@@ -189,7 +436,7 @@
                         },
                         "lineInterpolation": "linear",
                         "lineWidth": 2,
-                        "pointSize": 5,
+                        "pointSize": 4,
                         "scaleDistribution": {
                             "type": "linear"
                         },
@@ -215,7 +462,224 @@
                     },
                     "unit": "dB"
                 },
-                "overrides": []
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "sublink_1 min"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "blue",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.pointSize",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.hideFrom",
+                                "value": {
+                                    "tooltip": true,
+                                    "viz": false,
+                                    "legend": true
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "sublink_2 min"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "semi-dark-orange",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.pointSize",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.hideFrom",
+                                "value": {
+                                    "tooltip": true,
+                                    "viz": false,
+                                    "legend": true
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "sublink_1 max"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "blue",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 20
+                            },
+                            {
+                                "id": "custom.fillBelowTo",
+                                "value": "sublink_1 min"
+                            },
+                            {
+                                "id": "custom.hideFrom",
+                                "value": {
+                                    "tooltip": true,
+                                    "viz": false,
+                                    "legend": true
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "sublink_2 max"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "semi-dark-orange",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 20
+                            },
+                            {
+                                "id": "custom.fillBelowTo",
+                                "value": "sublink_2 min"
+                            },
+                            {
+                                "id": "custom.hideFrom",
+                                "value": {
+                                    "tooltip": true,
+                                    "viz": false,
+                                    "legend": true
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "sublink_1 avg"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "blue",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 2
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 0
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "sublink_2 avg"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "semi-dark-orange",
+                                    "mode": "fixed"
+                                }
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 2
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 0
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "sublink_1"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "blue",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "sublink_2"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "semi-dark-orange",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    }
+                ]
             },
             "gridPos": {
                 "h": 8,
@@ -232,7 +696,7 @@
                     "showLegend": true
                 },
                 "tooltip": {
-                    "mode": "single",
+                    "mode": "multi",
                     "sort": "none"
                 }
             },
@@ -244,8 +708,38 @@
                     },
                     "format": "time_series",
                     "rawQuery": true,
-                    "rawSql": "SELECT\n  time AS \"time\",\n  sublink_id AS \"metric\",\n  tsl AS \"value\"\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND '${aggregation}' = 'RAW'\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nUNION ALL\nSELECT\n  time_bucket((CASE WHEN '${interval}' = 'auto' THEN (${__interval_ms} || ' milliseconds') ELSE '${interval}' END)::interval, time) AS \"time\",\n  sublink_id AS \"metric\",\n  CASE\n    WHEN '${aggregation}' = 'MEDIAN' THEN PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY tsl)\n    WHEN '${aggregation}' = 'AVG' THEN AVG(tsl)\n    WHEN '${aggregation}' = 'MIN' THEN MIN(tsl)\n    WHEN '${aggregation}' = 'MAX' THEN MAX(tsl)\n    WHEN '${aggregation}' = 'STDDEV' THEN STDDEV(tsl)\n  END AS \"value\"\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND '${aggregation}' <> 'RAW'\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nGROUP BY time_bucket((CASE WHEN '${interval}' = 'auto' THEN (${__interval_ms} || ' milliseconds') ELSE '${interval}' END)::interval, time), sublink_id\nORDER BY \"time\" ASC",
+                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' min' AS metric,\n  tsl_min AS value\nFROM cml_data_1h\nWHERE cml_id = '${cml_id}'\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
                     "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "grafana-postgresql-datasource",
+                        "uid": "PostgreSQL"
+                    },
+                    "format": "time_series",
+                    "rawQuery": true,
+                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' max' AS metric,\n  tsl_max AS value\nFROM cml_data_1h\nWHERE cml_id = '${cml_id}'\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+                    "refId": "B"
+                },
+                {
+                    "datasource": {
+                        "type": "grafana-postgresql-datasource",
+                        "uid": "PostgreSQL"
+                    },
+                    "format": "time_series",
+                    "rawQuery": true,
+                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' avg' AS metric,\n  tsl_avg AS value\nFROM cml_data_1h\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+                    "refId": "C"
+                },
+                {
+                    "datasource": {
+                        "type": "grafana-postgresql-datasource",
+                        "uid": "PostgreSQL"
+                    },
+                    "format": "time_series",
+                    "rawQuery": true,
+                    "rawSql": "SELECT\n  time AS \"time\",\n  sublink_id AS metric,\n  tsl AS value\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND (\n    ('${interval}' = 'auto' AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) <= 259200)\n    OR '${interval}' = 'raw'\n  )\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+                    "refId": "D"
                 }
             ],
             "title": "CML Time Series - Transmitted Signal Level",
@@ -402,8 +896,8 @@
             {
                 "current": {
                     "selected": true,
-                    "text": "1min",
-                    "value": "1 minute"
+                    "text": "Auto",
+                    "value": "auto"
                 },
                 "description": "Time aggregation interval for downsampling data",
                 "hide": 0,
@@ -413,42 +907,17 @@
                 "name": "interval",
                 "options": [
                     {
-                        "selected": false,
+                        "selected": true,
                         "text": "Auto",
                         "value": "auto"
                     },
                     {
-                        "selected": true,
-                        "text": "1min",
-                        "value": "1 minute"
-                    },
-                    {
                         "selected": false,
-                        "text": "5min",
-                        "value": "5 minutes"
-                    },
-                    {
-                        "selected": false,
-                        "text": "15min",
-                        "value": "15 minutes"
-                    },
-                    {
-                        "selected": false,
-                        "text": "1h",
-                        "value": "1 hour"
-                    },
-                    {
-                        "selected": false,
-                        "text": "6h",
-                        "value": "6 hours"
-                    },
-                    {
-                        "selected": false,
-                        "text": "1d",
-                        "value": "1 day"
+                        "text": "Raw",
+                        "value": "raw"
                     }
                 ],
-                "query": "Auto : auto,1min : 1 minute,5min : 5 minutes,15min : 15 minutes,1h : 1 hour,6h : 6 hours,1d : 1 day",
+                "query": "Auto : auto,Raw : raw",
                 "queryValue": "",
                 "skipUrlSync": true,
                 "type": "custom"
@@ -460,7 +929,7 @@
                     "value": "AVG"
                 },
                 "description": "Aggregation function for downsampling",
-                "hide": 0,
+                "hide": 2,
                 "includeAll": false,
                 "label": "Aggregation",
                 "multi": false,

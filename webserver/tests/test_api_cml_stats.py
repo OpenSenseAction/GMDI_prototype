@@ -6,7 +6,6 @@ import pytest
 
 # Ensure optional heavy imports won't fail at import time
 sys.modules.setdefault("folium", Mock())
-sys.modules.setdefault("altair", Mock())
 sys.modules.setdefault("requests", Mock())
 
 
