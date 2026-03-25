@@ -2,9 +2,7 @@ import os
 import time
 import math
 import psycopg2
-import pandas as pd
 import folium
-import altair as alt
 import requests
 from flask import Flask, render_template, request, jsonify, Response, redirect
 from datetime import datetime, timedelta
@@ -498,8 +496,6 @@ def get_archive_statistics():
         "total_records": 0,
         "cml_count": 0,
         "date_range": {"start": None, "end": None},
-        "records_per_cml": [],
-        "uptime_stats": {"online": 0, "offline": 0},
     }
 
     try:
@@ -524,20 +520,6 @@ def get_archive_statistics():
             stats["date_range"]["start"] = result[0]
             stats["date_range"]["end"] = result[1]
 
-        # Records per CML (from 1h aggregate — fast, no full table scan)
-        cur.execute(
-            """
-            SELECT cml_id, COUNT(*) * 360 as count
-            FROM cml_data_1h
-            GROUP BY cml_id
-            ORDER BY count DESC
-            LIMIT 10
-        """
-        )
-        stats["records_per_cml"] = [
-            {"cml_id": row[0], "count": row[1]} for row in cur.fetchall()
-        ]
-
         cur.close()
         conn.close()
     except Exception as e:
@@ -546,53 +528,11 @@ def get_archive_statistics():
     return stats
 
 
-def generate_archive_charts():
-    """Generate charts for archive statistics"""
-    try:
-        conn = get_db_connection()
-        if not conn:
-            return {"data_distribution": None}
-
-        # Get data distribution by minute
-        query = """
-            SELECT DATE_TRUNC('minute', time) as minute, COUNT(*) as count 
-            FROM cml_data 
-            GROUP BY DATE_TRUNC('minute', time)
-            ORDER BY minute
-        """
-        df = pd.read_sql_query(query, conn)
-        conn.close()
-
-        if df.empty:
-            return {"data_distribution": None}
-
-        # Convert minute column to datetime for proper sorting
-        df["minute"] = pd.to_datetime(df["minute"])
-
-        # Create bar chart
-        chart = (
-            alt.Chart(df)
-            .mark_bar()
-            .encode(x="minute:T", y="count:Q", tooltip=["minute:T", "count:Q"])
-            .properties(width=900, height=400, title="Data Records per Minute")
-            .interactive()
-        )
-
-        return {"data_distribution": chart.to_html()}
-    except Exception as e:
-        print(f"Error generating archive charts: {e}")
-        return {"data_distribution": None}
-
-
 @app.route("/archive")
 def archive():
     """Archive statistics page"""
     stats = get_archive_statistics()
-    charts = generate_archive_charts()
-
-    return render_template(
-        "archive.html", stats=stats, chart_html=charts["data_distribution"]
-    )
+    return render_template("archive.html", stats=stats)
 
 
 # ==================== DATA UPLOADS ROUTES ====================

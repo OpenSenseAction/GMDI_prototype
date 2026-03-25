@@ -1,0 +1,196 @@
+{
+    "id": null,
+    "uid": "cml-archive",
+    "title": "CML Archive",
+    "tags": [],
+    "timezone": "browser",
+    "schemaVersion": 36,
+    "version": 1,
+    "refresh": "",
+    "time": {
+        "from": "now-1M",
+        "to": "now"
+    },
+    "panels": [
+        {
+            "id": 1,
+            "title": "Active Sublinks per Hour",
+            "type": "timeseries",
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "PostgreSQL"
+            },
+            "gridPos": {
+                "h": 9,
+                "w": 24,
+                "x": 0,
+                "y": 0
+            },
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "grafana-postgresql-datasource",
+                        "uid": "PostgreSQL"
+                    },
+                    "format": "time_series",
+                    "rawQuery": true,
+                    "rawSql": "SELECT\n  bucket AS \"time\",\n  'sublinks' AS metric,\n  COUNT(*) AS value\nFROM cml_data_1h\nWHERE bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nGROUP BY bucket\nORDER BY 1 ASC",
+                    "refId": "A"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "fixedColor": "blue",
+                        "mode": "fixed"
+                    },
+                    "custom": {
+                        "drawStyle": "bars",
+                        "barAlignment": 0,
+                        "lineWidth": 1,
+                        "fillOpacity": 60,
+                        "gradientMode": "none",
+                        "spanNulls": false,
+                        "showPoints": "never",
+                        "stacking": {
+                            "mode": "none",
+                            "group": "A"
+                        },
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "Sublinks",
+                        "axisPlacement": "auto",
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "hideFrom": {
+                            "tooltip": false,
+                            "viz": false,
+                            "legend": false
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            }
+                        ]
+                    },
+                    "unit": "short",
+                    "decimals": 0,
+                    "displayName": "Active sublinks"
+                },
+                "overrides": []
+            },
+            "options": {
+                "tooltip": {
+                    "mode": "single",
+                    "sort": "none"
+                },
+                "legend": {
+                    "displayMode": "hidden",
+                    "placement": "bottom"
+                }
+            }
+        },
+        {
+            "id": 2,
+            "title": "Approximate Data Points per Hour",
+            "type": "timeseries",
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "PostgreSQL"
+            },
+            "gridPos": {
+                "h": 9,
+                "w": 24,
+                "x": 0,
+                "y": 9
+            },
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "grafana-postgresql-datasource",
+                        "uid": "PostgreSQL"
+                    },
+                    "format": "time_series",
+                    "rawQuery": true,
+                    "rawSql": "SELECT\n  bucket AS \"time\",\n  'data points' AS metric,\n  COUNT(*) * 360 AS value\nFROM cml_data_1h\nWHERE bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nGROUP BY bucket\nORDER BY 1 ASC",
+                    "refId": "A"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "fixedColor": "semi-dark-green",
+                        "mode": "fixed"
+                    },
+                    "custom": {
+                        "drawStyle": "bars",
+                        "barAlignment": 0,
+                        "lineWidth": 1,
+                        "fillOpacity": 60,
+                        "gradientMode": "none",
+                        "spanNulls": false,
+                        "showPoints": "never",
+                        "stacking": {
+                            "mode": "none",
+                            "group": "A"
+                        },
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "Data points",
+                        "axisPlacement": "auto",
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "hideFrom": {
+                            "tooltip": false,
+                            "viz": false,
+                            "legend": false
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            }
+                        ]
+                    },
+                    "unit": "short",
+                    "decimals": 0,
+                    "displayName": "Approx. data points"
+                },
+                "overrides": []
+            },
+            "options": {
+                "tooltip": {
+                    "mode": "single",
+                    "sort": "none"
+                },
+                "legend": {
+                    "displayMode": "hidden",
+                    "placement": "bottom"
+                }
+            }
+        }
+    ],
+    "templating": {
+        "list": []
+    },
+    "annotations": {
+        "list": []
+    }
+}
