@@ -105,7 +105,7 @@
                         "scaleDistribution": {
                             "type": "linear"
                         },
-                        "showPoints": "auto",
+                        "showPoints": "never",
                         "spanNulls": false,
                         "stacking": {
                             "group": "A",
@@ -373,7 +373,7 @@
                     },
                     "format": "time_series",
                     "rawQuery": true,
-                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' min' AS metric,\n  rsl_min AS value\nFROM cml_data_1h\nWHERE cml_id = '${cml_id}'\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' min' AS metric,\n  rsl_min AS value\nFROM cml_data_1h\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
                     "refId": "A"
                 },
                 {
@@ -383,7 +383,7 @@
                     },
                     "format": "time_series",
                     "rawQuery": true,
-                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' max' AS metric,\n  rsl_max AS value\nFROM cml_data_1h\nWHERE cml_id = '${cml_id}'\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' max' AS metric,\n  rsl_max AS value\nFROM cml_data_1h\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
                     "refId": "B"
                 },
                 {
@@ -403,8 +403,18 @@
                     },
                     "format": "time_series",
                     "rawQuery": true,
-                    "rawSql": "SELECT\n  time AS \"time\",\n  sublink_id AS metric,\n  rsl AS value\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND (\n    ('${interval}' = 'auto' AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) <= 259200)\n    OR '${interval}' = 'raw'\n  )\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+                    "rawSql": "WITH bucketed AS (\n  SELECT\n    time_bucket('$__interval', time) AS bucket,\n    sublink_id,\n    MIN(rsl) AS rsl_min,\n    MAX(rsl) AS rsl_max,\n    AVG(rsl) AS rsl_avg\n  FROM cml_data\n  WHERE cml_id = '${cml_id}'\n    AND '${interval}' = 'auto'\n    AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) <= 259200\n    AND time >= $__timeFrom()::timestamptz\n    AND time <= $__timeTo()::timestamptz\n  GROUP BY 1, 2\n)\nSELECT bucket AS \"time\", sublink_id || ' min' AS metric, rsl_min AS value FROM bucketed\nUNION ALL\nSELECT bucket AS \"time\", sublink_id || ' max' AS metric, rsl_max AS value FROM bucketed\nUNION ALL\nSELECT bucket AS \"time\", sublink_id || ' avg' AS metric, rsl_avg AS value FROM bucketed\nORDER BY 1 ASC",
                     "refId": "D"
+                },
+                {
+                    "datasource": {
+                        "type": "grafana-postgresql-datasource",
+                        "uid": "PostgreSQL"
+                    },
+                    "format": "time_series",
+                    "rawQuery": true,
+                    "rawSql": "SELECT\n  time AS \"time\",\n  sublink_id AS metric,\n  rsl AS value\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'raw'\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+                    "refId": "E"
                 }
             ],
             "title": "CML Time Series - Received Signal Level",
@@ -708,7 +718,7 @@
                     },
                     "format": "time_series",
                     "rawQuery": true,
-                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' min' AS metric,\n  tsl_min AS value\nFROM cml_data_1h\nWHERE cml_id = '${cml_id}'\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' min' AS metric,\n  tsl_min AS value\nFROM cml_data_1h\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
                     "refId": "A"
                 },
                 {
@@ -718,7 +728,7 @@
                     },
                     "format": "time_series",
                     "rawQuery": true,
-                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' max' AS metric,\n  tsl_max AS value\nFROM cml_data_1h\nWHERE cml_id = '${cml_id}'\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' max' AS metric,\n  tsl_max AS value\nFROM cml_data_1h\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
                     "refId": "B"
                 },
                 {
@@ -738,8 +748,18 @@
                     },
                     "format": "time_series",
                     "rawQuery": true,
-                    "rawSql": "SELECT\n  time AS \"time\",\n  sublink_id AS metric,\n  tsl AS value\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND (\n    ('${interval}' = 'auto' AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) <= 259200)\n    OR '${interval}' = 'raw'\n  )\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+                    "rawSql": "SELECT\n  time_bucket('$__interval', time) AS \"time\",\n  sublink_id AS metric,\n  AVG(tsl) AS value\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) <= 259200\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nGROUP BY 1, 2\nORDER BY 1 ASC",
                     "refId": "D"
+                },
+                {
+                    "datasource": {
+                        "type": "grafana-postgresql-datasource",
+                        "uid": "PostgreSQL"
+                    },
+                    "format": "time_series",
+                    "rawQuery": true,
+                    "rawSql": "SELECT\n  time AS \"time\",\n  sublink_id AS metric,\n  tsl AS value\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'raw'\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+                    "refId": "E"
                 }
             ],
             "title": "CML Time Series - Transmitted Signal Level",
