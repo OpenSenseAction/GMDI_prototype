@@ -113,3 +113,25 @@ SELECT add_continuous_aggregate_policy('cml_data_1h',
     end_offset        => INTERVAL '1 hour',
     schedule_interval => INTERVAL '1 hour'
 );
+
+-- ---------------------------------------------------------------------------
+-- Compression for cml_data chunks older than 7 days.
+--
+-- compress_segmentby: each compressed segment contains one (cml_id, sublink_id)
+--   pair, so a query filtered to a single CML decompresses only ~1/728th of a
+--   chunk — not the whole thing.
+-- compress_orderby: matches the query pattern (time range scans), allowing
+--   skip-scan decompression for narrow time windows within a segment.
+--
+-- At ~10-20x compression ratio, the last month of data fits in shared_buffers
+-- after a single cache warm-up, regardless of how many new streams are added.
+-- The current uncompressed week chunk is left untouched so real-time ingestion
+-- and detail-view queries on recent data have no decompression overhead.
+-- ---------------------------------------------------------------------------
+ALTER TABLE cml_data SET (
+    timescaledb.compress,
+    timescaledb.compress_segmentby = 'cml_id, sublink_id',
+    timescaledb.compress_orderby   = 'time DESC'
+);
+
+SELECT add_compression_policy('cml_data', INTERVAL '7 days');

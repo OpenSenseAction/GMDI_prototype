@@ -80,8 +80,8 @@ services:
     # random_page_cost: tell the planner data is effectively cached, prefer index scans.
     command: >
       postgres
-        -c shared_buffers=1GB
-        -c effective_cache_size=3GB
+        -c shared_buffers=2GB
+        -c effective_cache_size=4GB
         -c work_mem=64MB
         -c maintenance_work_mem=256MB
         -c random_page_cost=1.1
