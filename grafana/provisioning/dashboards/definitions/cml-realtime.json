@@ -403,7 +403,7 @@
                     },
                     "format": "time_series",
                     "rawQuery": true,
-                    "rawSql": "SELECT\n  time_bucket('$__interval', time) AS \"time\",\n  sublink_id AS metric,\n  AVG(rsl) AS value\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) <= 259200\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nGROUP BY 1, 2\nORDER BY 1 ASC",
+                    "rawSql": "WITH bucketed AS (\n  SELECT\n    time_bucket('$__interval', time) AS bucket,\n    sublink_id,\n    MIN(rsl) AS rsl_min,\n    MAX(rsl) AS rsl_max,\n    AVG(rsl) AS rsl_avg\n  FROM cml_data\n  WHERE cml_id = '${cml_id}'\n    AND '${interval}' = 'auto'\n    AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) <= 259200\n    AND time >= $__timeFrom()::timestamptz\n    AND time <= $__timeTo()::timestamptz\n  GROUP BY 1, 2\n)\nSELECT bucket AS \"time\", sublink_id || ' min' AS metric, rsl_min AS value FROM bucketed\nUNION ALL\nSELECT bucket AS \"time\", sublink_id || ' max' AS metric, rsl_max AS value FROM bucketed\nUNION ALL\nSELECT bucket AS \"time\", sublink_id || ' avg' AS metric, rsl_avg AS value FROM bucketed\nORDER BY 1 ASC",
                     "refId": "D"
                 },
                 {
