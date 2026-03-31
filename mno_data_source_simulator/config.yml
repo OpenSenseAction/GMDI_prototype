@@ -7,8 +7,10 @@ data_source:
   # downloaded automatically at startup if NETCDF_FILE_URL is set.
   # Override via the NETCDF_FILE environment variable.
   netcdf_file: "/app/example_data/openMRG_cmls_20150827_3months.nc"
-  # Loop duration in seconds (1 hour = 3600 seconds)
-  loop_duration_seconds: 3600
+  # Loop duration in seconds — set to the full 3-month dataset duration so the
+  # simulator only restarts after exhausting all source data.
+  # (openMRG_cmls_20150827_3months.nc: 7 948 860 s ≈ 92 days)
+  loop_duration_seconds: 7948860
 
 # SFTP upload configuration
 sftp:
