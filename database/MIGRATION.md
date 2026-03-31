@@ -2,6 +2,114 @@
 
 ---
 
+## PR `feat/db-roles-rls` — Create database roles and enable Row-Level Security
+
+**Branch:** `feat/db-roles-rls`
+
+`init.sql` only runs on a fresh database volume, so when deploying this branch
+to a machine that already has data you must apply the migration file below
+**after** migrations 001–003 from `feat/db-add-user-id` have already been applied.
+
+### Changes
+
+| File | What it does |
+|------|-------------|
+| `migrations/004_add_roles_rls.sql` | Creates `user1_role` and `webserver_role`; grants table/function permissions; enables RLS on `cml_data`, `cml_metadata`, `cml_stats`; creates per-role isolation policies |
+
+### Backward compatibility
+
+This migration is **fully backward-compatible** with the existing services:
+
+- `myuser` (PostgreSQL superuser) bypasses RLS by default.  The parser and
+  webserver still connect as `myuser` and see all data unchanged until
+  PR3 (`feat/parser-user-id`) and PR5 (`feat/webserver-auth`) wire up the
+  new role credentials.
+- No table schema changes — only roles, grants, and policies are added.
+- Rollback is possible: revoke grants, drop policies, then drop roles (see
+  Rollback section below).
+
+### Note on `cml_data_1h` (continuous aggregate)
+
+PostgreSQL RLS cannot be applied to materialized views, so `cml_data_1h` is
+**not** automatically row-filtered.  Queries to this view **must** always
+include a `WHERE user_id = ?` predicate.  The webserver (PR5) and Grafana
+panels enforce this.  All raw-data queries route through `cml_data`, which
+**is** protected by RLS.
+
+### Steps
+
+**1. Back up the database**
+
+```bash
+docker compose exec database pg_dump -U myuser -d mydatabase \
+    > backup_pre_roles_rls_$(date +%Y%m%d_%H%M%S).sql
+```
+
+**2. Pull and rebuild**
+
+```bash
+git pull origin feat/db-roles-rls   # or merge to main first
+docker compose up -d --build
+```
+
+**3. Apply the migration**
+
+```bash
+docker compose exec -T database psql -U myuser -d mydatabase \
+    < database/migrations/004_add_roles_rls.sql
+```
+
+**4. Verify**
+
+```bash
+# List the new roles
+docker compose exec database psql -U myuser -d mydatabase \
+    -c "\du user1_role webserver_role"
+
+# Confirm RLS is enabled on all three tables
+docker compose exec database psql -U myuser -d mydatabase \
+    -c "SELECT relname, relrowsecurity FROM pg_class \
+        WHERE relname IN ('cml_data','cml_metadata','cml_stats');"
+
+# Smoke-test: user1_role should see its own rows and nothing else
+docker compose exec database psql \
+    -U user1_role -d mydatabase \
+    -c "SELECT count(*) FROM cml_data;"
+```
+
+**Rollback:**
+
+```bash
+docker compose exec database psql -U myuser -d mydatabase -c "
+-- Drop policies
+DROP POLICY IF EXISTS user1_cml_data_policy     ON cml_data;
+DROP POLICY IF EXISTS user1_cml_metadata_policy ON cml_metadata;
+DROP POLICY IF EXISTS user1_cml_stats_policy    ON cml_stats;
+DROP POLICY IF EXISTS webserver_cml_data_policy     ON cml_data;
+DROP POLICY IF EXISTS webserver_cml_metadata_policy ON cml_metadata;
+DROP POLICY IF EXISTS webserver_cml_stats_policy    ON cml_stats;
+
+-- Disable RLS
+ALTER TABLE cml_data     DISABLE ROW LEVEL SECURITY;
+ALTER TABLE cml_metadata DISABLE ROW LEVEL SECURITY;
+ALTER TABLE cml_stats    DISABLE ROW LEVEL SECURITY;
+
+-- Revoke grants
+REVOKE ALL ON cml_data, cml_metadata, cml_stats, cml_data_1h
+    FROM user1_role, webserver_role;
+REVOKE EXECUTE ON FUNCTION update_cml_stats(TEXT, TEXT)
+    FROM user1_role;
+REVOKE user1_role FROM webserver_role;
+REVOKE USAGE ON SCHEMA public FROM user1_role, webserver_role;
+
+-- Drop roles
+DROP ROLE IF EXISTS user1_role;
+DROP ROLE IF EXISTS webserver_role;
+"
+```
+
+---
+
 ## PR `feat/db-add-user-id` — Add `user_id` for multi-user RLS support
 
 **Branch:** `feat/db-add-user-id`
