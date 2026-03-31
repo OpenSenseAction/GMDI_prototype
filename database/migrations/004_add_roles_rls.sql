@@ -96,33 +96,18 @@ GRANT SELECT ON cml_stats    TO webserver_role;
 GRANT EXECUTE ON FUNCTION update_cml_stats(TEXT, TEXT) TO user1;
 
 -- ---------------------------------------------------------------------------
--- Step 4: Enable Row-Level Security on base tables
+-- Step 4: Enable Row-Level Security on cml_metadata and cml_stats
 --
--- TimescaleDB does not allow ENABLE ROW LEVEL SECURITY on a hypertable
--- that has timescaledb.compress set.  Work around this by decompressing
--- all currently-compressed cml_data chunks, enabling RLS, then
--- re-compressing — the same decompress/recompress pattern used in
--- migration 002.  No data is lost if the process is interrupted.
+-- cml_data is excluded: TimescaleDB does not allow RLS on compressed
+-- hypertables (and compression cannot be set on an RLS-enabled table).
+-- These two features are mutually exclusive on the same hypertable.
+-- Per-user isolation for raw cml_data queries is provided by the
+-- cml_data_secure security-barrier view in Step 6 below.
 --
 -- cml_metadata and cml_stats are plain tables (no compression), so they
--- can be altered directly.
+-- support RLS without restriction.
 -- ---------------------------------------------------------------------------
 
--- Decompress any compressed cml_data chunks.
-SELECT decompress_chunk(
-    format('%I.%I', chunk_schema, chunk_name)::regclass
-)
-FROM timescaledb_information.chunks
-WHERE hypertable_name = 'cml_data'
-  AND is_compressed = true;
-
-ALTER TABLE cml_data ENABLE ROW LEVEL SECURITY;
-
--- Re-compress chunks older than the compression policy threshold (7 days).
-SELECT compress_chunk(c)
-FROM   show_chunks('cml_data', older_than => INTERVAL '7 days') c;
-
--- Plain tables: no compression constraint.
 ALTER TABLE cml_metadata ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cml_stats    ENABLE ROW LEVEL SECURITY;
 
@@ -141,11 +126,9 @@ ALTER TABLE cml_stats    ENABLE ROW LEVEL SECURITY;
 -- generic policy takes over instead.
 -- ---------------------------------------------------------------------------
 
-CREATE POLICY user_cml_data_policy ON cml_data
-    FOR ALL
-    USING     (user_id = current_user)
-    WITH CHECK (user_id = current_user);
-
+-- Generic current_user policies for cml_metadata and cml_stats.
+-- Because role name = user_id value, one policy per table covers all users.
+-- (cml_data has no RLS policy — see Step 4 for the reason.)
 CREATE POLICY user_cml_metadata_policy ON cml_metadata
     FOR ALL
     USING     (user_id = current_user)
@@ -156,11 +139,7 @@ CREATE POLICY user_cml_stats_policy ON cml_stats
     USING     (user_id = current_user)
     WITH CHECK (user_id = current_user);
 
--- Permissive read-all policies for webserver_role (admin / cross-user use).
-CREATE POLICY webserver_cml_data_policy ON cml_data
-    FOR SELECT TO webserver_role
-    USING (true);
-
+-- Permissive read-all policies for webserver_role on the RLS-protected tables.
 CREATE POLICY webserver_cml_metadata_policy ON cml_metadata
     FOR SELECT TO webserver_role
     USING (true);
@@ -170,32 +149,38 @@ CREATE POLICY webserver_cml_stats_policy ON cml_stats
     USING (true);
 
 -- ---------------------------------------------------------------------------
--- Step 6: Security-barrier view over cml_data_1h (continuous aggregate)
+-- Step 6: Security-barrier views over cml_data and cml_data_1h
 --
--- PostgreSQL cannot apply RLS to materialized views, so cml_data_1h itself
--- has no automatic row filtering.  cml_data_1h_secure wraps it with
--- WHERE user_id = current_user and the security_barrier option, which
--- prevents the planner from pushing attacker-controlled predicates above
--- the security filter.
+-- Since RLS is not available on cml_data (compressed hypertable), both the
+-- raw table and the continuous aggregate are exposed through
+-- security_barrier views that restrict rows to current_user.
+-- The security_barrier option prevents the query optimizer from pushing
+-- caller-supplied predicates above the filter (SQL injection protection).
+-- WITH CHECK OPTION rejects writes through the view where user_id != current_user.
 --
--- Usage pattern:
---   User roles (e.g. user1) query cml_data_1h_secure — DB-enforced,
---   no WHERE clause needed in the application.
+-- Usage:
+--   User roles query cml_data_secure / cml_data_1h_secure — automatically
+--   filtered to current_user, no WHERE clause needed in the application.
 --
---   webserver_role queries cml_data_1h_secure after SET ROLE user1 for
---   user-scoped pages (fully DB-enforced).  For admin / cross-user
---   aggregate queries it queries cml_data_1h directly as webserver_role;
---   those queries must include WHERE user_id = ? at the application layer,
---   but that is acceptable for internal admin paths.
+--   webserver_role uses the secure views after SET ROLE user1 for user-scoped
+--   pages.  For admin / cross-user queries it queries the raw tables directly
+--   as webserver_role; those paths still need WHERE user_id = ? in the app.
 -- ---------------------------------------------------------------------------
 
+-- Raw hypertable view.
+CREATE VIEW cml_data_secure WITH (security_barrier) AS
+SELECT * FROM cml_data
+WHERE user_id = current_user
+WITH CHECK OPTION;
+
+GRANT SELECT ON cml_data_secure TO user1;
+GRANT SELECT ON cml_data_secure TO webserver_role;
+
+-- Continuous aggregate view.
 CREATE VIEW cml_data_1h_secure WITH (security_barrier) AS
 SELECT * FROM cml_data_1h
 WHERE user_id = current_user;
 
--- User roles: access only the secure view, not the underlying aggregate.
 GRANT SELECT ON cml_data_1h_secure TO user1;
-
--- webserver_role: both views (see usage pattern above).
 GRANT SELECT ON cml_data_1h        TO webserver_role;
 GRANT SELECT ON cml_data_1h_secure TO webserver_role;

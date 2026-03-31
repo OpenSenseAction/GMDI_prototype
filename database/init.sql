@@ -158,11 +158,10 @@ SELECT add_continuous_aggregate_policy('cml_data_1h',
 -- The current uncompressed week chunk is left untouched so real-time ingestion
 -- and detail-view queries on recent data have no decompression overhead.
 -- ---------------------------------------------------------------------------
--- Enable RLS on cml_data BEFORE setting up compression.
--- TimescaleDB does not allow ENABLE ROW LEVEL SECURITY on a hypertable
--- that already has timescaledb.compress set — so the order is mandatory.
-ALTER TABLE cml_data ENABLE ROW LEVEL SECURITY;
-
+-- Note: TimescaleDB does not allow ENABLE ROW LEVEL SECURITY on a compressed
+-- hypertable, and compression cannot be set on an RLS-enabled table.  These
+-- two features are mutually exclusive on the same hypertable.  Per-user
+-- isolation for cml_data is provided by the cml_data_secure view below.
 ALTER TABLE cml_data SET (
     timescaledb.compress,
     timescaledb.compress_segmentby = 'user_id, cml_id, sublink_id',
@@ -208,18 +207,16 @@ GRANT SELECT ON cml_stats    TO webserver_role;
 -- Parser calls update_cml_stats() to upsert per-CML statistics.
 GRANT EXECUTE ON FUNCTION update_cml_stats(TEXT, TEXT) TO user1;
 
--- Enable Row-Level Security on cml_metadata and cml_stats.
--- (cml_data was already enabled above, before compression was configured.)
+-- Row-Level Security on cml_metadata and cml_stats.
+-- cml_data is excluded: TimescaleDB does not allow RLS on compressed
+-- hypertables (and compression cannot be set on an RLS-enabled table).
+-- Per-user isolation for raw cml_data queries is provided by the
+-- cml_data_secure security-barrier view defined below.
 ALTER TABLE cml_metadata ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cml_stats    ENABLE ROW LEVEL SECURITY;
 
--- Generic current_user policies (one per table covers all users).
--- Because role name = user_id value, no per-user policy is needed.
-CREATE POLICY user_cml_data_policy ON cml_data
-    FOR ALL
-    USING     (user_id = current_user)
-    WITH CHECK (user_id = current_user);
-
+-- Generic current_user policies for cml_metadata and cml_stats.
+-- Because role name = user_id value, one policy per table covers all users.
 CREATE POLICY user_cml_metadata_policy ON cml_metadata
     FOR ALL
     USING     (user_id = current_user)
@@ -231,10 +228,6 @@ CREATE POLICY user_cml_stats_policy ON cml_stats
     WITH CHECK (user_id = current_user);
 
 -- Permissive read-all policies for webserver_role (admin / cross-user use).
-CREATE POLICY webserver_cml_data_policy ON cml_data
-    FOR SELECT TO webserver_role
-    USING (true);
-
 CREATE POLICY webserver_cml_metadata_policy ON cml_metadata
     FOR SELECT TO webserver_role
     USING (true);
@@ -242,6 +235,20 @@ CREATE POLICY webserver_cml_metadata_policy ON cml_metadata
 CREATE POLICY webserver_cml_stats_policy ON cml_stats
     FOR SELECT TO webserver_role
     USING (true);
+
+-- Security-barrier view over cml_data (compressed hypertable).
+-- Provides per-user isolation for raw cml_data queries via
+-- WHERE user_id = current_user.  The security_barrier option prevents the
+-- query optimizer from pushing caller-supplied predicates above the filter
+-- (SQL injection protection).  WITH CHECK OPTION rejects writes through
+-- this view where user_id != current_user.
+CREATE VIEW cml_data_secure WITH (security_barrier) AS
+SELECT * FROM cml_data
+WHERE user_id = current_user
+WITH CHECK OPTION;
+
+GRANT SELECT ON cml_data_secure TO user1;
+GRANT SELECT ON cml_data_secure TO webserver_role;
 
 -- Security-barrier view over cml_data_1h (continuous aggregate).
 --
