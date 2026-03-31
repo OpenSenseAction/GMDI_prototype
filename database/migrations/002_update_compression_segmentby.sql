@@ -15,9 +15,13 @@
 
 -- Step 1: Decompress all currently-compressed chunks so that the
 --         compress_segmentby setting can be changed.
-SELECT decompress_chunk(c)
-FROM   show_chunks('cml_data') c
-WHERE  _timescaledb_internal.is_compressed_chunk(c);
+--         Uses timescaledb_information.chunks (works across all TimescaleDB versions).
+SELECT decompress_chunk(
+    format('%I.%I', chunk_schema, chunk_name)::regclass
+)
+FROM timescaledb_information.chunks
+WHERE hypertable_name = 'cml_data'
+  AND is_compressed = true;
 
 -- Step 2: Update the compression settings to include user_id as the
 --         leading segment key.  user_id first ensures that a query for a
