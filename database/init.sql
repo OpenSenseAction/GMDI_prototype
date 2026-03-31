@@ -3,7 +3,8 @@ CREATE TABLE cml_data (
     cml_id TEXT NOT NULL,
     sublink_id TEXT NOT NULL,
     rsl REAL,
-    tsl REAL
+    tsl REAL,
+    user_id TEXT NOT NULL DEFAULT 'user1'
 );
 
 CREATE TABLE cml_metadata (
@@ -16,11 +17,16 @@ CREATE TABLE cml_metadata (
     frequency REAL,
     polarization TEXT,
     length REAL,
-    PRIMARY KEY (cml_id, sublink_id)
+    user_id TEXT NOT NULL DEFAULT 'user1',
+    PRIMARY KEY (cml_id, sublink_id, user_id),
+    -- Backward-compat constraint: keeps the parser's ON CONFLICT (cml_id, sublink_id)
+    -- clause valid until PR3 (feat/parser-user-id) updates it.
+    UNIQUE (cml_id, sublink_id)
 );
 
 CREATE TABLE cml_stats (
-    cml_id TEXT PRIMARY KEY,
+    cml_id TEXT NOT NULL,
+    user_id TEXT NOT NULL DEFAULT 'user1',
     total_records BIGINT,
     valid_records BIGINT,
     null_records BIGINT,
@@ -30,13 +36,22 @@ CREATE TABLE cml_stats (
     mean_rsl REAL,
     stddev_rsl REAL,
     last_rsl REAL,
-    last_update TIMESTAMPTZ DEFAULT NOW()
+    last_update TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (cml_id, user_id)
 );
 
-CREATE OR REPLACE FUNCTION update_cml_stats(target_cml_id TEXT) RETURNS VOID AS $$
+-- update_cml_stats(target_cml_id, target_user_id)
+--
+-- target_user_id defaults to 'user1' so the existing single-argument call
+-- sites in the parser continue to work until PR3 updates them.
+CREATE OR REPLACE FUNCTION update_cml_stats(
+    target_cml_id  TEXT,
+    target_user_id TEXT DEFAULT 'user1'
+) RETURNS VOID AS $$
 BEGIN
     INSERT INTO cml_stats (
         cml_id,
+        user_id,
         total_records,
         valid_records,
         null_records,
@@ -50,34 +65,48 @@ BEGIN
     )
     SELECT
         cd.cml_id::text,
-        COUNT(*) as total_records,
-        COUNT(CASE WHEN cd.rsl IS NOT NULL THEN 1 END) as valid_records,
-        COUNT(CASE WHEN cd.rsl IS NULL THEN 1 END) as null_records,
-        ROUND(100.0 * COUNT(CASE WHEN cd.rsl IS NOT NULL THEN 1 END) / COUNT(*), 2) as completeness_percent,
-        MIN(cd.rsl) as min_rsl,
-        MAX(cd.rsl) as max_rsl,
-        ROUND(AVG(cd.rsl)::numeric, 2) as mean_rsl,
-        ROUND(STDDEV(cd.rsl)::numeric, 2) as stddev_rsl,
-        (SELECT rsl FROM cml_data WHERE cml_id = cd.cml_id ORDER BY time DESC LIMIT 1) as last_rsl,
+        target_user_id,
+        COUNT(*)                                                              AS total_records,
+        COUNT(CASE WHEN cd.rsl IS NOT NULL THEN 1 END)                        AS valid_records,
+        COUNT(CASE WHEN cd.rsl IS NULL     THEN 1 END)                        AS null_records,
+        ROUND(
+            100.0 * COUNT(CASE WHEN cd.rsl IS NOT NULL THEN 1 END) / COUNT(*),
+            2
+        )                                                                     AS completeness_percent,
+        MIN(cd.rsl)                                                           AS min_rsl,
+        MAX(cd.rsl)                                                           AS max_rsl,
+        ROUND(AVG(cd.rsl)::numeric,    2)                                     AS mean_rsl,
+        ROUND(STDDEV(cd.rsl)::numeric, 2)                                     AS stddev_rsl,
+        (
+            SELECT rsl FROM cml_data
+            WHERE  cml_id  = cd.cml_id
+              AND  user_id = target_user_id
+            ORDER  BY time DESC LIMIT 1
+        )                                                                     AS last_rsl,
         NOW()
     FROM cml_data cd
-    WHERE cd.cml_id = target_cml_id
+    WHERE cd.cml_id  = target_cml_id
+      AND cd.user_id = target_user_id
     GROUP BY cd.cml_id
-    ON CONFLICT (cml_id) DO UPDATE SET
-        total_records = EXCLUDED.total_records,
-        valid_records = EXCLUDED.valid_records,
-        null_records = EXCLUDED.null_records,
+    ON CONFLICT (cml_id, user_id) DO UPDATE SET
+        total_records        = EXCLUDED.total_records,
+        valid_records        = EXCLUDED.valid_records,
+        null_records         = EXCLUDED.null_records,
         completeness_percent = EXCLUDED.completeness_percent,
-        min_rsl = EXCLUDED.min_rsl,
-        max_rsl = EXCLUDED.max_rsl,
-        mean_rsl = EXCLUDED.mean_rsl,
-        stddev_rsl = EXCLUDED.stddev_rsl,
-        last_rsl = EXCLUDED.last_rsl,
-        last_update = EXCLUDED.last_update;
+        min_rsl              = EXCLUDED.min_rsl,
+        max_rsl              = EXCLUDED.max_rsl,
+        mean_rsl             = EXCLUDED.mean_rsl,
+        stddev_rsl           = EXCLUDED.stddev_rsl,
+        last_rsl             = EXCLUDED.last_rsl,
+        last_update          = EXCLUDED.last_update;
 END;
 $$ LANGUAGE plpgsql;
 
 SELECT create_hypertable('cml_data', 'time');
+
+-- Per-user lookup indexes.
+CREATE INDEX idx_cml_data_user_id     ON cml_data     (user_id);
+CREATE INDEX idx_cml_metadata_user_id ON cml_metadata  (user_id);
 
 -- Index is created by the archive_loader service after bulk data load (faster COPY).
 -- If no archive data is loaded, create it manually:
@@ -93,6 +122,7 @@ CREATE MATERIALIZED VIEW cml_data_1h
 WITH (timescaledb.continuous) AS
 SELECT
     time_bucket('1 hour', time) AS bucket,
+    user_id,
     cml_id,
     sublink_id,
     MIN(rsl)  AS rsl_min,
@@ -102,7 +132,7 @@ SELECT
     MAX(tsl)  AS tsl_max,
     AVG(tsl)  AS tsl_avg
 FROM cml_data
-GROUP BY bucket, cml_id, sublink_id
+GROUP BY bucket, user_id, cml_id, sublink_id
 WITH NO DATA;
 
 -- Automatically refresh every hour, covering up to 2 days of history.
@@ -130,7 +160,7 @@ SELECT add_continuous_aggregate_policy('cml_data_1h',
 -- ---------------------------------------------------------------------------
 ALTER TABLE cml_data SET (
     timescaledb.compress,
-    timescaledb.compress_segmentby = 'cml_id, sublink_id',
+    timescaledb.compress_segmentby = 'user_id, cml_id, sublink_id',
     timescaledb.compress_orderby   = 'time DESC'
 );
 
