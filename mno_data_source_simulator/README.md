@@ -44,7 +44,9 @@ Edit `config.yml` for local/standalone use, or set environment variables for Doc
 ```yaml
 data_source:
   netcdf_file: "/app/example_data/openMRG_cmls_20150827_3months.nc"
-  loop_duration_seconds: 3600  # Lookback window for real-time replay
+  # Set to the full dataset duration so the simulator only loops after all
+  # source data is exhausted (openMRG_cmls_20150827_3months.nc ≈ 92 days).
+  loop_duration_seconds: 7948860
 
 generator:
   generation_frequency_seconds: 10  # How often to generate files
@@ -61,7 +63,26 @@ sftp:
 | Variable | Description |
 |---|---|
 | `NETCDF_FILE` | Path to the NetCDF source file |
-| `NETCDF_FILE_URL` | URL to download the file if not already present |
+| `NETCDF_FILE_URL` | URL to download the file automatically if not already present |
+
+### NetCDF dataset auto-download
+
+The simulator downloads the 3-month source file automatically on startup if the
+path set in `NETCDF_FILE` does not exist **and** `NETCDF_FILE_URL` is set.
+
+**Docker (`docker-compose up mno_simulator`):** `NETCDF_FILE_URL` is already
+configured in `docker-compose.yml`, so the file is downloaded automatically —
+no extra steps needed.
+
+**Standalone:** export the URL before starting the simulator:
+
+```bash
+export NETCDF_FILE_URL=https://bwsyncandshare.kit.edu/s/jSAFftGXcJjQbSJ/download
+python main.py
+```
+
+The file (~193 MB) is saved to the path given by `NETCDF_FILE` (or
+`data_source.netcdf_file` in `config.yml`) and is only downloaded once.
 
 ### Authentication
 
