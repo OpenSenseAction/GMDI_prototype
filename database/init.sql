@@ -169,67 +169,63 @@ SELECT add_compression_policy('cml_data', INTERVAL '7 days');
 -- ---------------------------------------------------------------------------
 -- Database roles and Row-Level Security (PR feat/db-roles-rls)
 --
--- user1_role: used by the user1 parser instance (writes) and by the
---   webserver (reads via SET ROLE) for user1's scoped data.
+-- Role naming convention: PG login role name = user_id value in the data.
+--   "user1" role ↔ user_id = 'user1' — enables current_user-based RLS
+--   policies and the cml_data_1h_secure security-barrier view below.
+--
+-- user1: used by the user1 parser instance (writes) and by the webserver
+--   (via SET ROLE) for DB-enforced scoped reads.
 -- webserver_role: used by the webserver process.  Has a read-all RLS policy
---   for aggregate/admin queries; SET ROLEs to a user role for scoped reads.
+--   for admin/aggregate queries; SET ROLEs to a user role for scoped reads.
 --
 -- Passwords shown here are development defaults.
 -- Override them via environment variables or a secrets manager in production.
---
--- Note on cml_data_1h:
---   PostgreSQL RLS cannot be applied to materialized views, so queries to
---   cml_data_1h MUST include a WHERE user_id = ? predicate at the
---   application layer.  All raw-data queries route through the RLS-protected
---   base table (cml_data) and are automatically filtered.
 -- ---------------------------------------------------------------------------
 
-CREATE ROLE user1_role    LOGIN PASSWORD 'user1password';
+CREATE ROLE user1        LOGIN PASSWORD 'user1password';
 CREATE ROLE webserver_role LOGIN PASSWORD 'webserverpassword';
 
--- Allow webserver_role to impersonate user roles (SET ROLE user1_role).
-GRANT user1_role TO webserver_role;
+-- Allow webserver_role to impersonate user roles (SET ROLE user1).
+GRANT user1 TO webserver_role;
 
 -- Schema access.
-GRANT USAGE ON SCHEMA public TO user1_role, webserver_role;
+GRANT USAGE ON SCHEMA public TO user1, webserver_role;
 
 -- Table permissions.
-GRANT SELECT, INSERT, UPDATE ON cml_data     TO user1_role;
-GRANT SELECT, INSERT, UPDATE ON cml_metadata TO user1_role;
-GRANT SELECT, INSERT, UPDATE ON cml_stats    TO user1_role;
+GRANT SELECT, INSERT, UPDATE ON cml_data     TO user1;
+GRANT SELECT, INSERT, UPDATE ON cml_metadata TO user1;
+GRANT SELECT, INSERT, UPDATE ON cml_stats    TO user1;
 
 GRANT SELECT ON cml_data     TO webserver_role;
 GRANT SELECT ON cml_metadata TO webserver_role;
 GRANT SELECT ON cml_stats    TO webserver_role;
 
--- Continuous aggregate — application must add WHERE user_id = ? filter.
-GRANT SELECT ON cml_data_1h TO user1_role, webserver_role;
-
 -- Parser calls update_cml_stats() to upsert per-CML statistics.
-GRANT EXECUTE ON FUNCTION update_cml_stats(TEXT, TEXT) TO user1_role;
+GRANT EXECUTE ON FUNCTION update_cml_stats(TEXT, TEXT) TO user1;
 
 -- Enable Row-Level Security on base tables.
 ALTER TABLE cml_data     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cml_metadata ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cml_stats    ENABLE ROW LEVEL SECURITY;
 
--- RLS policies for user1_role.
-CREATE POLICY user1_cml_data_policy ON cml_data
-    FOR ALL TO user1_role
-    USING     (user_id = 'user1')
-    WITH CHECK (user_id = 'user1');
+-- Generic current_user policies (one per table covers all users).
+-- Because role name = user_id value, no per-user policy is needed.
+CREATE POLICY user_cml_data_policy ON cml_data
+    FOR ALL
+    USING     (user_id = current_user)
+    WITH CHECK (user_id = current_user);
 
-CREATE POLICY user1_cml_metadata_policy ON cml_metadata
-    FOR ALL TO user1_role
-    USING     (user_id = 'user1')
-    WITH CHECK (user_id = 'user1');
+CREATE POLICY user_cml_metadata_policy ON cml_metadata
+    FOR ALL
+    USING     (user_id = current_user)
+    WITH CHECK (user_id = current_user);
 
-CREATE POLICY user1_cml_stats_policy ON cml_stats
-    FOR ALL TO user1_role
-    USING     (user_id = 'user1')
-    WITH CHECK (user_id = 'user1');
+CREATE POLICY user_cml_stats_policy ON cml_stats
+    FOR ALL
+    USING     (user_id = current_user)
+    WITH CHECK (user_id = current_user);
 
--- RLS policies for webserver_role (read-all; scoped reads use SET ROLE).
+-- Permissive read-all policies for webserver_role (admin / cross-user use).
 CREATE POLICY webserver_cml_data_policy ON cml_data
     FOR SELECT TO webserver_role
     USING (true);
@@ -241,3 +237,21 @@ CREATE POLICY webserver_cml_metadata_policy ON cml_metadata
 CREATE POLICY webserver_cml_stats_policy ON cml_stats
     FOR SELECT TO webserver_role
     USING (true);
+
+-- Security-barrier view over cml_data_1h (continuous aggregate).
+--
+-- PostgreSQL cannot apply RLS to materialized views.  This view wraps
+-- cml_data_1h with WHERE user_id = current_user and security_barrier,
+-- providing DB-enforced per-user filtering with no application WHERE clause.
+--
+-- User roles query cml_data_1h_secure (auto-filtered).
+-- webserver_role queries cml_data_1h_secure after SET ROLE for user pages;
+-- queries cml_data_1h directly (as webserver_role) for admin/cross-user
+-- aggregates — those paths still need WHERE user_id = ? in the app.
+CREATE VIEW cml_data_1h_secure WITH (security_barrier) AS
+SELECT * FROM cml_data_1h
+WHERE user_id = current_user;
+
+GRANT SELECT ON cml_data_1h_secure TO user1;
+GRANT SELECT ON cml_data_1h        TO webserver_role;
+GRANT SELECT ON cml_data_1h_secure TO webserver_role;
