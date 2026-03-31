@@ -158,6 +158,11 @@ SELECT add_continuous_aggregate_policy('cml_data_1h',
 -- The current uncompressed week chunk is left untouched so real-time ingestion
 -- and detail-view queries on recent data have no decompression overhead.
 -- ---------------------------------------------------------------------------
+-- Enable RLS on cml_data BEFORE setting up compression.
+-- TimescaleDB does not allow ENABLE ROW LEVEL SECURITY on a hypertable
+-- that already has timescaledb.compress set — so the order is mandatory.
+ALTER TABLE cml_data ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE cml_data SET (
     timescaledb.compress,
     timescaledb.compress_segmentby = 'user_id, cml_id, sublink_id',
@@ -203,8 +208,8 @@ GRANT SELECT ON cml_stats    TO webserver_role;
 -- Parser calls update_cml_stats() to upsert per-CML statistics.
 GRANT EXECUTE ON FUNCTION update_cml_stats(TEXT, TEXT) TO user1;
 
--- Enable Row-Level Security on base tables.
-ALTER TABLE cml_data     ENABLE ROW LEVEL SECURITY;
+-- Enable Row-Level Security on cml_metadata and cml_stats.
+-- (cml_data was already enabled above, before compression was configured.)
 ALTER TABLE cml_metadata ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cml_stats    ENABLE ROW LEVEL SECURITY;
 

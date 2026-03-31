@@ -97,9 +97,32 @@ GRANT EXECUTE ON FUNCTION update_cml_stats(TEXT, TEXT) TO user1;
 
 -- ---------------------------------------------------------------------------
 -- Step 4: Enable Row-Level Security on base tables
+--
+-- TimescaleDB does not allow ENABLE ROW LEVEL SECURITY on a hypertable
+-- that has timescaledb.compress set.  Work around this by decompressing
+-- all currently-compressed cml_data chunks, enabling RLS, then
+-- re-compressing — the same decompress/recompress pattern used in
+-- migration 002.  No data is lost if the process is interrupted.
+--
+-- cml_metadata and cml_stats are plain tables (no compression), so they
+-- can be altered directly.
 -- ---------------------------------------------------------------------------
 
-ALTER TABLE cml_data     ENABLE ROW LEVEL SECURITY;
+-- Decompress any compressed cml_data chunks.
+SELECT decompress_chunk(
+    format('%I.%I', chunk_schema, chunk_name)::regclass
+)
+FROM timescaledb_information.chunks
+WHERE hypertable_name = 'cml_data'
+  AND is_compressed = true;
+
+ALTER TABLE cml_data ENABLE ROW LEVEL SECURITY;
+
+-- Re-compress chunks older than the compression policy threshold (7 days).
+SELECT compress_chunk(c)
+FROM   show_chunks('cml_data', older_than => INTERVAL '7 days') c;
+
+-- Plain tables: no compression constraint.
 ALTER TABLE cml_metadata ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cml_stats    ENABLE ROW LEVEL SECURITY;
 
