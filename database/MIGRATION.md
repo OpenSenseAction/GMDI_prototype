@@ -38,11 +38,12 @@ cannot be set on an RLS-enabled table — they are mutually exclusive).
 
 ### Note on `cml_data_1h` (continuous aggregate)
 
-PostgreSQL RLS cannot be applied to materialized views, so `cml_data_1h` is
-**not** automatically row-filtered.  Queries to this view **must** always
-include a `WHERE user_id = ?` predicate.  The webserver (PR5) and Grafana
-panels enforce this.  All raw-data queries route through `cml_data`, which
-**is** protected by RLS.
+PostgreSQL RLS cannot be applied to materialized views, so `cml_data_1h` itself
+cannot carry row-level policies.  The same security-barrier view trick used for
+`cml_data` is applied here too: `cml_data_1h_secure` is a `security_barrier`
+view that filters `WHERE user_id = current_user`, providing the same automatic
+per-user isolation.  User roles (`user1`, `webserver_role`) are granted access
+to `cml_data_1h_secure` only, not to the underlying `cml_data_1h` aggregate.
 
 ### Steps
 
