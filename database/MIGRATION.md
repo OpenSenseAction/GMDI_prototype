@@ -2,6 +2,128 @@
 
 ---
 
+## PR `feat/db-roles-rls` — Create database roles and enable Row-Level Security
+
+**Branch:** `feat/db-roles-rls`
+
+`init.sql` only runs on a fresh database volume, so when deploying this branch
+to a machine that already has data you must apply the migration file below
+**after** migrations 001–003 from `feat/db-add-user-id` have already been applied.
+
+### Changes
+
+| File | What it does |
+|------|-------------|
+| `migrations/004_add_roles_rls.sql` | Creates `user1` and `webserver_role` login roles; grants table/function permissions; enables RLS on `cml_metadata` and `cml_stats`; creates `current_user`-based policies; creates `cml_data_secure` and `cml_data_1h_secure` security-barrier views |
+| `migrations/005_drop_sublink_from_segmentby.sql` | Removes `sublink_id` from `compress_segmentby`; new setting is `'user_id, cml_id'`; reduces average decompression work per CML query by ~2–4× |
+
+### Backward compatibility
+
+This migration is **fully backward-compatible** with the existing services:
+
+- `myuser` (PostgreSQL superuser) bypasses RLS by default.  The parser and
+  webserver still connect as `myuser` and see all data unchanged until
+  PR3 (`feat/parser-user-id`) and PR5 (`feat/webserver-auth`) wire up the
+  new role credentials.
+- No table schema changes — only roles, grants, and policies are added.
+- Rollback is possible: revoke grants, drop policies, then drop roles (see
+  Rollback section below).
+
+### Note on `cml_data` isolation
+
+TimescaleDB does not allow RLS on a compressed hypertable (and compression
+cannot be set on an RLS-enabled table — they are mutually exclusive).
+`cml_data` keeps compression; per-user isolation is provided by
+`cml_data_secure` and `cml_data_1h_secure` security-barrier views.
+
+### Note on `cml_data_1h` (continuous aggregate)
+
+PostgreSQL RLS cannot be applied to materialized views, so `cml_data_1h` itself
+cannot carry row-level policies.  The same security-barrier view trick used for
+`cml_data` is applied here too: `cml_data_1h_secure` is a `security_barrier`
+view that filters `WHERE user_id = current_user`, providing the same automatic
+per-user isolation.  User roles (`user1`, `webserver_role`) are granted access
+to `cml_data_1h_secure` only, not to the underlying `cml_data_1h` aggregate.
+
+### Steps
+
+**1. Back up the database**
+
+```bash
+docker compose exec database pg_dump -U myuser -d mydatabase \
+    > backup_pre_roles_rls_$(date +%Y%m%d_%H%M%S).sql
+```
+
+**2. Pull and rebuild**
+
+```bash
+git pull origin feat/db-roles-rls   # or merge to main first
+docker compose up -d --build
+```
+
+**3. Apply the migrations in order**
+
+```bash
+docker compose exec -T database psql -U myuser -d mydatabase \
+    < database/migrations/004_add_roles_rls.sql
+
+docker compose exec -T database psql -U myuser -d mydatabase \
+    < database/migrations/005_drop_sublink_from_segmentby.sql
+```
+
+**4. Verify**
+
+```bash
+# List the new roles
+docker compose exec database psql -U myuser -d mydatabase \
+    -c "\du user1 webserver_role"
+
+# Confirm RLS is enabled on cml_metadata and cml_stats
+# (cml_data intentionally shows f — compression and RLS are mutually exclusive)
+docker compose exec database psql -U myuser -d mydatabase \
+    -c "SELECT relname, relrowsecurity FROM pg_class \
+        WHERE relname IN ('cml_data','cml_metadata','cml_stats');"
+
+# Smoke-test: user1 should see only their own rows via the secure view
+docker compose exec database psql \
+    -U user1 -d mydatabase \
+    -c "SELECT count(*) FROM cml_data_secure;"
+```
+
+**Rollback:**
+
+```bash
+docker compose exec database psql -U myuser -d mydatabase -c "
+-- Drop security-barrier views
+DROP VIEW IF EXISTS cml_data_secure;
+DROP VIEW IF EXISTS cml_data_1h_secure;
+
+-- Drop policies (only cml_metadata and cml_stats have RLS)
+DROP POLICY IF EXISTS user_cml_metadata_policy    ON cml_metadata;
+DROP POLICY IF EXISTS user_cml_stats_policy        ON cml_stats;
+DROP POLICY IF EXISTS webserver_cml_metadata_policy ON cml_metadata;
+DROP POLICY IF EXISTS webserver_cml_stats_policy    ON cml_stats;
+
+-- Disable RLS (cml_data was never RLS-enabled)
+ALTER TABLE cml_metadata DISABLE ROW LEVEL SECURITY;
+ALTER TABLE cml_stats    DISABLE ROW LEVEL SECURITY;
+
+-- Revoke grants
+REVOKE ALL ON cml_data, cml_metadata, cml_stats, cml_data_1h
+    FROM user1, webserver_role;
+REVOKE EXECUTE ON FUNCTION update_cml_stats(TEXT, TEXT)
+    FROM user1;
+REVOKE user1 FROM webserver_role;
+REVOKE USAGE ON SCHEMA public FROM user1, webserver_role;
+
+-- Drop roles
+DROP ROLE IF EXISTS user1;
+DROP ROLE IF EXISTS webserver_role;
+"
+```
+
+---
+
 ## PR `feat/db-add-user-id` — Add `user_id` for multi-user RLS support
 
 **Branch:** `feat/db-add-user-id`

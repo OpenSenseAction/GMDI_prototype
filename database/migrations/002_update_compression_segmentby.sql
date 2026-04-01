@@ -3,8 +3,10 @@
 -- Part of PR feat/db-add-user-id.
 -- Run this AFTER 001_add_user_id.sql.
 --
--- Adds user_id to compress_segmentby so that per-user range scans
--- decompress only the relevant segment instead of the full chunk.
+-- Adds user_id as the leading segmentby key so that per-user range scans
+-- decompress only the relevant segments instead of the full chunk.
+-- sublink_id is included here alongside cml_id; it was later dropped in
+-- migration 005 (feat/db-roles-rls) — see that file for the rationale.
 -- The decompress → alter → recompress cycle is non-destructive; no data
 -- is lost if the process is interrupted (TimescaleDB keeps the original
 -- uncompressed chunks until recompression succeeds).

@@ -147,9 +147,13 @@ SELECT add_continuous_aggregate_policy('cml_data_1h',
 -- ---------------------------------------------------------------------------
 -- Compression for cml_data chunks older than 7 days.
 --
--- compress_segmentby: each compressed segment contains one (cml_id, sublink_id)
---   pair, so a query filtered to a single CML decompresses only ~1/728th of a
---   chunk — not the whole thing.
+-- compress_segmentby: one compressed segment per (user_id, cml_id).
+--   user_id is the leading key so a per-user query skips all other users'
+--   segments entirely.  sublink_id is intentionally omitted: ~80% of CMLs
+--   have 2 sublinks and ~15% have 4; keeping sublinks together in one
+--   segment roughly halves decompression work per CML query vs. splitting
+--   by sublink.  Filtering to a specific sublink after decompression is a
+--   trivial CPU operation on already-decompressed columnar data.
 -- compress_orderby: matches the query pattern (time range scans), allowing
 --   skip-scan decompression for narrow time windows within a segment.
 --
@@ -158,10 +162,112 @@ SELECT add_continuous_aggregate_policy('cml_data_1h',
 -- The current uncompressed week chunk is left untouched so real-time ingestion
 -- and detail-view queries on recent data have no decompression overhead.
 -- ---------------------------------------------------------------------------
+-- Note: TimescaleDB does not allow ENABLE ROW LEVEL SECURITY on a compressed
+-- hypertable, and compression cannot be set on an RLS-enabled table.  These
+-- two features are mutually exclusive on the same hypertable.  Per-user
+-- isolation for cml_data is provided by the cml_data_secure view below.
 ALTER TABLE cml_data SET (
     timescaledb.compress,
-    timescaledb.compress_segmentby = 'user_id, cml_id, sublink_id',
+    timescaledb.compress_segmentby = 'user_id, cml_id',
     timescaledb.compress_orderby   = 'time DESC'
 );
 
 SELECT add_compression_policy('cml_data', INTERVAL '7 days');
+
+-- ---------------------------------------------------------------------------
+-- Database roles and Row-Level Security (PR feat/db-roles-rls)
+--
+-- Role naming convention: PG login role name = user_id value in the data.
+--   "user1" role ↔ user_id = 'user1' — enables current_user-based RLS
+--   policies and the cml_data_1h_secure security-barrier view below.
+--
+-- user1: used by the user1 parser instance (writes) and by the webserver
+--   (via SET ROLE) for DB-enforced scoped reads.
+-- webserver_role: used by the webserver process.  Has a read-all RLS policy
+--   for admin/aggregate queries; SET ROLEs to a user role for scoped reads.
+--
+-- Passwords shown here are development defaults.
+-- Override them via environment variables or a secrets manager in production.
+-- ---------------------------------------------------------------------------
+
+CREATE ROLE user1        LOGIN PASSWORD 'user1password';
+CREATE ROLE webserver_role LOGIN PASSWORD 'webserverpassword';
+
+-- Allow webserver_role to impersonate user roles (SET ROLE user1).
+GRANT user1 TO webserver_role;
+
+-- Schema access.
+GRANT USAGE ON SCHEMA public TO user1, webserver_role;
+
+-- Table permissions.
+GRANT SELECT, INSERT, UPDATE ON cml_data     TO user1;
+GRANT SELECT, INSERT, UPDATE ON cml_metadata TO user1;
+GRANT SELECT, INSERT, UPDATE ON cml_stats    TO user1;
+
+GRANT SELECT ON cml_data     TO webserver_role;
+GRANT SELECT ON cml_metadata TO webserver_role;
+GRANT SELECT ON cml_stats    TO webserver_role;
+
+-- Parser calls update_cml_stats() to upsert per-CML statistics.
+GRANT EXECUTE ON FUNCTION update_cml_stats(TEXT, TEXT) TO user1;
+
+-- Row-Level Security on cml_metadata and cml_stats.
+-- cml_data is excluded: TimescaleDB does not allow RLS on compressed
+-- hypertables (and compression cannot be set on an RLS-enabled table).
+-- Per-user isolation for raw cml_data queries is provided by the
+-- cml_data_secure security-barrier view defined below.
+ALTER TABLE cml_metadata ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cml_stats    ENABLE ROW LEVEL SECURITY;
+
+-- Generic current_user policies for cml_metadata and cml_stats.
+-- Because role name = user_id value, one policy per table covers all users.
+CREATE POLICY user_cml_metadata_policy ON cml_metadata
+    FOR ALL
+    USING     (user_id = current_user)
+    WITH CHECK (user_id = current_user);
+
+CREATE POLICY user_cml_stats_policy ON cml_stats
+    FOR ALL
+    USING     (user_id = current_user)
+    WITH CHECK (user_id = current_user);
+
+-- Permissive read-all policies for webserver_role (admin / cross-user use).
+CREATE POLICY webserver_cml_metadata_policy ON cml_metadata
+    FOR SELECT TO webserver_role
+    USING (true);
+
+CREATE POLICY webserver_cml_stats_policy ON cml_stats
+    FOR SELECT TO webserver_role
+    USING (true);
+
+-- Security-barrier view over cml_data (compressed hypertable).
+-- Provides per-user isolation for raw cml_data queries via
+-- WHERE user_id = current_user.  The security_barrier option prevents the
+-- query optimizer from pushing caller-supplied predicates above the filter
+-- (SQL injection protection).  WITH CHECK OPTION rejects writes through
+-- this view where user_id != current_user.
+CREATE VIEW cml_data_secure WITH (security_barrier) AS
+SELECT * FROM cml_data
+WHERE user_id = current_user
+WITH CHECK OPTION;
+
+GRANT SELECT ON cml_data_secure TO user1;
+GRANT SELECT ON cml_data_secure TO webserver_role;
+
+-- Security-barrier view over cml_data_1h (continuous aggregate).
+--
+-- PostgreSQL cannot apply RLS to materialized views.  This view wraps
+-- cml_data_1h with WHERE user_id = current_user and security_barrier,
+-- providing DB-enforced per-user filtering with no application WHERE clause.
+--
+-- User roles query cml_data_1h_secure (auto-filtered).
+-- webserver_role queries cml_data_1h_secure after SET ROLE for user pages;
+-- queries cml_data_1h directly (as webserver_role) for admin/cross-user
+-- aggregates — those paths still need WHERE user_id = ? in the app.
+CREATE VIEW cml_data_1h_secure WITH (security_barrier) AS
+SELECT * FROM cml_data_1h
+WHERE user_id = current_user;
+
+GRANT SELECT ON cml_data_1h_secure TO user1;
+GRANT SELECT ON cml_data_1h        TO webserver_role;
+GRANT SELECT ON cml_data_1h_secure TO webserver_role;

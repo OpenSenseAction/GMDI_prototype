@@ -66,7 +66,7 @@ This document describes the architecture for supporting multiple users with stro
 │            ↓              ↓              ↓                     │
 │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐          │
 │  │  Parser 1    │ │  Parser 2    │ │  Parser 3    │          │
-│  │ (user1_role) │ │ (user2_role) │ │ (user3_role) │          │
+│  │   (user1)   │ │   (user2)   │ │   (user3)   │          │
 │  │ HTTP trigger │ │ HTTP trigger │ │ HTTP trigger │          │
 │  │ endpoint     │ │ endpoint     │ │ endpoint     │          │
 │  └──────────────┘ └──────────────┘ └──────────────┘          │
@@ -144,7 +144,7 @@ CREATE POLICY user1_isolation ON cml_data
     WITH CHECK (user_id = 'user1');
 ```
 
-When `user1_role` executes `SELECT * FROM cml_data`, PostgreSQL automatically adds `WHERE user_id = 'user1'`.
+When `user1` executes `SELECT * FROM cml_data`, PostgreSQL automatically adds `WHERE user_id = 'user1'` via the `current_user`-based policy.
 
 ### Authentication Flow
 
@@ -158,7 +158,7 @@ User uploads → SSH key authentication → Chroot to /home/user1/uploads/
 
 #### 2. Parser Layer (Data Processing)
 ```
-Parser watches /home/user1/uploads/ → Connects as user1_role → Inserts with user_id='user1'
+Parser watches /home/user1/uploads/ → Connects as user1 → Inserts with user_id='user1'
 ```
 - Each parser instance watches only their user's volume
 - Connects to database with unique role credentials
@@ -330,16 +330,18 @@ SELECT create_hypertable('cml_data', 'time');
 ### Database Roles
 
 ```sql
--- Parser roles (can insert and read own data)
-CREATE ROLE user1_role LOGIN PASSWORD 'secure_password_1';
-CREATE ROLE user2_role LOGIN PASSWORD 'secure_password_2';
-CREATE ROLE user3_role LOGIN PASSWORD 'secure_password_3';
+-- User login roles — role name intentionally matches user_id value in the data.
+-- This allows a single current_user-based RLS policy to cover all users,
+-- and lets cml_data_1h_secure filter the aggregate without any app WHERE clause.
+CREATE ROLE user1 LOGIN PASSWORD 'secure_password_1';
+CREATE ROLE user2 LOGIN PASSWORD 'secure_password_2';
+CREATE ROLE user3 LOGIN PASSWORD 'secure_password_3';
 
--- Webserver role (can switch to user roles)
+-- Webserver role (can switch to user roles via SET ROLE)
 CREATE ROLE webserver_role LOGIN PASSWORD 'webserver_password';
 
 -- Grant role switching capability
-GRANT user1_role, user2_role, user3_role TO webserver_role;
+GRANT user1, user2, user3 TO webserver_role;
 ```
 
 ### RLS Policies
@@ -349,29 +351,19 @@ GRANT user1_role, user2_role, user3_role TO webserver_role;
 ALTER TABLE cml_data ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cml_metadata ENABLE ROW LEVEL SECURITY;
 
--- User 1 policies
-CREATE POLICY user1_data_policy ON cml_data
-    FOR ALL TO user1_role
-    USING (user_id = 'user1')
-    WITH CHECK (user_id = 'user1');
+-- Single generic policy per table — works for all users because role name = user_id.
+-- No per-user policy needed; onboarding a new user only requires CREATE ROLE.
+CREATE POLICY user_data_policy ON cml_data
+    FOR ALL
+    USING     (user_id = current_user)
+    WITH CHECK (user_id = current_user);
 
-CREATE POLICY user1_metadata_policy ON cml_metadata
-    FOR ALL TO user1_role
-    USING (user_id = 'user1')
-    WITH CHECK (user_id = 'user1');
+CREATE POLICY user_metadata_policy ON cml_metadata
+    FOR ALL
+    USING     (user_id = current_user)
+    WITH CHECK (user_id = current_user);
 
--- User 2 policies (repeat pattern)
-CREATE POLICY user2_data_policy ON cml_data
-    FOR ALL TO user2_role
-    USING (user_id = 'user2')
-    WITH CHECK (user_id = 'user2');
-
-CREATE POLICY user2_metadata_policy ON cml_metadata
-    FOR ALL TO user2_role
-    USING (user_id = 'user2')
-    WITH CHECK (user_id = 'user2');
-
--- Webserver policies (can read all data, controlled by SET ROLE)
+-- Webserver policies (read-all for admin queries; scoped reads use SET ROLE)
 CREATE POLICY webserver_read_policy ON cml_data
     FOR SELECT TO webserver_role
     USING (true);
@@ -380,9 +372,20 @@ CREATE POLICY webserver_read_metadata ON cml_metadata
     FOR SELECT TO webserver_role
     USING (true);
 
--- Grant table permissions
-GRANT SELECT, INSERT, UPDATE, DELETE ON cml_data, cml_metadata TO user1_role, user2_role, user3_role;
+-- Grant table permissions (no DELETE — raw data is never deleted by design)
+GRANT SELECT, INSERT, UPDATE ON cml_data, cml_metadata TO user1, user2, user3;
 GRANT SELECT ON cml_data, cml_metadata TO webserver_role;
+
+-- Security-barrier view over the continuous aggregate.
+-- PostgreSQL cannot apply RLS to materialized views, so cml_data_1h itself
+-- is not row-filtered.  This view enforces per-user isolation at the DB level.
+CREATE VIEW cml_data_1h_secure WITH (security_barrier) AS
+SELECT * FROM cml_data_1h
+WHERE user_id = current_user;
+
+GRANT SELECT ON cml_data_1h_secure TO user1, user2, user3;
+GRANT SELECT ON cml_data_1h        TO webserver_role;  -- direct for admin queries
+GRANT SELECT ON cml_data_1h_secure TO webserver_role;  -- via SET ROLE for user pages
 ```
 
 ## Docker Compose Configuration
@@ -445,7 +448,7 @@ services:
   parser_user1:
     build: ./parser  # Could be custom build per user
     environment:
-      - DATABASE_URL=postgresql://user1_role:user1_password@database:5432/mydatabase
+      - DATABASE_URL=postgresql://user1:user1_password@database:5432/mydatabase
       - USER_ID=user1  # Used to insert user_id in data
       - PARSER_INCOMING_DIR=/app/data/incoming
       - PARSER_ARCHIVED_DIR=/app/data/archived
@@ -459,7 +462,7 @@ services:
   parser_user2:
     build: ./parser_user2  # Different parser code if needed
     environment:
-      - DATABASE_URL=postgresql://user2_role:user2_password@database:5432/mydatabase
+      - DATABASE_URL=postgresql://user2:user2_password@database:5432/mydatabase
       - USER_ID=user2
       - PARSER_INCOMING_DIR=/app/data/incoming
       - PARSER_ARCHIVED_DIR=/app/data/archived
@@ -572,7 +575,7 @@ with open('/app/users.json', 'r') as f:
     # Format: {
     #   "user1": {
     #     "password_hash": "bcrypt_hash",
-    #     "db_role": "user1_role",
+    #     "db_role": "user1",
     #     "db_password": "user1_db_password"
     #   }
     # }
@@ -595,7 +598,7 @@ def get_db_connection():
     # Create connection URL with user's role credentials
     base_url = os.getenv("DATABASE_URL")
     # Replace credentials in URL
-    # postgresql://webserver_role:pass@host/db → postgresql://user1_role:pass@host/db
+    # postgresql://webserver_role:pass@host/db → postgresql://user1:pass@host/db
     user_db_url = base_url.replace(
         'webserver_role:' + os.getenv('WEBSERVER_PASSWORD', 'webserver_password'),
         f"{user_config['db_role']}:{user_config['db_password']}"
