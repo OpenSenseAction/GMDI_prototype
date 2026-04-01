@@ -14,7 +14,8 @@ to a machine that already has data you must apply the migration file below
 
 | File | What it does |
 |------|-------------|
-| `migrations/004_add_roles_rls.sql` | Creates `user1_role` and `webserver_role`; grants table/function permissions; enables RLS on `cml_data`, `cml_metadata`, `cml_stats`; creates per-role isolation policies |
+| `migrations/004_add_roles_rls.sql` | Creates `user1` and `webserver_role` login roles; grants table/function permissions; enables RLS on `cml_metadata` and `cml_stats`; creates `current_user`-based policies; creates `cml_data_secure` and `cml_data_1h_secure` security-barrier views |
+| `migrations/005_drop_sublink_from_segmentby.sql` | Removes `sublink_id` from `compress_segmentby`; new setting is `'user_id, cml_id'`; reduces average decompression work per CML query by ~2–4× |
 
 ### Backward compatibility
 
@@ -27,6 +28,13 @@ This migration is **fully backward-compatible** with the existing services:
 - No table schema changes — only roles, grants, and policies are added.
 - Rollback is possible: revoke grants, drop policies, then drop roles (see
   Rollback section below).
+
+### Note on `cml_data` isolation
+
+TimescaleDB does not allow RLS on a compressed hypertable (and compression
+cannot be set on an RLS-enabled table — they are mutually exclusive).
+`cml_data` keeps compression; per-user isolation is provided by
+`cml_data_secure` and `cml_data_1h_secure` security-barrier views.
 
 ### Note on `cml_data_1h` (continuous aggregate)
 
@@ -52,11 +60,14 @@ git pull origin feat/db-roles-rls   # or merge to main first
 docker compose up -d --build
 ```
 
-**3. Apply the migration**
+**3. Apply the migrations in order**
 
 ```bash
 docker compose exec -T database psql -U myuser -d mydatabase \
     < database/migrations/004_add_roles_rls.sql
+
+docker compose exec -T database psql -U myuser -d mydatabase \
+    < database/migrations/005_drop_sublink_from_segmentby.sql
 ```
 
 **4. Verify**

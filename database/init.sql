@@ -147,9 +147,13 @@ SELECT add_continuous_aggregate_policy('cml_data_1h',
 -- ---------------------------------------------------------------------------
 -- Compression for cml_data chunks older than 7 days.
 --
--- compress_segmentby: each compressed segment contains one (cml_id, sublink_id)
---   pair, so a query filtered to a single CML decompresses only ~1/728th of a
---   chunk — not the whole thing.
+-- compress_segmentby: one compressed segment per (user_id, cml_id).
+--   user_id is the leading key so a per-user query skips all other users'
+--   segments entirely.  sublink_id is intentionally omitted: ~80% of CMLs
+--   have 2 sublinks and ~15% have 4; keeping sublinks together in one
+--   segment roughly halves decompression work per CML query vs. splitting
+--   by sublink.  Filtering to a specific sublink after decompression is a
+--   trivial CPU operation on already-decompressed columnar data.
 -- compress_orderby: matches the query pattern (time range scans), allowing
 --   skip-scan decompression for narrow time windows within a segment.
 --
@@ -164,7 +168,7 @@ SELECT add_continuous_aggregate_policy('cml_data_1h',
 -- isolation for cml_data is provided by the cml_data_secure view below.
 ALTER TABLE cml_data SET (
     timescaledb.compress,
-    timescaledb.compress_segmentby = 'user_id, cml_id, sublink_id',
+    timescaledb.compress_segmentby = 'user_id, cml_id',
     timescaledb.compress_orderby   = 'time DESC'
 );
 
