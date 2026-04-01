@@ -76,46 +76,48 @@ docker compose exec -T database psql -U myuser -d mydatabase \
 ```bash
 # List the new roles
 docker compose exec database psql -U myuser -d mydatabase \
-    -c "\du user1_role webserver_role"
+    -c "\du user1 webserver_role"
 
-# Confirm RLS is enabled on all three tables
+# Confirm RLS is enabled on cml_metadata and cml_stats
+# (cml_data intentionally shows f — compression and RLS are mutually exclusive)
 docker compose exec database psql -U myuser -d mydatabase \
     -c "SELECT relname, relrowsecurity FROM pg_class \
         WHERE relname IN ('cml_data','cml_metadata','cml_stats');"
 
-# Smoke-test: user1_role should see its own rows and nothing else
+# Smoke-test: user1 should see only their own rows via the secure view
 docker compose exec database psql \
-    -U user1_role -d mydatabase \
-    -c "SELECT count(*) FROM cml_data;"
+    -U user1 -d mydatabase \
+    -c "SELECT count(*) FROM cml_data_secure;"
 ```
 
 **Rollback:**
 
 ```bash
 docker compose exec database psql -U myuser -d mydatabase -c "
--- Drop policies
-DROP POLICY IF EXISTS user1_cml_data_policy     ON cml_data;
-DROP POLICY IF EXISTS user1_cml_metadata_policy ON cml_metadata;
-DROP POLICY IF EXISTS user1_cml_stats_policy    ON cml_stats;
-DROP POLICY IF EXISTS webserver_cml_data_policy     ON cml_data;
+-- Drop security-barrier views
+DROP VIEW IF EXISTS cml_data_secure;
+DROP VIEW IF EXISTS cml_data_1h_secure;
+
+-- Drop policies (only cml_metadata and cml_stats have RLS)
+DROP POLICY IF EXISTS user_cml_metadata_policy    ON cml_metadata;
+DROP POLICY IF EXISTS user_cml_stats_policy        ON cml_stats;
 DROP POLICY IF EXISTS webserver_cml_metadata_policy ON cml_metadata;
 DROP POLICY IF EXISTS webserver_cml_stats_policy    ON cml_stats;
 
--- Disable RLS
-ALTER TABLE cml_data     DISABLE ROW LEVEL SECURITY;
+-- Disable RLS (cml_data was never RLS-enabled)
 ALTER TABLE cml_metadata DISABLE ROW LEVEL SECURITY;
 ALTER TABLE cml_stats    DISABLE ROW LEVEL SECURITY;
 
 -- Revoke grants
 REVOKE ALL ON cml_data, cml_metadata, cml_stats, cml_data_1h
-    FROM user1_role, webserver_role;
+    FROM user1, webserver_role;
 REVOKE EXECUTE ON FUNCTION update_cml_stats(TEXT, TEXT)
-    FROM user1_role;
-REVOKE user1_role FROM webserver_role;
-REVOKE USAGE ON SCHEMA public FROM user1_role, webserver_role;
+    FROM user1;
+REVOKE user1 FROM webserver_role;
+REVOKE USAGE ON SCHEMA public FROM user1, webserver_role;
 
 -- Drop roles
-DROP ROLE IF EXISTS user1_role;
+DROP ROLE IF EXISTS user1;
 DROP ROLE IF EXISTS webserver_role;
 "
 ```

@@ -17,7 +17,8 @@
 --   2. Creates webserver_role (read-all for admin queries;
 --      SET ROLE user1 for DB-enforced scoped reads).
 --   3. Grants table/function permissions to each role.
---   4. Enables Row-Level Security on cml_data, cml_metadata, cml_stats.
+--   4. Enables Row-Level Security on cml_metadata and cml_stats.
+--      (cml_data is excluded — see Step 4 comment for the reason.)
 --   5. Creates a single generic current_user policy per base table
 --      (works for all users; no per-user policy needed at onboarding).
 --   6. Creates cml_data_1h_secure — a security_barrier view over the
