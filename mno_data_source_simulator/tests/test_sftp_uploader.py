@@ -452,6 +452,19 @@ def test_reconnect_failure(test_dirs, mock_sftp):
     assert result is False
 
 
+def test_reconnect_close_raises_still_attempts_connect(test_dirs, mock_sftp):
+    """reconnect swallows exceptions from close() and still tries to connect."""
+    uploader = _make_uploader(test_dirs)
+    uploader.connect()
+
+    with patch.object(uploader, "close", side_effect=OSError("close error")), \
+         patch.object(uploader, "connect") as mock_connect:
+        result = uploader.reconnect()
+
+    assert result is True
+    mock_connect.assert_called_once()
+
+
 # --- upload_pending_files: upfront connectivity check -----------------------
 
 
@@ -519,6 +532,111 @@ def test_upload_aborts_mid_batch_when_transport_dies(
     # Only the first file uploaded before transport died
     assert count == 1
     assert len(list(Path(test_dirs["source"]).glob("*.csv"))) == 2
+
+
+def test_upload_continues_after_successful_mid_batch_reconnect(
+    test_dirs, sample_csv_files, mock_sftp
+):
+    """If the transport dies mid-batch but reconnect succeeds, the remaining
+    files are processed normally."""
+    uploader = _make_uploader(test_dirs)
+    uploader.connect()
+
+    # _is_connected sequence:
+    #   call 1 (upfront)      → True
+    #   call 2 (file 1)       → True   (upload ok)
+    #   call 3 (file 2)       → False  (transport lost)
+    #   call 4 (file 3)       → True   (after reconnect)
+    is_connected_seq = [True, True, False, True]
+    with patch.object(uploader, "_is_connected", side_effect=is_connected_seq), \
+         patch.object(uploader, "reconnect", return_value=True):
+        count = uploader.upload_pending_files()
+
+    assert count == 3
+    assert len(list(Path(test_dirs["source"]).glob("*.csv"))) == 0
+
+
+def test_upload_retries_file_after_ssh_exception(
+    test_dirs, sample_csv_files, mock_sftp
+):
+    """When sftp.put raises SSHException, the file is retried after reconnect."""
+    uploader = _make_uploader(test_dirs)
+    uploader.connect()
+
+    call_count = {"n": 0}
+
+    def put_side_effect(local, remote):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise paramiko.SSHException("socket closed")
+
+    mock_sftp["sftp"].put.side_effect = put_side_effect
+
+    with patch.object(uploader, "reconnect", return_value=True):
+        count = uploader.upload_pending_files()
+
+    # All 3 files should end up uploaded (file 1 via retry, 2+3 normally)
+    assert count == 3
+    assert len(list(Path(test_dirs["source"]).glob("*.csv"))) == 0
+
+
+def test_upload_aborts_when_retry_after_ssh_exception_fails(
+    test_dirs, sample_csv_files, mock_sftp
+):
+    """If reconnect succeeds but the retry upload also fails, that file is
+    skipped and the batch continues."""
+    uploader = _make_uploader(test_dirs)
+    uploader.connect()
+
+    call_count = {"n": 0}
+
+    def put_side_effect(local, remote):
+        call_count["n"] += 1
+        if call_count["n"] <= 2:  # first attempt + retry both fail
+            raise paramiko.SSHException("socket closed")
+
+    mock_sftp["sftp"].put.side_effect = put_side_effect
+
+    with patch.object(uploader, "reconnect", return_value=True):
+        count = uploader.upload_pending_files()
+
+    # File 1 skipped (retry also failed), files 2+3 uploaded
+    assert count == 2
+
+
+def test_upload_aborts_on_second_ssh_exception_after_reconnect(
+    test_dirs, sample_csv_files, mock_sftp
+):
+    """If SSHException hits again after a successful reconnect, the batch is
+    aborted immediately (reconnect_attempted guard prevents a second reconnect)."""
+    uploader = _make_uploader(test_dirs)
+    uploader.connect()
+
+    # Every put() raises SSHException, so the retry after reconnect also fails
+    mock_sftp["sftp"].put.side_effect = paramiko.SSHException("socket closed")
+
+    with patch.object(uploader, "reconnect", return_value=True):
+        count = uploader.upload_pending_files()
+
+    # First file: SSHException → reconnect → retry raises again → continue (0 uploaded)
+    # Second file: SSHException → reconnect_attempted already True → abort
+    assert count == 0
+
+
+def test_upload_aborts_batch_when_ssh_exception_and_reconnect_fails(
+    test_dirs, sample_csv_files, mock_sftp
+):
+    """If SSHException is raised and reconnect fails, the batch is aborted."""
+    uploader = _make_uploader(test_dirs)
+    uploader.connect()
+
+    mock_sftp["sftp"].put.side_effect = paramiko.SSHException("socket closed")
+
+    with patch.object(uploader, "reconnect", return_value=False):
+        count = uploader.upload_pending_files()
+
+    assert count == 0
+    assert len(list(Path(test_dirs["source"]).glob("*.csv"))) == 3
 
 
 # --- max_files_per_call cap --------------------------------------------------
