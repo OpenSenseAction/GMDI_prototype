@@ -82,6 +82,11 @@ WHERE a.ctid < b.ctid
 
 **2. Add the unique constraint**
 
+Note: TimescaleDB only allows adding a unique constraint when no chunks are
+compressed.  Run this step before the compression policy has had a chance to
+compress any chunks (i.e. shortly after a fresh deploy or after
+decompressing all chunks with `SELECT decompress_chunk(c) FROM show_chunks('cml_data') c`).
+
 ```bash
 docker compose exec database psql -U myuser -d mydatabase -c "
 ALTER TABLE cml_data ADD CONSTRAINT cml_data_unique_obs
@@ -89,5 +94,8 @@ ALTER TABLE cml_data ADD CONSTRAINT cml_data_unique_obs
 "
 ```
 
-Note: TimescaleDB requires that unique indexes on hypertables include the
-partitioning column (`time`), which is satisfied here.
+If compressed chunks already exist (>7 days of data), skip this step — the
+`ON CONFLICT DO NOTHING` in the parser still prevents duplicates at the
+application level.  The constraint is enforced automatically on fresh
+deployments because `init.sql` declares it before any data or compression
+policy is applied.
