@@ -4,7 +4,8 @@ CREATE TABLE cml_data (
     sublink_id TEXT NOT NULL,
     rsl REAL,
     tsl REAL,
-    UNIQUE (time, cml_id, sublink_id)
+    user_id TEXT NOT NULL DEFAULT 'user1',
+    UNIQUE (time, cml_id, sublink_id, user_id)
 );
 
 CREATE TABLE cml_metadata (
@@ -17,11 +18,16 @@ CREATE TABLE cml_metadata (
     frequency REAL,
     polarization TEXT,
     length REAL,
-    PRIMARY KEY (cml_id, sublink_id)
+    user_id TEXT NOT NULL DEFAULT 'user1',
+    PRIMARY KEY (cml_id, sublink_id, user_id),
+    -- Backward-compat constraint: keeps the parser's ON CONFLICT (cml_id, sublink_id)
+    -- clause valid until PR3 (feat/parser-user-id) updates it.
+    UNIQUE (cml_id, sublink_id)
 );
 
 CREATE TABLE cml_stats (
-    cml_id TEXT PRIMARY KEY,
+    cml_id TEXT NOT NULL,
+    user_id TEXT NOT NULL DEFAULT 'user1',
     total_records BIGINT,
     valid_records BIGINT,
     null_records BIGINT,
@@ -31,13 +37,22 @@ CREATE TABLE cml_stats (
     mean_rsl REAL,
     stddev_rsl REAL,
     last_rsl REAL,
-    last_update TIMESTAMPTZ DEFAULT NOW()
+    last_update TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (cml_id, user_id)
 );
 
-CREATE OR REPLACE FUNCTION update_cml_stats(target_cml_id TEXT) RETURNS VOID AS $$
+-- update_cml_stats(target_cml_id, target_user_id)
+--
+-- target_user_id defaults to 'user1' so the existing single-argument call
+-- sites in the parser continue to work until PR3 updates them.
+CREATE OR REPLACE FUNCTION update_cml_stats(
+    target_cml_id  TEXT,
+    target_user_id TEXT DEFAULT 'user1'
+) RETURNS VOID AS $$
 BEGIN
     INSERT INTO cml_stats (
         cml_id,
+        user_id,
         total_records,
         valid_records,
         null_records,
@@ -51,34 +66,48 @@ BEGIN
     )
     SELECT
         cd.cml_id::text,
-        COUNT(*) as total_records,
-        COUNT(CASE WHEN cd.rsl IS NOT NULL THEN 1 END) as valid_records,
-        COUNT(CASE WHEN cd.rsl IS NULL THEN 1 END) as null_records,
-        ROUND(100.0 * COUNT(CASE WHEN cd.rsl IS NOT NULL THEN 1 END) / COUNT(*), 2) as completeness_percent,
-        MIN(cd.rsl) as min_rsl,
-        MAX(cd.rsl) as max_rsl,
-        ROUND(AVG(cd.rsl)::numeric, 2) as mean_rsl,
-        ROUND(STDDEV(cd.rsl)::numeric, 2) as stddev_rsl,
-        (SELECT rsl FROM cml_data WHERE cml_id = cd.cml_id ORDER BY time DESC LIMIT 1) as last_rsl,
+        target_user_id,
+        COUNT(*)                                                              AS total_records,
+        COUNT(CASE WHEN cd.rsl IS NOT NULL THEN 1 END)                        AS valid_records,
+        COUNT(CASE WHEN cd.rsl IS NULL     THEN 1 END)                        AS null_records,
+        ROUND(
+            100.0 * COUNT(CASE WHEN cd.rsl IS NOT NULL THEN 1 END) / COUNT(*),
+            2
+        )                                                                     AS completeness_percent,
+        MIN(cd.rsl)                                                           AS min_rsl,
+        MAX(cd.rsl)                                                           AS max_rsl,
+        ROUND(AVG(cd.rsl)::numeric,    2)                                     AS mean_rsl,
+        ROUND(STDDEV(cd.rsl)::numeric, 2)                                     AS stddev_rsl,
+        (
+            SELECT rsl FROM cml_data
+            WHERE  cml_id  = cd.cml_id
+              AND  user_id = target_user_id
+            ORDER  BY time DESC LIMIT 1
+        )                                                                     AS last_rsl,
         NOW()
     FROM cml_data cd
-    WHERE cd.cml_id = target_cml_id
+    WHERE cd.cml_id  = target_cml_id
+      AND cd.user_id = target_user_id
     GROUP BY cd.cml_id
-    ON CONFLICT (cml_id) DO UPDATE SET
-        total_records = EXCLUDED.total_records,
-        valid_records = EXCLUDED.valid_records,
-        null_records = EXCLUDED.null_records,
+    ON CONFLICT (cml_id, user_id) DO UPDATE SET
+        total_records        = EXCLUDED.total_records,
+        valid_records        = EXCLUDED.valid_records,
+        null_records         = EXCLUDED.null_records,
         completeness_percent = EXCLUDED.completeness_percent,
-        min_rsl = EXCLUDED.min_rsl,
-        max_rsl = EXCLUDED.max_rsl,
-        mean_rsl = EXCLUDED.mean_rsl,
-        stddev_rsl = EXCLUDED.stddev_rsl,
-        last_rsl = EXCLUDED.last_rsl,
-        last_update = EXCLUDED.last_update;
+        min_rsl              = EXCLUDED.min_rsl,
+        max_rsl              = EXCLUDED.max_rsl,
+        mean_rsl             = EXCLUDED.mean_rsl,
+        stddev_rsl           = EXCLUDED.stddev_rsl,
+        last_rsl             = EXCLUDED.last_rsl,
+        last_update          = EXCLUDED.last_update;
 END;
 $$ LANGUAGE plpgsql;
 
 SELECT create_hypertable('cml_data', 'time');
+
+-- Per-user lookup indexes.
+CREATE INDEX idx_cml_data_user_id     ON cml_data     (user_id);
+CREATE INDEX idx_cml_metadata_user_id ON cml_metadata  (user_id);
 
 -- Index is created by the archive_loader service after bulk data load (faster COPY).
 -- If no archive data is loaded, create it manually:
@@ -94,6 +123,7 @@ CREATE MATERIALIZED VIEW cml_data_1h
 WITH (timescaledb.continuous) AS
 SELECT
     time_bucket('1 hour', time) AS bucket,
+    user_id,
     cml_id,
     sublink_id,
     MIN(rsl)  AS rsl_min,
@@ -103,7 +133,7 @@ SELECT
     MAX(tsl)  AS tsl_max,
     AVG(tsl)  AS tsl_avg
 FROM cml_data
-GROUP BY bucket, cml_id, sublink_id
+GROUP BY bucket, user_id, cml_id, sublink_id
 WITH NO DATA;
 
 -- Automatically refresh every hour, covering up to 2 days of history.
@@ -118,9 +148,13 @@ SELECT add_continuous_aggregate_policy('cml_data_1h',
 -- ---------------------------------------------------------------------------
 -- Compression for cml_data chunks older than 7 days.
 --
--- compress_segmentby: each compressed segment contains one (cml_id, sublink_id)
---   pair, so a query filtered to a single CML decompresses only ~1/728th of a
---   chunk — not the whole thing.
+-- compress_segmentby: one compressed segment per (user_id, cml_id).
+--   user_id is the leading key so a per-user query skips all other users'
+--   segments entirely.  sublink_id is intentionally omitted: ~80% of CMLs
+--   have 2 sublinks and ~15% have 4; keeping sublinks together in one
+--   segment roughly halves decompression work per CML query vs. splitting
+--   by sublink.  Filtering to a specific sublink after decompression is a
+--   trivial CPU operation on already-decompressed columnar data.
 -- compress_orderby: matches the query pattern (time range scans), allowing
 --   skip-scan decompression for narrow time windows within a segment.
 --
@@ -129,10 +163,112 @@ SELECT add_continuous_aggregate_policy('cml_data_1h',
 -- The current uncompressed week chunk is left untouched so real-time ingestion
 -- and detail-view queries on recent data have no decompression overhead.
 -- ---------------------------------------------------------------------------
+-- Note: TimescaleDB does not allow ENABLE ROW LEVEL SECURITY on a compressed
+-- hypertable, and compression cannot be set on an RLS-enabled table.  These
+-- two features are mutually exclusive on the same hypertable.  Per-user
+-- isolation for cml_data is provided by the cml_data_secure view below.
 ALTER TABLE cml_data SET (
     timescaledb.compress,
-    timescaledb.compress_segmentby = 'cml_id, sublink_id',
+    timescaledb.compress_segmentby = 'user_id, cml_id',
     timescaledb.compress_orderby   = 'time DESC'
 );
 
 SELECT add_compression_policy('cml_data', INTERVAL '7 days');
+
+-- ---------------------------------------------------------------------------
+-- Database roles and Row-Level Security (PR feat/db-roles-rls)
+--
+-- Role naming convention: PG login role name = user_id value in the data.
+--   "user1" role ↔ user_id = 'user1' — enables current_user-based RLS
+--   policies and the cml_data_1h_secure security-barrier view below.
+--
+-- user1: used by the user1 parser instance (writes) and by the webserver
+--   (via SET ROLE) for DB-enforced scoped reads.
+-- webserver_role: used by the webserver process.  Has a read-all RLS policy
+--   for admin/aggregate queries; SET ROLEs to a user role for scoped reads.
+--
+-- Passwords shown here are development defaults.
+-- Override them via environment variables or a secrets manager in production.
+-- ---------------------------------------------------------------------------
+
+CREATE ROLE user1        LOGIN PASSWORD 'user1password';
+CREATE ROLE webserver_role LOGIN PASSWORD 'webserverpassword';
+
+-- Allow webserver_role to impersonate user roles (SET ROLE user1).
+GRANT user1 TO webserver_role;
+
+-- Schema access.
+GRANT USAGE ON SCHEMA public TO user1, webserver_role;
+
+-- Table permissions.
+GRANT SELECT, INSERT, UPDATE ON cml_data     TO user1;
+GRANT SELECT, INSERT, UPDATE ON cml_metadata TO user1;
+GRANT SELECT, INSERT, UPDATE ON cml_stats    TO user1;
+
+GRANT SELECT ON cml_data     TO webserver_role;
+GRANT SELECT ON cml_metadata TO webserver_role;
+GRANT SELECT ON cml_stats    TO webserver_role;
+
+-- Parser calls update_cml_stats() to upsert per-CML statistics.
+GRANT EXECUTE ON FUNCTION update_cml_stats(TEXT, TEXT) TO user1;
+
+-- Row-Level Security on cml_metadata and cml_stats.
+-- cml_data is excluded: TimescaleDB does not allow RLS on compressed
+-- hypertables (and compression cannot be set on an RLS-enabled table).
+-- Per-user isolation for raw cml_data queries is provided by the
+-- cml_data_secure security-barrier view defined below.
+ALTER TABLE cml_metadata ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cml_stats    ENABLE ROW LEVEL SECURITY;
+
+-- Generic current_user policies for cml_metadata and cml_stats.
+-- Because role name = user_id value, one policy per table covers all users.
+CREATE POLICY user_cml_metadata_policy ON cml_metadata
+    FOR ALL
+    USING     (user_id = current_user)
+    WITH CHECK (user_id = current_user);
+
+CREATE POLICY user_cml_stats_policy ON cml_stats
+    FOR ALL
+    USING     (user_id = current_user)
+    WITH CHECK (user_id = current_user);
+
+-- Permissive read-all policies for webserver_role (admin / cross-user use).
+CREATE POLICY webserver_cml_metadata_policy ON cml_metadata
+    FOR SELECT TO webserver_role
+    USING (true);
+
+CREATE POLICY webserver_cml_stats_policy ON cml_stats
+    FOR SELECT TO webserver_role
+    USING (true);
+
+-- Security-barrier view over cml_data (compressed hypertable).
+-- Provides per-user isolation for raw cml_data queries via
+-- WHERE user_id = current_user.  The security_barrier option prevents the
+-- query optimizer from pushing caller-supplied predicates above the filter
+-- (SQL injection protection).  WITH CHECK OPTION rejects writes through
+-- this view where user_id != current_user.
+CREATE VIEW cml_data_secure WITH (security_barrier) AS
+SELECT * FROM cml_data
+WHERE user_id = current_user
+WITH CHECK OPTION;
+
+GRANT SELECT ON cml_data_secure TO user1;
+GRANT SELECT ON cml_data_secure TO webserver_role;
+
+-- Security-barrier view over cml_data_1h (continuous aggregate).
+--
+-- PostgreSQL cannot apply RLS to materialized views.  This view wraps
+-- cml_data_1h with WHERE user_id = current_user and security_barrier,
+-- providing DB-enforced per-user filtering with no application WHERE clause.
+--
+-- User roles query cml_data_1h_secure (auto-filtered).
+-- webserver_role queries cml_data_1h_secure after SET ROLE for user pages;
+-- queries cml_data_1h directly (as webserver_role) for admin/cross-user
+-- aggregates — those paths still need WHERE user_id = ? in the app.
+CREATE VIEW cml_data_1h_secure WITH (security_barrier) AS
+SELECT * FROM cml_data_1h
+WHERE user_id = current_user;
+
+GRANT SELECT ON cml_data_1h_secure TO user1;
+GRANT SELECT ON cml_data_1h        TO webserver_role;
+GRANT SELECT ON cml_data_1h_secure TO webserver_role;
