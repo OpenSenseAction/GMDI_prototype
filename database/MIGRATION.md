@@ -257,24 +257,37 @@ completes the refresh policy keeps the view up to date automatically.
 
 **Branch:** `fix/mno-simulator-resilience`
 
-A `UNIQUE (time, cml_id, sublink_id)` constraint was added to `cml_data` so
-that re-processing the same file never creates duplicate rows.  The parser's
-`write_rawdata` now uses `ON CONFLICT DO NOTHING`.
+A `UNIQUE (time, cml_id, sublink_id, user_id)` constraint was added to
+`cml_data` so that re-processing the same file never creates duplicate rows.
+The parser's `write_rawdata` now uses `ON CONFLICT DO NOTHING`.
 
 ### Steps
 
 **1. Deduplicate existing data (if any duplicates are present)**
 
+> **Note:** `DELETE … USING … WHERE a.ctid < b.ctid` does **not** work on
+> TimescaleDB compressed chunks (the `ctid` comparison is skipped by the
+> planner).  Use the temp-table approach below instead.
+
 ```bash
 docker compose exec database psql -U myuser -d mydatabase -c "
-DELETE FROM cml_data a
-USING cml_data b
-WHERE a.ctid < b.ctid
-  AND a.time        = b.time
-  AND a.cml_id      = b.cml_id
-  AND a.sublink_id  = b.sublink_id;
+-- Identify unique rows to keep
+CREATE TEMP TABLE cml_data_dedup AS
+SELECT DISTINCT ON (time, cml_id, sublink_id, user_id)
+    time, cml_id, sublink_id, rsl, tsl, user_id
+FROM cml_data
+ORDER BY time, cml_id, sublink_id, user_id;
+
+-- Remove all rows in each affected chunk and reinsert the deduped set.
+-- Adjust the chunk name(s) to match your installation
+-- (\`SELECT show_chunks('cml_data')\` lists them).
+DELETE FROM _timescaledb_internal._hyper_1_12_chunk;
+INSERT INTO cml_data SELECT * FROM cml_data_dedup;
+DROP TABLE cml_data_dedup;
 "
 ```
+
+Alternatively restore from a pre-duplicate backup (safest).
 
 **2. Add the unique constraint**
 
@@ -286,7 +299,7 @@ decompressing all chunks with `SELECT decompress_chunk(c) FROM show_chunks('cml_
 ```bash
 docker compose exec database psql -U myuser -d mydatabase -c "
 ALTER TABLE cml_data ADD CONSTRAINT cml_data_unique_obs
-    UNIQUE (time, cml_id, sublink_id);
+    UNIQUE (time, cml_id, sublink_id, user_id);
 "
 ```
 

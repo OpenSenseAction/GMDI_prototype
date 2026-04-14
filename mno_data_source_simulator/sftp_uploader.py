@@ -450,6 +450,8 @@ class SFTPUploader:
                 if reconnect_attempted or not self.reconnect():
                     logger.error("Could not recover connection; aborting batch")
                     break
+                # Mark so the SSHException handler below also aborts rather
+                # than attempting a second reconnect within the same batch.
                 reconnect_attempted = True
             try:
                 # Upload the file
