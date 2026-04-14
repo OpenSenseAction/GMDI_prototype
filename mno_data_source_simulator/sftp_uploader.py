@@ -33,6 +33,7 @@ class SFTPUploader:
         source_dir: str = "data_to_upload",
         archive_dir: str = "data_uploaded",
         connection_timeout: int = 30,
+        max_files_per_call: int = 200,
     ):
         """
         Initialize the SFTP uploader.
@@ -70,6 +71,9 @@ class SFTPUploader:
             "~/.ssh/known_hosts"
         )
         self.connection_timeout = connection_timeout
+        # Cap how many files are uploaded in a single call.  This bounds
+        # worst-case paramiko buffer allocation if failures slip through.
+        self.max_files_per_call = max_files_per_call
 
         # Validate remote path
         self.remote_path = self._validate_remote_path(remote_path)
@@ -426,10 +430,27 @@ class SFTPUploader:
             logger.debug("No pending files to upload")
             return 0
 
+        if len(pending_files) > self.max_files_per_call:
+            logger.info(
+                "Capping upload batch to %d of %d pending files",
+                self.max_files_per_call,
+                len(pending_files),
+            )
+            pending_files = pending_files[: self.max_files_per_call]
+
         uploaded_count = 0
         reconnect_attempted = False
 
         for file_path in pending_files:
+            # Per-file transport check: bail out immediately if the socket
+            # has gone away mid-batch instead of letting paramiko allocate
+            # packet buffers for every remaining file before failing.
+            if not self._is_connected():
+                logger.warning("Transport lost mid-batch; attempting reconnect")
+                if reconnect_attempted or not self.reconnect():
+                    logger.error("Could not recover connection; aborting batch")
+                    break
+                reconnect_attempted = True
             try:
                 # Upload the file
                 remote_file_path = self.upload_file(str(file_path))
