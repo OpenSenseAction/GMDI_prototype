@@ -12,7 +12,7 @@ from pathlib import Path
 from .file_watcher import FileWatcher
 from .file_manager import FileManager
 from .db_writer import DBWriter
-from .service_logic import process_cml_file
+from .service_logic import process_cml_file, process_rawdata_files_batch
 
 
 class Config:
@@ -39,13 +39,26 @@ def setup_logging():
 
 
 def process_existing_files(db_writer, file_manager, logger):
-    incoming = list(Config.INCOMING_DIR.glob("*"))
-    for f in incoming:
-        if f.is_file() and f.suffix.lower() in {".csv"}:
-            try:
-                process_cml_file(f, db_writer, file_manager, logger)
-            except Exception:
-                pass
+    incoming = sorted(
+        f for f in Config.INCOMING_DIR.glob("*.csv") if f.is_file()
+    )
+    if not incoming:
+        return
+
+    metadata_files = [f for f in incoming if "meta" in f.name.lower()]
+    data_files = [f for f in incoming if f not in set(metadata_files)]
+
+    # Metadata files: process individually (typically just one)
+    for f in metadata_files:
+        try:
+            process_cml_file(f, db_writer, file_manager, logger)
+        except Exception:
+            pass
+
+    # Data files: batch-process for efficiency
+    if data_files:
+        logger.info("Found %d data file(s) to process", len(data_files))
+        process_rawdata_files_batch(data_files, db_writer, file_manager, logger)
 
 
 def main():
