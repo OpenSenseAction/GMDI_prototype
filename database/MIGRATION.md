@@ -54,3 +54,40 @@ CALL refresh_continuous_aggregate('cml_data_1h', NULL, NULL);
 
 This may take a few seconds depending on how much data is present. After it
 completes the refresh policy keeps the view up to date automatically.
+
+---
+
+## Unique constraint on `cml_data` (idempotent ingestion)
+
+**Branch:** `fix/mno-simulator-resilience`
+
+A `UNIQUE (time, cml_id, sublink_id)` constraint was added to `cml_data` so
+that re-processing the same file never creates duplicate rows.  The parser's
+`write_rawdata` now uses `ON CONFLICT DO NOTHING`.
+
+### Steps
+
+**1. Deduplicate existing data (if any duplicates are present)**
+
+```bash
+docker compose exec database psql -U myuser -d mydatabase -c "
+DELETE FROM cml_data a
+USING cml_data b
+WHERE a.ctid < b.ctid
+  AND a.time        = b.time
+  AND a.cml_id      = b.cml_id
+  AND a.sublink_id  = b.sublink_id;
+"
+```
+
+**2. Add the unique constraint**
+
+```bash
+docker compose exec database psql -U myuser -d mydatabase -c "
+ALTER TABLE cml_data ADD CONSTRAINT cml_data_unique_obs
+    UNIQUE (time, cml_id, sublink_id);
+"
+```
+
+Note: TimescaleDB requires that unique indexes on hypertables include the
+partitioning column (`time`), which is satisfied here.

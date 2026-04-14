@@ -3,7 +3,8 @@ CREATE TABLE cml_data (
     cml_id TEXT NOT NULL,
     sublink_id TEXT NOT NULL,
     rsl REAL,
-    tsl REAL
+    tsl REAL,
+    UNIQUE (time, cml_id, sublink_id)
 );
 
 CREATE TABLE cml_metadata (
