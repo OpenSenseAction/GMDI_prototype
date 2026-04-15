@@ -288,7 +288,7 @@ class DBWriter:
         )
         records = [tuple(x) for x in df_subset.to_numpy()]
 
-        sql = "INSERT INTO cml_data (time, cml_id, sublink_id, rsl, tsl) VALUES %s"
+        sql = "INSERT INTO cml_data (time, cml_id, sublink_id, rsl, tsl) VALUES %s ON CONFLICT (time, cml_id, sublink_id, user_id) DO NOTHING"
 
         rows_written = self._with_connection_retry(
             lambda: self._execute_batch_insert(

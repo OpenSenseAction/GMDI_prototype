@@ -4,7 +4,8 @@ CREATE TABLE cml_data (
     sublink_id TEXT NOT NULL,
     rsl REAL,
     tsl REAL,
-    user_id TEXT NOT NULL DEFAULT 'user1'
+    user_id TEXT NOT NULL DEFAULT 'user1',
+    UNIQUE (time, cml_id, sublink_id, user_id)
 );
 
 CREATE TABLE cml_metadata (

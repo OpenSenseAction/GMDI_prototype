@@ -172,7 +172,12 @@ def main():
                         uploaded_count = sftp_uploader.upload_pending_files()
                         if uploaded_count > 0:
                             logger.info(f"Uploaded {uploaded_count} files")
-                            last_upload_time = current_time
+                        # Always advance the timer so a persistent connection
+                        # failure does not cause every loop iteration to
+                        # attempt uploading the full backlog (which would
+                        # allocate paramiko packet buffers for each file and
+                        # exhaust container RAM).
+                        last_upload_time = current_time
                     except Exception as e:
                         logger.error(f"Upload failed: {e}")
 

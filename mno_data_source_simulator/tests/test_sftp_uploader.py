@@ -359,6 +359,322 @@ def test_upload_continues_on_individual_file_error(
     uploader.close()
 
 
+# ---------------------------------------------------------------------------
+# Tests for resilience features added in fix/mno-simulator-resilience
+# ---------------------------------------------------------------------------
+
+
+def _make_uploader(test_dirs, **kwargs):
+    """Helper to build an SFTPUploader with test directories."""
+    defaults = dict(
+        host="localhost",
+        port=22,
+        username="test_user",
+        password="test_pass",
+        remote_path="/upload",
+        source_dir=test_dirs["source"],
+        archive_dir=test_dirs["archive"],
+    )
+    defaults.update(kwargs)
+    return SFTPUploader(**defaults)
+
+
+# --- _is_connected -----------------------------------------------------------
+
+
+def test_is_connected_no_client(test_dirs):
+    """_is_connected returns False when client/sftp are None."""
+    uploader = _make_uploader(test_dirs)
+    assert uploader._is_connected() is False
+
+
+def test_is_connected_active_transport(test_dirs, mock_sftp):
+    """_is_connected returns True when the transport reports is_active."""
+    uploader = _make_uploader(test_dirs)
+    uploader.connect()
+
+    mock_transport = Mock()
+    mock_transport.is_active.return_value = True
+    uploader.client.get_transport.return_value = mock_transport
+
+    assert uploader._is_connected() is True
+    uploader.close()
+
+
+def test_is_connected_inactive_transport(test_dirs, mock_sftp):
+    """_is_connected returns False when the transport is no longer active."""
+    uploader = _make_uploader(test_dirs)
+    uploader.connect()
+
+    mock_transport = Mock()
+    mock_transport.is_active.return_value = False
+    uploader.client.get_transport.return_value = mock_transport
+
+    assert uploader._is_connected() is False
+    uploader.close()
+
+
+def test_is_connected_none_transport(test_dirs, mock_sftp):
+    """_is_connected returns False when get_transport() returns None."""
+    uploader = _make_uploader(test_dirs)
+    uploader.connect()
+    uploader.client.get_transport.return_value = None
+
+    assert uploader._is_connected() is False
+    uploader.close()
+
+
+# --- reconnect ---------------------------------------------------------------
+
+
+def test_reconnect_success(test_dirs, mock_sftp):
+    """reconnect closes the old connection and opens a new one."""
+    uploader = _make_uploader(test_dirs)
+    uploader.connect()
+
+    # Patch connect() so the credential-cleared-after-first-connect issue
+    # doesn't interfere; we just want to verify reconnect orchestration.
+    with patch.object(uploader, "connect") as mock_connect:
+        result = uploader.reconnect()
+
+    assert result is True
+    mock_connect.assert_called_once()
+
+
+def test_reconnect_failure(test_dirs, mock_sftp):
+    """reconnect returns False when the new connect() raises."""
+    uploader = _make_uploader(test_dirs)
+    uploader.connect()
+
+    mock_sftp["client"].connect.side_effect = OSError("refused")
+    result = uploader.reconnect()
+
+    assert result is False
+
+
+def test_reconnect_close_raises_still_attempts_connect(test_dirs, mock_sftp):
+    """reconnect swallows exceptions from close() and still tries to connect."""
+    uploader = _make_uploader(test_dirs)
+    uploader.connect()
+
+    with patch.object(uploader, "close", side_effect=OSError("close error")), \
+         patch.object(uploader, "connect") as mock_connect:
+        result = uploader.reconnect()
+
+    assert result is True
+    mock_connect.assert_called_once()
+
+
+# --- upload_pending_files: upfront connectivity check -----------------------
+
+
+def test_upload_skipped_when_disconnected_and_reconnect_fails(
+    test_dirs, sample_csv_files, mock_sftp
+):
+    """upload_pending_files returns 0 without touching files when connection
+    is dead and reconnect also fails."""
+    uploader = _make_uploader(test_dirs)
+    uploader.connect()
+
+    # Simulate dead transport
+    mock_transport = Mock()
+    mock_transport.is_active.return_value = False
+    uploader.client.get_transport.return_value = mock_transport
+
+    # Reconnect will also fail
+    mock_sftp["client"].connect.side_effect = OSError("refused")
+
+    count = uploader.upload_pending_files()
+
+    assert count == 0
+    mock_sftp["sftp"].put.assert_not_called()
+    # Files must still be in source dir
+    assert len(list(Path(test_dirs["source"]).glob("*.csv"))) == 3
+
+
+def test_upload_reconnects_when_disconnected_at_start(
+    test_dirs, sample_csv_files, mock_sftp
+):
+    """upload_pending_files reconnects automatically when transport is dead
+    at the start of a batch."""
+    uploader = _make_uploader(test_dirs)
+    uploader.connect()
+
+    # Upfront check: False → reconnect → then per-file checks: all True
+    is_connected_seq = [False, True, True, True]
+    with patch.object(uploader, "_is_connected", side_effect=is_connected_seq), \
+         patch.object(uploader, "reconnect", return_value=True):
+        count = uploader.upload_pending_files()
+
+    assert count == 3
+
+
+# --- upload_pending_files: per-file mid-batch transport check ---------------
+
+
+def test_upload_aborts_mid_batch_when_transport_dies(
+    test_dirs, sample_csv_files, mock_sftp
+):
+    """If the transport dies mid-batch and reconnect fails, the remaining
+    files are left in source_dir."""
+    uploader = _make_uploader(test_dirs)
+    uploader.connect()
+
+    # _is_connected sequence:
+    #   call 1 (upfront check)     → True  (batch starts normally)
+    #   call 2 (per-file, file 1)  → True  (upload succeeds)
+    #   call 3 (per-file, file 2)  → False (transport died)
+    is_connected_seq = [True, True, False]
+    with patch.object(uploader, "_is_connected", side_effect=is_connected_seq), \
+         patch.object(uploader, "reconnect", return_value=False):
+        count = uploader.upload_pending_files()
+
+    # Only the first file uploaded before transport died
+    assert count == 1
+    assert len(list(Path(test_dirs["source"]).glob("*.csv"))) == 2
+
+
+def test_upload_continues_after_successful_mid_batch_reconnect(
+    test_dirs, sample_csv_files, mock_sftp
+):
+    """If the transport dies mid-batch but reconnect succeeds, the remaining
+    files are processed normally."""
+    uploader = _make_uploader(test_dirs)
+    uploader.connect()
+
+    # _is_connected sequence:
+    #   call 1 (upfront)      → True
+    #   call 2 (file 1)       → True   (upload ok)
+    #   call 3 (file 2)       → False  (transport lost)
+    #   call 4 (file 3)       → True   (after reconnect)
+    is_connected_seq = [True, True, False, True]
+    with patch.object(uploader, "_is_connected", side_effect=is_connected_seq), \
+         patch.object(uploader, "reconnect", return_value=True):
+        count = uploader.upload_pending_files()
+
+    assert count == 3
+    assert len(list(Path(test_dirs["source"]).glob("*.csv"))) == 0
+
+
+def test_upload_retries_file_after_ssh_exception(
+    test_dirs, sample_csv_files, mock_sftp
+):
+    """When sftp.put raises SSHException, the file is retried after reconnect."""
+    uploader = _make_uploader(test_dirs)
+    uploader.connect()
+
+    call_count = {"n": 0}
+
+    def put_side_effect(local, remote):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise paramiko.SSHException("socket closed")
+
+    mock_sftp["sftp"].put.side_effect = put_side_effect
+
+    with patch.object(uploader, "reconnect", return_value=True):
+        count = uploader.upload_pending_files()
+
+    # All 3 files should end up uploaded (file 1 via retry, 2+3 normally)
+    assert count == 3
+    assert len(list(Path(test_dirs["source"]).glob("*.csv"))) == 0
+
+
+def test_upload_aborts_when_retry_after_ssh_exception_fails(
+    test_dirs, sample_csv_files, mock_sftp
+):
+    """If reconnect succeeds but the retry upload also fails, that file is
+    skipped and the batch continues."""
+    uploader = _make_uploader(test_dirs)
+    uploader.connect()
+
+    call_count = {"n": 0}
+
+    def put_side_effect(local, remote):
+        call_count["n"] += 1
+        if call_count["n"] <= 2:  # first attempt + retry both fail
+            raise paramiko.SSHException("socket closed")
+
+    mock_sftp["sftp"].put.side_effect = put_side_effect
+
+    with patch.object(uploader, "reconnect", return_value=True):
+        count = uploader.upload_pending_files()
+
+    # File 1 skipped (retry also failed), files 2+3 uploaded
+    assert count == 2
+
+
+def test_upload_aborts_on_second_ssh_exception_after_reconnect(
+    test_dirs, sample_csv_files, mock_sftp
+):
+    """If SSHException hits again after a successful reconnect, the batch is
+    aborted immediately (reconnect_attempted guard prevents a second reconnect)."""
+    uploader = _make_uploader(test_dirs)
+    uploader.connect()
+
+    # Every put() raises SSHException, so the retry after reconnect also fails
+    mock_sftp["sftp"].put.side_effect = paramiko.SSHException("socket closed")
+
+    with patch.object(uploader, "reconnect", return_value=True):
+        count = uploader.upload_pending_files()
+
+    # First file: SSHException → reconnect → retry raises again → continue (0 uploaded)
+    # Second file: SSHException → reconnect_attempted already True → abort
+    assert count == 0
+
+
+def test_upload_aborts_batch_when_ssh_exception_and_reconnect_fails(
+    test_dirs, sample_csv_files, mock_sftp
+):
+    """If SSHException is raised and reconnect fails, the batch is aborted."""
+    uploader = _make_uploader(test_dirs)
+    uploader.connect()
+
+    mock_sftp["sftp"].put.side_effect = paramiko.SSHException("socket closed")
+
+    with patch.object(uploader, "reconnect", return_value=False):
+        count = uploader.upload_pending_files()
+
+    assert count == 0
+    assert len(list(Path(test_dirs["source"]).glob("*.csv"))) == 3
+
+
+# --- max_files_per_call cap --------------------------------------------------
+
+
+def test_max_files_per_call_limits_batch(test_dirs, sample_csv_files, mock_sftp):
+    """upload_pending_files uploads at most max_files_per_call files per call."""
+    uploader = _make_uploader(test_dirs, max_files_per_call=2)
+    uploader.connect()
+
+    count = uploader.upload_pending_files()
+
+    assert count == 2
+    assert mock_sftp["sftp"].put.call_count == 2
+    # One file must still be in source_dir
+    assert len(list(Path(test_dirs["source"]).glob("*.csv"))) == 1
+
+
+def test_max_files_per_call_default_is_200(test_dirs):
+    """Default max_files_per_call is 200."""
+    uploader = _make_uploader(test_dirs)
+    assert uploader.max_files_per_call == 200
+
+
+def test_second_call_processes_remaining_files(test_dirs, sample_csv_files, mock_sftp):
+    """Files left over after a capped batch are picked up on the next call."""
+    uploader = _make_uploader(test_dirs, max_files_per_call=2)
+    uploader.connect()
+
+    first = uploader.upload_pending_files()
+    second = uploader.upload_pending_files()
+
+    assert first == 2
+    assert second == 1
+    assert len(list(Path(test_dirs["source"]).glob("*.csv"))) == 0
+
+
+
 def test_remote_directory_creation(test_dirs, mock_sftp):
     """Test that remote directory is created if it doesn't exist."""
     uploader = SFTPUploader(

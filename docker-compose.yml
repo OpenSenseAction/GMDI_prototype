@@ -12,6 +12,7 @@ services:
 
   mno_simulator:
     build: ./mno_data_source_simulator
+    restart: unless-stopped
     depends_on:
       - sftp_receiver
     volumes:

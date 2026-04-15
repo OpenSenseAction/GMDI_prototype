@@ -33,6 +33,7 @@ class SFTPUploader:
         source_dir: str = "data_to_upload",
         archive_dir: str = "data_uploaded",
         connection_timeout: int = 30,
+        max_files_per_call: int = 200,
     ):
         """
         Initialize the SFTP uploader.
@@ -70,6 +71,9 @@ class SFTPUploader:
             "~/.ssh/known_hosts"
         )
         self.connection_timeout = connection_timeout
+        # Cap how many files are uploaded in a single call.  This bounds
+        # worst-case paramiko buffer allocation if failures slip through.
+        self.max_files_per_call = max_files_per_call
 
         # Validate remote path
         self.remote_path = self._validate_remote_path(remote_path)
@@ -160,6 +164,28 @@ class SFTPUploader:
             raise ValueError(f"Hidden files not allowed: {basename}")
 
         return basename
+
+    def _is_connected(self) -> bool:
+        """Return True if the underlying SSH transport is still active."""
+        if self.sftp is None or self.client is None:
+            return False
+        transport = self.client.get_transport()
+        return transport is not None and transport.is_active()
+
+    def reconnect(self) -> bool:
+        """Close the existing connection and re-establish it. Returns True on success."""
+        logger.info("Attempting SFTP reconnection...")
+        try:
+            self.close()
+        except Exception:
+            pass
+        try:
+            self.connect()
+            logger.info("SFTP reconnected successfully")
+            return True
+        except Exception as e:
+            logger.error(f"SFTP reconnection failed: {e}")
+            return False
 
     def connect(self):
         """Establish SFTP connection with host key verification."""
@@ -381,20 +407,52 @@ class SFTPUploader:
         Upload all pending CSV files from source directory to SFTP server.
         After successful upload, move files to archive directory.
 
+        If the connection is lost mid-batch a single reconnect is attempted;
+        the current file is retried once and uploading continues.  If the
+        reconnect itself fails the batch is aborted so the files remain in
+        source_dir for the next call.
+
         Returns
         -------
         int
             Number of files successfully uploaded.
         """
+        # Ensure connection is alive before starting
+        if not self._is_connected():
+            logger.warning("SFTP connection not active; attempting reconnect")
+            if not self.reconnect():
+                logger.error("Could not reconnect to SFTP server; skipping upload")
+                return 0
+
         pending_files = self.get_pending_files()
 
         if not pending_files:
             logger.debug("No pending files to upload")
             return 0
 
+        if len(pending_files) > self.max_files_per_call:
+            logger.info(
+                "Capping upload batch to %d of %d pending files",
+                self.max_files_per_call,
+                len(pending_files),
+            )
+            pending_files = pending_files[: self.max_files_per_call]
+
         uploaded_count = 0
+        reconnect_attempted = False
 
         for file_path in pending_files:
+            # Per-file transport check: bail out immediately if the socket
+            # has gone away mid-batch instead of letting paramiko allocate
+            # packet buffers for every remaining file before failing.
+            if not self._is_connected():
+                logger.warning("Transport lost mid-batch; attempting reconnect")
+                if reconnect_attempted or not self.reconnect():
+                    logger.error("Could not recover connection; aborting batch")
+                    break
+                # Mark so the SSHException handler below also aborts rather
+                # than attempting a second reconnect within the same batch.
+                reconnect_attempted = True
             try:
                 # Upload the file
                 remote_file_path = self.upload_file(str(file_path))
@@ -409,12 +467,25 @@ class SFTPUploader:
             except ValueError as e:
                 logger.error(f"Validation error for {file_path.name}: {e}")
                 continue
-            except paramiko.SSHException as e:
-                logger.error(f"SSH error uploading {file_path.name}: {e}")
-                continue
-            except OSError as e:
-                logger.error(f"File operation error for {file_path.name}: {e}")
-                continue
+            except (paramiko.SSHException, OSError) as e:
+                logger.error(f"Connection error uploading {file_path.name}: {e}")
+                if reconnect_attempted:
+                    logger.error("Connection still unstable after reconnect; aborting batch")
+                    break
+                reconnect_attempted = True
+                if not self.reconnect():
+                    logger.error("Reconnect failed; aborting upload batch")
+                    break
+                # Retry this file with the fresh connection
+                try:
+                    self.upload_file(str(file_path))
+                    archive_path = self.archive_dir / file_path.name
+                    shutil.move(str(file_path), str(archive_path))
+                    logger.info(f"Moved {file_path.name} to archive (after reconnect)")
+                    uploaded_count += 1
+                except Exception as retry_e:
+                    logger.error(f"Retry after reconnect failed for {file_path.name}: {retry_e}")
+                    continue
             except Exception as e:
                 logger.error(f"Unexpected error uploading {file_path.name}: {e}")
                 continue
