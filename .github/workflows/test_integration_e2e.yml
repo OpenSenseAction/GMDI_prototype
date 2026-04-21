@@ -66,7 +66,7 @@ jobs:
     
     - name: Start services
       run: |
-        docker compose up -d database sftp_receiver parser webserver mno_simulator
+        docker compose up -d database sftp_receiver parser_openmrg webserver mno_simulator_openmrg
         sleep 10
     
     - name: Wait for services to be ready
@@ -103,7 +103,7 @@ jobs:
         
         # Check if parser sees the files
         echo "Checking parser incoming directory..."
-        docker compose exec -T parser ls -la /app/data/incoming/ || echo "Could not list parser directory"
+        docker compose exec -T parser_openmrg ls -la /app/data/incoming/ || echo "Could not list parser directory"
         
         echo "All services are ready"
     
@@ -127,7 +127,7 @@ jobs:
         
         echo ""
         echo "=== Parser Logs ==="
-        docker compose logs parser
+        docker compose logs parser_openmrg
         
         echo ""
         echo "=== Webserver Logs ==="
@@ -135,7 +135,7 @@ jobs:
         
         echo ""
         echo "=== MNO Simulator Logs ==="
-        docker compose logs mno_simulator
+        docker compose logs mno_simulator_openmrg
         
         echo ""
         echo "=== SFTP Directory Contents ==="
@@ -143,15 +143,15 @@ jobs:
         
         echo ""
         echo "=== Parser Incoming Directory Contents ==="
-        docker compose exec -T parser ls -la /app/data/incoming/ || echo "Could not access parser directory"
+        docker compose exec -T parser_openmrg ls -la /app/data/incoming/ || echo "Could not access parser directory"
         
         echo ""
         echo "=== Parser Archived Directory Contents ==="
-        docker compose exec -T parser ls -la /app/data/archived/ || echo "Could not access parser archived directory"
+        docker compose exec -T parser_openmrg ls -la /app/data/archived/ || echo "Could not access parser archived directory"
         
         echo ""
         echo "=== Parser Quarantine Directory Contents ==="
-        docker compose exec -T parser ls -la /app/data/quarantine/ || echo "Could not access parser quarantine directory"
+        docker compose exec -T parser_openmrg ls -la /app/data/quarantine/ || echo "Could not access parser quarantine directory"
     
     - name: Cleanup
       if: always()
