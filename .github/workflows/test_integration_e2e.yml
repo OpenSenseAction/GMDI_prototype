@@ -41,15 +41,17 @@ jobs:
         ssh-keygen -t ed25519 -f ssh_keys/sftp_host_ed25519_key -N "" -C "SFTP host ed25519 key"
         ssh-keygen -t rsa -b 4096 -f ssh_keys/sftp_host_rsa_key -N "" -C "SFTP host RSA key"
         
-        # Generate client key for MNO simulator
-        ssh-keygen -t rsa -b 4096 -f ssh_keys/id_rsa -N "" -C "MNO client key"
+        # Generate client key for demo_openmrg MNO simulator (tested by e2e)
+        ssh-keygen -t rsa -b 4096 -f ssh_keys/id_rsa -N "" -C "demo_openmrg client key"
         
-        # Create authorized_keys with the client public key
+        # Populate per-user authorized_keys mounted by the SFTP server
+        mkdir -p ssh_keys/demo_openmrg ssh_keys/demo_orange_cameroun
+        cp ssh_keys/id_rsa.pub ssh_keys/demo_openmrg/authorized_keys
+        # orange_cameroun not tested in e2e but the file must exist for the SFTP container to start
+        touch ssh_keys/demo_orange_cameroun/authorized_keys
+        
+        # Legacy top-level authorized_keys (kept for backwards compatibility)
         cp ssh_keys/id_rsa.pub ssh_keys/authorized_keys
-        # Also populate per-user authorized_keys used by the multi-user SFTP setup
-        mkdir -p ssh_keys/user1 ssh_keys/user2
-        cp ssh_keys/id_rsa.pub ssh_keys/user1/authorized_keys
-        touch ssh_keys/user2/authorized_keys
         
         # Create known_hosts with server host keys (without port since it's standard port 22)
         echo "sftp_receiver $(cat ssh_keys/sftp_host_ed25519_key.pub)" > ssh_keys/known_hosts
