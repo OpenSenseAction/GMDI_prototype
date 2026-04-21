@@ -67,6 +67,11 @@ jobs:
         cat ssh_keys/known_hosts
     
     - name: Start services
+      env:
+        # Use the small 12-hour file (committed to the repo) to avoid a large
+        # download in CI. The 3-month file is only needed for production.
+        OPENMRG_NETCDF_FILE: /app/example_data/openMRG_cmls_20150827_12hours.nc
+        OPENMRG_NETCDF_FILE_URL: ""
       run: |
         docker compose up -d database sftp_receiver parser_openmrg webserver mno_simulator_openmrg
         sleep 10
