@@ -43,12 +43,28 @@ $$;
 
 -- ---------------------------------------------------------------------------
 -- Step 2: Relabel existing data rows
+--
+-- cml_metadata and cml_stats are small uncompressed tables — fast to UPDATE.
+--
+-- cml_data is a compressed TimescaleDB hypertable. UPDATE forces decompression
+-- of every chunk, which on months of 10-second-resolution data can take many
+-- minutes and temporarily double storage.  Since Grafana connects as the
+-- superuser (myuser) and bypasses RLS, old rows labelled user_id='user1' remain
+-- fully visible in dashboards.  New rows written by the renamed parser will
+-- already carry user_id='demo_openmrg', so the relabelling converges naturally
+-- over time as old compressed chunks age out.
+--
+-- To force a full relabel of cml_data (optional, e.g. before enabling strict
+-- RLS enforcement for parsers), run the following AFTER decompressing all chunks:
+--
+--   SELECT decompress_chunk(c) FROM show_chunks('cml_data') c;
+--   UPDATE cml_data SET user_id = 'demo_openmrg' WHERE user_id = 'user1';
+--   UPDATE cml_data SET user_id = 'demo_orange_cameroun' WHERE user_id = 'user2';
+--   SELECT compress_chunk(c) FROM show_chunks('cml_data') c;
 -- ---------------------------------------------------------------------------
 
-UPDATE cml_data     SET user_id = 'demo_openmrg'        WHERE user_id = 'user1';
-UPDATE cml_metadata SET user_id = 'demo_openmrg'        WHERE user_id = 'user1';
-UPDATE cml_stats    SET user_id = 'demo_openmrg'        WHERE user_id = 'user1';
+UPDATE cml_metadata SET user_id = 'demo_openmrg'         WHERE user_id = 'user1';
+UPDATE cml_stats    SET user_id = 'demo_openmrg'         WHERE user_id = 'user1';
 
-UPDATE cml_data     SET user_id = 'demo_orange_cameroun' WHERE user_id = 'user2';
 UPDATE cml_metadata SET user_id = 'demo_orange_cameroun' WHERE user_id = 'user2';
 UPDATE cml_stats    SET user_id = 'demo_orange_cameroun' WHERE user_id = 'user2';
