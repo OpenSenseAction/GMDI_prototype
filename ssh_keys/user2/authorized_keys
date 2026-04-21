@@ -1,0 +1,10 @@
+# Add the external user's SSH public key here.
+# Format: ssh-ed25519 AAAA... user@hostname
+# or:     ssh-rsa AAAA... user@hostname
+#
+# The user should generate a key pair with:
+#   ssh-keygen -t ed25519 -C "your_name@organisation"
+# and send you the contents of the resulting .pub file.
+#
+# After adding the key, restart the SFTP service:
+#   docker compose restart sftp_receiver

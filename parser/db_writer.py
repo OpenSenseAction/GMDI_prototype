@@ -31,8 +31,9 @@ class DBWriter:
         db.close()
     """
 
-    def __init__(self, db_url: str, connect_timeout: int = 10):
+    def __init__(self, db_url: str, user_id: str = "user1", connect_timeout: int = 10):
         self.db_url = db_url
+        self.user_id = user_id
         self.connect_timeout = connect_timeout
         self.conn: Optional[psycopg2.extensions.connection] = None
 
@@ -100,7 +101,10 @@ class DBWriter:
 
         cur = self.conn.cursor()
         try:
-            cur.execute("SELECT cml_id, sublink_id FROM cml_metadata")
+            cur.execute(
+                "SELECT cml_id, sublink_id FROM cml_metadata WHERE user_id = %s",
+                (self.user_id,),
+            )
             rows = cur.fetchall()
             return {(str(r[0]), str(r[1])) for r in rows}
         finally:
@@ -200,7 +204,7 @@ class DBWriter:
         cur = self.conn.cursor()
         try:
             for cml_id in cml_ids:
-                cur.execute("SELECT update_cml_stats(%s)", (cml_id,))
+                cur.execute("SELECT update_cml_stats(%s, %s)", (cml_id, self.user_id))
             # Do not commit here; caller should commit once after batch operations
             logger.info("Executed update_cml_stats for %d CMLs", len(cml_ids))
         except Exception:
@@ -238,13 +242,14 @@ class DBWriter:
         df_subset = df[cols].copy()
         df_subset["cml_id"] = df_subset["cml_id"].astype(str)
         df_subset["sublink_id"] = df_subset["sublink_id"].astype(str)
-        records = [tuple(x) for x in df_subset.to_numpy()]
+        df_subset["user_id"] = self.user_id
+        records = [tuple(x) for x in df_subset[[*cols, "user_id"]].to_numpy()]
 
         sql = (
             "INSERT INTO cml_metadata "
-            "(cml_id, sublink_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat, frequency, polarization, length) "
+            "(cml_id, sublink_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat, frequency, polarization, length, user_id) "
             "VALUES %s "
-            "ON CONFLICT (cml_id, sublink_id) DO UPDATE SET "
+            "ON CONFLICT (cml_id, sublink_id, user_id) DO UPDATE SET "
             "site_0_lon = EXCLUDED.site_0_lon, "
             "site_0_lat = EXCLUDED.site_0_lat, "
             "site_1_lon = EXCLUDED.site_1_lon, "
@@ -286,9 +291,10 @@ class DBWriter:
         df_subset["sublink_id"] = (
             df_subset["sublink_id"].astype(str).replace("nan", None)
         )
-        records = [tuple(x) for x in df_subset.to_numpy()]
+        df_subset["user_id"] = self.user_id
+        records = [tuple(x) for x in df_subset[[*cols, "user_id"]].to_numpy()]
 
-        sql = "INSERT INTO cml_data (time, cml_id, sublink_id, rsl, tsl) VALUES %s ON CONFLICT (time, cml_id, sublink_id, user_id) DO NOTHING"
+        sql = "INSERT INTO cml_data (time, cml_id, sublink_id, rsl, tsl, user_id) VALUES %s ON CONFLICT (time, cml_id, sublink_id, user_id) DO NOTHING"
 
         rows_written = self._with_connection_retry(
             lambda: self._execute_batch_insert(
@@ -312,8 +318,9 @@ class DBWriter:
         cur = self.conn.cursor()
         try:
             cur.execute(
-                "SELECT update_cml_stats(cml_id::text) "
-                "FROM (SELECT DISTINCT cml_id FROM cml_metadata) t"
+                "SELECT update_cml_stats(cml_id::text, %s) "
+                "FROM (SELECT DISTINCT cml_id FROM cml_metadata WHERE user_id = %s) t",
+                (self.user_id, self.user_id),
             )
             self.conn.commit()
             logger.info("Refreshed cml_stats for all CMLs")

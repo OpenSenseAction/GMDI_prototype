@@ -19,6 +19,7 @@ class Config:
     DATABASE_URL = os.getenv(
         "DATABASE_URL", "postgresql://myuser:mypassword@database:5432/mydatabase"
     )
+    USER_ID = os.getenv("USER_ID", "user1")
     INCOMING_DIR = Path(os.getenv("PARSER_INCOMING_DIR", "data/incoming"))
     ARCHIVED_DIR = Path(os.getenv("PARSER_ARCHIVED_DIR", "data/archived"))
     QUARANTINE_DIR = Path(os.getenv("PARSER_QUARANTINE_DIR", "data/quarantine"))
@@ -69,7 +70,7 @@ def main():
         str(Config.ARCHIVED_DIR),
         str(Config.QUARANTINE_DIR),
     )
-    db_writer = DBWriter(Config.DATABASE_URL)
+    db_writer = DBWriter(Config.DATABASE_URL, user_id=Config.USER_ID)
 
     logger.info("Starting parser service")
     Config.INCOMING_DIR.mkdir(parents=True, exist_ok=True)
