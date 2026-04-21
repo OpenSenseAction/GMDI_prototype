@@ -77,3 +77,53 @@ def test_main_fails_on_db_error(mock_connect):
         with patch("parser.parse_netcdf_archive.xr.open_dataset"):
             with pytest.raises(SystemExit):
                 main()
+
+
+@patch("parser.parse_netcdf_archive.os.path.exists")
+def test_download_netcdf_skips_when_file_exists(mock_exists):
+    """download_netcdf() does nothing when the file is already present."""
+    from parser.parse_netcdf_archive import download_netcdf
+    import urllib.request
+
+    mock_exists.return_value = True
+    with patch.object(urllib.request, "urlretrieve") as mock_retrieve:
+        download_netcdf("http://example.com/file.nc", "/tmp/file.nc")
+        mock_retrieve.assert_not_called()
+
+
+@patch("parser.parse_netcdf_archive.os.path.exists")
+def test_download_netcdf_downloads_when_missing(mock_exists):
+    """download_netcdf() calls urlretrieve when file is absent."""
+    from parser.parse_netcdf_archive import download_netcdf
+    import urllib.request
+
+    mock_exists.return_value = False
+    with patch.object(urllib.request, "urlretrieve") as mock_retrieve:
+        download_netcdf("http://example.com/file.nc", "/tmp/file.nc")
+        mock_retrieve.assert_called_once()
+        args = mock_retrieve.call_args[0]
+        assert args[0] == "http://example.com/file.nc"
+        assert args[1] == "/tmp/file.nc"
+
+
+@patch("parser.parse_netcdf_archive.NETCDF_URL", "")
+@patch("parser.parse_netcdf_archive.os.path.exists")
+def test_main_exits_when_file_missing_and_no_url(mock_exists):
+    """main() calls sys.exit when NetCDF file is absent and no download URL is set."""
+    from parser.parse_netcdf_archive import main
+
+    mock_exists.return_value = False
+    with pytest.raises(SystemExit):
+        main()
+
+
+@patch("parser.parse_netcdf_archive.xr.open_dataset")
+@patch("parser.parse_netcdf_archive.os.path.exists")
+def test_main_exits_on_open_dataset_error(mock_exists, mock_open_dataset):
+    """main() calls sys.exit when xr.open_dataset raises an exception."""
+    from parser.parse_netcdf_archive import main
+
+    mock_exists.return_value = True
+    mock_open_dataset.side_effect = Exception("corrupt file")
+    with pytest.raises(SystemExit):
+        main()
