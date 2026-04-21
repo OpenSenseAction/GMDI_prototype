@@ -31,7 +31,7 @@ class DBWriter:
         db.close()
     """
 
-    def __init__(self, db_url: str, user_id: str = "user1", connect_timeout: int = 10):
+    def __init__(self, db_url: str, user_id: str = "demo_openmrg", connect_timeout: int = 10):
         self.db_url = db_url
         self.user_id = user_id
         self.connect_timeout = connect_timeout

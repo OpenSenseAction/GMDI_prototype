@@ -19,7 +19,7 @@ class Config:
     DATABASE_URL = os.getenv(
         "DATABASE_URL", "postgresql://myuser:mypassword@database:5432/mydatabase"
     )
-    USER_ID = os.getenv("USER_ID", "user1")
+    USER_ID = os.getenv("USER_ID", "demo_openmrg")
     INCOMING_DIR = Path(os.getenv("PARSER_INCOMING_DIR", "data/incoming"))
     ARCHIVED_DIR = Path(os.getenv("PARSER_ARCHIVED_DIR", "data/archived"))
     QUARANTINE_DIR = Path(os.getenv("PARSER_QUARANTINE_DIR", "data/quarantine"))

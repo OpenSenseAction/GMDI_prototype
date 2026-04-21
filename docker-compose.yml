@@ -1,5 +1,5 @@
 services:
-  archive_generator:
+  archive_generator_openmrg:
     build: ./mno_data_source_simulator
     command: python generate_archive.py --days ${ARCHIVE_DAYS:-1} --interval-seconds ${ARCHIVE_INTERVAL_SECONDS:-10}
     environment:
@@ -8,30 +8,64 @@ services:
       - NETCDF_FILE_URL=https://bwsyncandshare.kit.edu/s/jSAFftGXcJjQbSJ/download
     volumes:
       - ./parser/example_data:/app/example_data  # writable so the file can be downloaded
-      - archive_data:/archive_output
+      - archive_data_openmrg:/archive_output
 
-  mno_simulator:
+  archive_generator_orange_cameroun:
+    build: ./mno_data_source_simulator
+    command: python generate_archive.py --days ${ARCHIVE_DAYS_ORANGE_CAMEROUN:-31} --interval-seconds ${ARCHIVE_INTERVAL_SECONDS_ORANGE_CAMEROUN:-900}
+    environment:
+      - ARCHIVE_OUTPUT_DIR=/archive_output
+      - NETCDF_FILE=/app/example_data/cml_raw_douala.nc
+      - NETCDF_RSL_VAR=rsl_min
+      - NETCDF_TSL_VAR=tsl_min
+    volumes:
+      - ./parser/example_data:/app/example_data:ro
+      - archive_data_orange_cameroun:/archive_output
+
+  mno_simulator_openmrg:
     build: ./mno_data_source_simulator
     restart: unless-stopped
     depends_on:
       - sftp_receiver
     volumes:
       - ./parser/example_data:/app/example_data  # writable so the file can be downloaded
-      - mno_data_to_upload:/app/data_to_upload
-      - mno_data_uploaded:/app/data_uploaded
+      - mno_openmrg_data_to_upload:/app/data_to_upload
+      - mno_openmrg_data_uploaded:/app/data_uploaded
       - ./ssh_keys:/app/ssh_keys:ro
     environment:
       - NETCDF_FILE=/app/example_data/openMRG_cmls_20150827_3months.nc
       - NETCDF_FILE_URL=https://bwsyncandshare.kit.edu/s/jSAFftGXcJjQbSJ/download
       - SFTP_HOST=sftp_receiver
       - SFTP_PORT=22
-      - SFTP_USERNAME=cml_user
+      - SFTP_USERNAME=demo_openmrg
       - SFTP_REMOTE_PATH=/uploads
       - SFTP_USE_SSH_KEY=true
       - SFTP_PRIVATE_KEY_PATH=/app/ssh_keys/id_rsa
       - SFTP_KNOWN_HOSTS_PATH=/app/ssh_keys/known_hosts
 
-  parser:
+  mno_simulator_orange_cameroun:
+    build: ./mno_data_source_simulator
+    restart: unless-stopped
+    depends_on:
+      - sftp_receiver
+    volumes:
+      - ./parser/example_data:/app/example_data:ro
+      - mno_orange_cameroun_data_to_upload:/app/data_to_upload
+      - mno_orange_cameroun_data_uploaded:/app/data_uploaded
+      - ./ssh_keys:/app/ssh_keys:ro
+    environment:
+      - NETCDF_FILE=/app/example_data/cml_raw_douala.nc
+      - SFTP_HOST=sftp_receiver
+      - SFTP_PORT=22
+      - SFTP_USERNAME=demo_orange_cameroun
+      - SFTP_REMOTE_PATH=/uploads
+      - SFTP_USE_SSH_KEY=true
+      - SFTP_PRIVATE_KEY_PATH=/app/ssh_keys/id_rsa_orange_cameroun
+      - SFTP_KNOWN_HOSTS_PATH=/app/ssh_keys/known_hosts
+      - NETCDF_RSL_VAR=rsl_min
+      - NETCDF_TSL_VAR=tsl_min
+
+  parser_openmrg:
     build: ./parser
     ports:
       - "5004:5004"
@@ -40,7 +74,7 @@ services:
         condition: service_healthy
     environment:
       - DATABASE_URL=postgresql://myuser:mypassword@database:5432/mydatabase
-      - USER_ID=user1
+      - USER_ID=demo_openmrg
       - PARSER_INCOMING_DIR=/app/data/incoming
       - PARSER_ARCHIVED_DIR=/app/data/archived
       - PARSER_QUARANTINE_DIR=/app/data/quarantine
@@ -48,18 +82,18 @@ services:
       - PROCESS_EXISTING_ON_STARTUP=true
       - LOG_LEVEL=INFO
     volumes:
-      - sftp_uploads:/app/data/incoming
-      - parser_archived:/app/data/archived
-      - parser_quarantine:/app/data/quarantine
+      - sftp_openmrg_uploads:/app/data/incoming
+      - parser_openmrg_archived:/app/data/archived
+      - parser_openmrg_quarantine:/app/data/quarantine
 
-  parser_user2:
+  parser_orange_cameroun:
     build: ./parser
     depends_on:
       database:
         condition: service_healthy
     environment:
       - DATABASE_URL=postgresql://myuser:mypassword@database:5432/mydatabase
-      - USER_ID=user2
+      - USER_ID=demo_orange_cameroun
       - PARSER_INCOMING_DIR=/app/data/incoming
       - PARSER_ARCHIVED_DIR=/app/data/archived
       - PARSER_QUARANTINE_DIR=/app/data/quarantine
@@ -67,14 +101,14 @@ services:
       - PROCESS_EXISTING_ON_STARTUP=true
       - LOG_LEVEL=INFO
     volumes:
-      - sftp_user2_uploads:/app/data/incoming
-      - parser_user2_archived:/app/data/archived
-      - parser_user2_quarantine:/app/data/quarantine
+      - sftp_orange_cameroun_uploads:/app/data/incoming
+      - parser_orange_cameroun_archived:/app/data/archived
+      - parser_orange_cameroun_quarantine:/app/data/quarantine
 
-  archive_loader:
+  archive_loader_openmrg:
     image: timescale/timescaledb:latest-pg13
     depends_on:
-      archive_generator:
+      archive_generator_openmrg:
         condition: service_completed_successfully
       database:
         condition: service_healthy
@@ -84,8 +118,29 @@ services:
       - PGPASSWORD=mypassword
       - PGDATABASE=mydatabase
       - ARCHIVE_DATA_DIR=/archive_data
+      - ARCHIVE_USER_ID=demo_openmrg
     volumes:
-      - archive_data:/archive_data:ro
+      - archive_data_openmrg:/archive_data:ro
+      - ./database/init_archive_data.sh:/init_archive_data.sh:ro
+    command: ["/bin/bash", "/init_archive_data.sh"]
+    restart: "no"
+
+  archive_loader_orange_cameroun:
+    image: timescale/timescaledb:latest-pg13
+    depends_on:
+      archive_generator_orange_cameroun:
+        condition: service_completed_successfully
+      database:
+        condition: service_healthy
+    environment:
+      - PGHOST=database
+      - PGUSER=myuser
+      - PGPASSWORD=mypassword
+      - PGDATABASE=mydatabase
+      - ARCHIVE_DATA_DIR=/archive_data
+      - ARCHIVE_USER_ID=demo_orange_cameroun
+    volumes:
+      - archive_data_orange_cameroun:/archive_data:ro
       - ./database/init_archive_data.sh:/init_archive_data.sh:ro
     command: ["/bin/bash", "/init_archive_data.sh"]
     restart: "no"
@@ -134,7 +189,7 @@ services:
       - STORAGE_BACKEND=local  # Options: local, s3, minio
       - STORAGE_BASE_PATH=/app/data
     volumes:
-      - sftp_uploads:/app/data/incoming:ro  # Read-only access to SFTP uploads
+      - sftp_openmrg_uploads:/app/data/incoming:ro  # Read-only access to OpenMRG SFTP uploads
       - webserver_data_staged:/app/data/staged
       - webserver_data_archived:/app/data/archived
 
@@ -143,15 +198,15 @@ services:
     ports:
       - "2222:22"
     volumes:
-      - sftp_uploads:/home/cml_user/uploads
-      - sftp_user2_uploads:/home/user2/uploads
+      - sftp_openmrg_uploads:/home/demo_openmrg/uploads
+      - sftp_orange_cameroun_uploads:/home/demo_orange_cameroun/uploads
       - ./ssh_keys/sftp_host_ed25519_key:/etc/ssh/ssh_host_ed25519_key:ro
       - ./ssh_keys/sftp_host_rsa_key:/etc/ssh/ssh_host_rsa_key:ro
-      - ./ssh_keys/user1/authorized_keys:/home/cml_user/.ssh/keys/authorized_keys:ro
-      - ./ssh_keys/user2/authorized_keys:/home/user2/.ssh/keys/authorized_keys:ro
+      - ./ssh_keys/demo_openmrg/authorized_keys:/home/demo_openmrg/.ssh/keys/authorized_keys:ro
+      - ./ssh_keys/demo_orange_cameroun/authorized_keys:/home/demo_orange_cameroun/.ssh/keys/authorized_keys:ro
       - ./sftp_receiver/entrypoint.sh:/custom-entrypoint.sh:ro
     entrypoint: ["/custom-entrypoint.sh"]
-    command: ["cml_user::1001:1001:uploads", "user2::1002:1002:uploads"]
+    command: ["demo_openmrg::1001:1001:uploads", "demo_orange_cameroun::1002:1002:uploads"]
 
   # Optional: MinIO for S3-compatible object storage (uncomment to use)
   # minio:
@@ -201,7 +256,7 @@ services:
     depends_on:
       - sftp_receiver
       - webserver
-      - mno_simulator
+      - mno_simulator_openmrg
     environment:
       - SFTP_HOST=sftp_receiver
       - SFTP_PORT=22
@@ -214,16 +269,19 @@ services:
       - testing
 
 volumes:
-  archive_data:
-  sftp_uploads:
-  sftp_user2_uploads:
+  archive_data_openmrg:
+  archive_data_orange_cameroun:
+  sftp_openmrg_uploads:
+  sftp_orange_cameroun_uploads:
   webserver_data_staged:
   webserver_data_archived:
   grafana_data:
-  mno_data_to_upload:
-  mno_data_uploaded:
-  parser_archived:
-  parser_quarantine:
-  parser_user2_archived:
-  parser_user2_quarantine:
+  mno_openmrg_data_to_upload:
+  mno_openmrg_data_uploaded:
+  mno_orange_cameroun_data_to_upload:
+  mno_orange_cameroun_data_uploaded:
+  parser_openmrg_archived:
+  parser_openmrg_quarantine:
+  parser_orange_cameroun_archived:
+  parser_orange_cameroun_quarantine:
   # minio_data:  # Uncomment if using MinIO
