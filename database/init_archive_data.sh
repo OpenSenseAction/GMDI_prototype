@@ -43,7 +43,7 @@ fi
 echo "Loading metadata archive..."
 psql $PSQL_FLAGS <<-EOSQL
     CREATE TEMP TABLE tmp_cml_metadata (LIKE cml_metadata INCLUDING ALL);
-    \COPY tmp_cml_metadata (cml_id, sublink_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat, frequency, polarization, length) FROM '$ARCHIVE_DATA_DIR/metadata_archive.csv' WITH (FORMAT csv, HEADER true);
+    \COPY tmp_cml_metadata (cml_id, sublink_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat, frequency, length, polarization) FROM '$ARCHIVE_DATA_DIR/metadata_archive.csv' WITH (FORMAT csv, HEADER true);
     UPDATE tmp_cml_metadata SET user_id = '$ARCHIVE_USER_ID';
     INSERT INTO cml_metadata SELECT * FROM tmp_cml_metadata ON CONFLICT DO NOTHING;
     DROP TABLE tmp_cml_metadata;

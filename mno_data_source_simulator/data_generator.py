@@ -129,11 +129,15 @@ class CMLDataGenerator:
         # all CMLs and time steps.  Fully-NaN sublinks are structural padding
         # in the NetCDF file and should not be emitted as data rows.
         rsl_data = self.dataset[self.rsl_var]  # (..., sublink_id, ...)
+        # Sample only the first N time steps to avoid loading the full dataset
+        # into memory (the file may have hundreds of thousands of time points).
+        sample_size = min(1000, len(self.original_time_points))
+        rsl_sample = rsl_data.isel(time=slice(0, sample_size))
         # Compute a boolean mask: True where the sublink has ≥1 non-NaN value
         # across all other dimensions.
-        sublink_dim = rsl_data.dims.index("sublink_id")
-        other_axes = tuple(i for i in range(rsl_data.ndim) if i != sublink_dim)
-        has_data = ~np.all(np.isnan(rsl_data.values), axis=other_axes)
+        sublink_dim = rsl_sample.dims.index("sublink_id")
+        other_axes = tuple(i for i in range(rsl_sample.ndim) if i != sublink_dim)
+        has_data = ~np.all(np.isnan(rsl_sample.values), axis=other_axes)
         all_sublinks = self.dataset.sublink_id.values
         self.valid_sublinks = all_sublinks[has_data]
         n_dropped = len(all_sublinks) - len(self.valid_sublinks)
@@ -262,10 +266,15 @@ class CMLDataGenerator:
         keep = ["cml_id", "sublink_id"] + [v for v in available if v in df.columns]
         df = df[[c for c in keep if c in df.columns]]
         df = df.loc[:, ~df.columns.duplicated()]
+        # Drop polarization if already pulled in by to_dataframe() as a
+        # non-dimension coordinate (xarray includes it both as data and coord).
+        # We'll add it properly via merge below.
+        df = df.drop(columns=["polarization"], errors="ignore")
 
         # Add polarization column (may not exist in all datasets)
         if "polarization" in ds.coords or "polarization" in ds.data_vars:
-            pol_df = ds["polarization"].to_dataframe().reset_index()
+            pol_df = ds["polarization"].to_series().reset_index()
+            pol_df.columns = list(pol_df.columns[:-1]) + ["polarization"]
             df = df.merge(pol_df[["cml_id", "sublink_id", "polarization"]],
                           on=["cml_id", "sublink_id"], how="left")
         else:
