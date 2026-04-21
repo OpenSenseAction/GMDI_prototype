@@ -106,7 +106,7 @@ jobs:
         
         # Check if files appeared in SFTP
         echo "Checking SFTP uploads directory..."
-        docker compose exec -T sftp_receiver ls -la /home/cml_user/uploads/ || echo "Could not list SFTP directory"
+        docker compose exec -T sftp_receiver ls -la /home/demo_openmrg/uploads/ || echo "Could not list SFTP directory"
         
         # Check if parser sees the files
         echo "Checking parser incoming directory..."

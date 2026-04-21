@@ -67,6 +67,23 @@ def main():
         output_dir=config["generator"]["output_dir"],
     )
 
+    # Apply environment variable overrides for SFTP connection settings
+    if os.getenv("SFTP_HOST"):
+        config["sftp"]["host"] = os.getenv("SFTP_HOST")
+    if os.getenv("SFTP_PORT"):
+        config["sftp"]["port"] = int(os.getenv("SFTP_PORT"))
+    if os.getenv("SFTP_USERNAME"):
+        config["sftp"]["username"] = os.getenv("SFTP_USERNAME")
+    if os.getenv("SFTP_REMOTE_PATH"):
+        config["sftp"]["remote_path"] = os.getenv("SFTP_REMOTE_PATH")
+    if os.getenv("SFTP_PRIVATE_KEY_PATH"):
+        config["sftp"]["private_key_path"] = os.getenv("SFTP_PRIVATE_KEY_PATH")
+    if os.getenv("SFTP_KNOWN_HOSTS_PATH"):
+        config["sftp"]["known_hosts_path"] = os.getenv("SFTP_KNOWN_HOSTS_PATH")
+    # SFTP_USE_SSH_KEY=false removes any private_key_path set in config.yml
+    if os.getenv("SFTP_USE_SSH_KEY", "").lower() == "false":
+        config["sftp"].pop("private_key_path", None)
+
     # Initialize SFTP uploader if enabled
     sftp_uploader = None
     if config["sftp"]["enabled"]:
