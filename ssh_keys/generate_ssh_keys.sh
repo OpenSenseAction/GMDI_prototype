@@ -40,6 +40,10 @@ echo
 
 echo "3. Creating authorized_keys file..."
 cat id_rsa.pub > authorized_keys
+# Also populate the per-user directories used by the multi-user SFTP setup
+mkdir -p user1 user2
+cp id_rsa.pub user1/authorized_keys
+touch user2/authorized_keys
 echo "✓ authorized_keys created with client public key"
 echo
 

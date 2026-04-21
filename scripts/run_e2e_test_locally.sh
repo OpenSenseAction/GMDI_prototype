@@ -26,6 +26,10 @@ if [ ! -f ssh_keys/id_rsa ]; then
     
     # Create authorized_keys with the client public key
     cp ssh_keys/id_rsa.pub ssh_keys/authorized_keys
+    # Also populate per-user authorized_keys used by the multi-user SFTP setup
+    mkdir -p ssh_keys/user1 ssh_keys/user2
+    cp ssh_keys/id_rsa.pub ssh_keys/user1/authorized_keys
+    touch ssh_keys/user2/authorized_keys
     
     # Create known_hosts with server host keys
     echo "sftp_receiver $(cat ssh_keys/sftp_host_ed25519_key.pub)" > ssh_keys/known_hosts
