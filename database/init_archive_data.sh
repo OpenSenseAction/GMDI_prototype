@@ -17,6 +17,8 @@ set -e
 echo "Loading archive data into database..."
 
 ARCHIVE_DATA_DIR="${ARCHIVE_DATA_DIR:-/docker-entrypoint-initdb.d/archive_data}"
+# User ID to tag all loaded rows with. Defaults to demo_openmrg (OpenMRG dataset).
+ARCHIVE_USER_ID="${ARCHIVE_USER_ID:-demo_openmrg}"
 
 # Resolve credentials: prefer psql env vars, fall back to Postgres Docker image vars.
 DB_USER="${PGUSER:-${POSTGRES_USER:-myuser}}"
@@ -41,7 +43,8 @@ fi
 echo "Loading metadata archive..."
 psql $PSQL_FLAGS <<-EOSQL
     CREATE TEMP TABLE tmp_cml_metadata (LIKE cml_metadata INCLUDING ALL);
-    \COPY tmp_cml_metadata FROM '$ARCHIVE_DATA_DIR/metadata_archive.csv' WITH (FORMAT csv, HEADER true);
+    \COPY tmp_cml_metadata (cml_id, sublink_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat, frequency, length, polarization) FROM '$ARCHIVE_DATA_DIR/metadata_archive.csv' WITH (FORMAT csv, HEADER true);
+    UPDATE tmp_cml_metadata SET user_id = '$ARCHIVE_USER_ID';
     INSERT INTO cml_metadata SELECT * FROM tmp_cml_metadata ON CONFLICT DO NOTHING;
     DROP TABLE tmp_cml_metadata;
 EOSQL
@@ -54,7 +57,17 @@ echo "Loading time-series archive data (this may take 10-30 seconds)..."
 START_TIME=$(date +%s)
 
 psql $PSQL_FLAGS <<-EOSQL
-    \COPY cml_data (time, cml_id, sublink_id, tsl, rsl) FROM '$ARCHIVE_DATA_DIR/data_archive.csv' WITH (FORMAT csv, HEADER true);
+    CREATE TEMP TABLE tmp_cml_data (
+        time       TIMESTAMPTZ,
+        cml_id     TEXT,
+        sublink_id TEXT,
+        tsl        REAL,
+        rsl        REAL
+    );
+    \COPY tmp_cml_data (time, cml_id, sublink_id, tsl, rsl) FROM '$ARCHIVE_DATA_DIR/data_archive.csv' WITH (FORMAT csv, HEADER true);
+    INSERT INTO cml_data (time, cml_id, sublink_id, tsl, rsl, user_id)
+        SELECT time, cml_id, sublink_id, tsl, rsl, '$ARCHIVE_USER_ID' FROM tmp_cml_data;
+    DROP TABLE tmp_cml_data;
 EOSQL
 
 END_TIME=$(date +%s)

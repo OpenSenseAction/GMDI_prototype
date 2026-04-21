@@ -41,15 +41,17 @@ jobs:
         ssh-keygen -t ed25519 -f ssh_keys/sftp_host_ed25519_key -N "" -C "SFTP host ed25519 key"
         ssh-keygen -t rsa -b 4096 -f ssh_keys/sftp_host_rsa_key -N "" -C "SFTP host RSA key"
         
-        # Generate client key for MNO simulator
-        ssh-keygen -t rsa -b 4096 -f ssh_keys/id_rsa -N "" -C "MNO client key"
+        # Generate client key for demo_openmrg MNO simulator (tested by e2e)
+        ssh-keygen -t rsa -b 4096 -f ssh_keys/id_rsa -N "" -C "demo_openmrg client key"
         
-        # Create authorized_keys with the client public key
+        # Populate per-user authorized_keys mounted by the SFTP server
+        mkdir -p ssh_keys/demo_openmrg ssh_keys/demo_orange_cameroun
+        cp ssh_keys/id_rsa.pub ssh_keys/demo_openmrg/authorized_keys
+        # orange_cameroun not tested in e2e but the file must exist for the SFTP container to start
+        touch ssh_keys/demo_orange_cameroun/authorized_keys
+        
+        # Legacy top-level authorized_keys (kept for backwards compatibility)
         cp ssh_keys/id_rsa.pub ssh_keys/authorized_keys
-        # Also populate per-user authorized_keys used by the multi-user SFTP setup
-        mkdir -p ssh_keys/user1 ssh_keys/user2
-        cp ssh_keys/id_rsa.pub ssh_keys/user1/authorized_keys
-        touch ssh_keys/user2/authorized_keys
         
         # Create known_hosts with server host keys (without port since it's standard port 22)
         echo "sftp_receiver $(cat ssh_keys/sftp_host_ed25519_key.pub)" > ssh_keys/known_hosts
@@ -65,8 +67,13 @@ jobs:
         cat ssh_keys/known_hosts
     
     - name: Start services
+      env:
+        # Use the small 12-hour file (committed to the repo) to avoid a large
+        # download in CI. The 3-month file is only needed for production.
+        OPENMRG_NETCDF_FILE: /app/example_data/openMRG_cmls_20150827_12hours.nc
+        OPENMRG_NETCDF_FILE_URL: ""
       run: |
-        docker compose up -d database sftp_receiver parser webserver mno_simulator
+        docker compose up -d database sftp_receiver parser_openmrg webserver mno_simulator_openmrg
         sleep 10
     
     - name: Wait for services to be ready
@@ -99,11 +106,11 @@ jobs:
         
         # Check if files appeared in SFTP
         echo "Checking SFTP uploads directory..."
-        docker compose exec -T sftp_receiver ls -la /home/cml_user/uploads/ || echo "Could not list SFTP directory"
+        docker compose exec -T sftp_receiver ls -la /home/demo_openmrg/uploads/ || echo "Could not list SFTP directory"
         
         # Check if parser sees the files
         echo "Checking parser incoming directory..."
-        docker compose exec -T parser ls -la /app/data/incoming/ || echo "Could not list parser directory"
+        docker compose exec -T parser_openmrg ls -la /app/data/incoming/ || echo "Could not list parser directory"
         
         echo "All services are ready"
     
@@ -127,7 +134,7 @@ jobs:
         
         echo ""
         echo "=== Parser Logs ==="
-        docker compose logs parser
+        docker compose logs parser_openmrg
         
         echo ""
         echo "=== Webserver Logs ==="
@@ -135,7 +142,7 @@ jobs:
         
         echo ""
         echo "=== MNO Simulator Logs ==="
-        docker compose logs mno_simulator
+        docker compose logs mno_simulator_openmrg
         
         echo ""
         echo "=== SFTP Directory Contents ==="
@@ -143,15 +150,15 @@ jobs:
         
         echo ""
         echo "=== Parser Incoming Directory Contents ==="
-        docker compose exec -T parser ls -la /app/data/incoming/ || echo "Could not access parser directory"
+        docker compose exec -T parser_openmrg ls -la /app/data/incoming/ || echo "Could not access parser directory"
         
         echo ""
         echo "=== Parser Archived Directory Contents ==="
-        docker compose exec -T parser ls -la /app/data/archived/ || echo "Could not access parser archived directory"
+        docker compose exec -T parser_openmrg ls -la /app/data/archived/ || echo "Could not access parser archived directory"
         
         echo ""
         echo "=== Parser Quarantine Directory Contents ==="
-        docker compose exec -T parser ls -la /app/data/quarantine/ || echo "Could not access parser quarantine directory"
+        docker compose exec -T parser_openmrg ls -la /app/data/quarantine/ || echo "Could not access parser quarantine directory"
     
     - name: Cleanup
       if: always()

@@ -10,7 +10,7 @@
 # This ensures private keys are never accidentally committed to version control
 
 # Per-user authorized_keys files contain only public keys — safe to track.
-!user1/
-!user1/authorized_keys
-!user2/
-!user2/authorized_keys
+!demo_openmrg/
+!demo_openmrg/authorized_keys
+!demo_orange_cameroun/
+!demo_orange_cameroun/authorized_keys

@@ -41,6 +41,13 @@ NETCDF_URL = os.getenv(
     "ARCHIVE_NETCDF_URL", "https://bwsyncandshare.kit.edu/s/jSAFftGXcJjQbSJ/download"
 )
 
+# RSL/TSL variable names — override when the file uses rsl_min/tsl_min etc.
+RSL_VAR = os.getenv("ARCHIVE_RSL_VAR", "rsl")
+TSL_VAR = os.getenv("ARCHIVE_TSL_VAR", "tsl")
+
+# User ID to tag loaded rows with (must match the DB role name).
+USER_ID = os.getenv("ARCHIVE_USER_ID", os.getenv("USER_ID", "demo_openmrg"))
+
 # Limit time range (in days from end) - set to None for full dataset
 # For demo purposes, default to 7 days to avoid overwhelming the database
 MAX_DAYS = int(os.getenv("ARCHIVE_MAX_DAYS", "7"))  # Set to 0 for full dataset
@@ -80,63 +87,93 @@ def download_netcdf(url, output_path):
 
 
 def load_metadata_from_netcdf(ds):
-    """Extract CML metadata from NetCDF dataset."""
+    """Extract CML metadata from NetCDF dataset.
+
+    Handles two layouts:
+      - OpenMRG: dimensions (sublink_id, cml_id); frequency shape (sublink_id, cml_id);
+        no 'length' coordinate (computed via haversine); has 'polarization'.
+      - Orange Cameroun: dimensions (cml_id, sublink_id); frequency shape (cml_id, sublink_id);
+        'length' already a coordinate; no 'polarization'.
+
+    Only sublinks that contain at least one non-NaN RSL value are included.
+    """
     logger.info("Extracting metadata from NetCDF...")
 
-    # NetCDF dimensions: (sublink_id=2, cml_id=364, time=...)
-    # cml_id: (364,) - unique CML site IDs
-    # site coords: (364,) - one per CML
-    # frequency, polarization: (2, 364) - one per (sublink, cml)
+    cml_ids = ds.cml_id.values
 
-    cml_ids = ds.cml_id.values  # (364,)
-    site_0_lon = ds.site_0_lon.values  # (364,)
-    site_0_lat = ds.site_0_lat.values  # (364,)
-    site_1_lon = ds.site_1_lon.values  # (364,)
-    site_1_lat = ds.site_1_lat.values  # (364,)
-    frequency = ds.frequency.values  # (2, 364)
-    polarization = ds.polarization.values  # (2, 364)
+    # Determine which sublinks have real data (not all-NaN across all CMLs and time)
+    rsl_data = ds[RSL_VAR]  # could be (sublink_id, cml_id, time) or (cml_id, sublink_id, time)
+    sublink_dim_idx = list(rsl_data.dims).index("sublink_id")
+    other_axes = tuple(i for i in range(rsl_data.ndim) if i != sublink_dim_idx)
+    has_data = ~np.all(np.isnan(rsl_data.values), axis=other_axes)
+    all_sublinks = ds.sublink_id.values
+    valid_sublinks = all_sublinks[has_data]
+    n_dropped = len(all_sublinks) - len(valid_sublinks)
+    if n_dropped:
+        logger.info(f"Dropped {n_dropped} fully-NaN sublinks; {len(valid_sublinks)} retained.")
 
-    # Calculate link length using haversine formula
-    def haversine_distance(lon1, lat1, lon2, lat2):
-        R = 6371000  # Earth radius in meters
-        phi1, phi2 = np.radians(lat1), np.radians(lat2)
-        dphi = np.radians(lat2 - lat1)
-        dlambda = np.radians(lon2 - lon1)
-        a = (
-            np.sin(dphi / 2) ** 2
-            + np.cos(phi1) * np.cos(phi2) * np.sin(dlambda / 2) ** 2
-        )
-        return 2 * R * np.arcsin(np.sqrt(a))
+    site_0_lon = ds.site_0_lon.values  # (cml_id,)
+    site_0_lat = ds.site_0_lat.values
+    site_1_lon = ds.site_1_lon.values
+    site_1_lat = ds.site_1_lat.values
 
-    length = haversine_distance(site_0_lon, site_0_lat, site_1_lon, site_1_lat)
+    # Length: use coordinate if available, otherwise compute via haversine
+    if "length" in ds.coords or "length" in ds.data_vars:
+        length = ds.length.values  # (cml_id,)
+    else:
+        def haversine_distance(lon1, lat1, lon2, lat2):
+            R = 6371000
+            phi1, phi2 = np.radians(lat1), np.radians(lat2)
+            dphi = np.radians(lat2 - lat1)
+            dlambda = np.radians(lon2 - lon1)
+            a = (
+                np.sin(dphi / 2) ** 2
+                + np.cos(phi1) * np.cos(phi2) * np.sin(dlambda / 2) ** 2
+            )
+            return 2 * R * np.arcsin(np.sqrt(a))
+        length = haversine_distance(site_0_lon, site_0_lat, site_1_lon, site_1_lat)
 
-    # Create metadata records (728 total: 364 CMLs × 2 sublinks)
+    has_polarization = "polarization" in ds.coords or "polarization" in ds.data_vars
+    frequency = ds.frequency.values  # (cml_id, sublink_id) or (sublink_id, cml_id)
+    # Normalise to shape (cml_id, sublink_id) using dim names
+    freq_dims = list(ds.frequency.dims)
+    if freq_dims[0] == "sublink_id":
+        frequency = frequency.T  # transpose to (cml_id, sublink_id)
+
+    if has_polarization:
+        polarization = ds.polarization.values
+        pol_dims = list(ds.polarization.dims)
+        if pol_dims[0] == "sublink_id":
+            polarization = polarization.T
+
+    # Build sublink_id -> column index mapping
+    sublink_idx_map = {sl: i for i, sl in enumerate(all_sublinks)}
+
     metadata_records = []
-
     for cml_idx, cml_id in enumerate(cml_ids):
-        for sublink_idx in range(2):  # 0 and 1
-            sublink_id = f"sublink_{sublink_idx + 1}"
-
+        for sl in valid_sublinks:
+            sl_col = sublink_idx_map[sl]
             metadata_records.append(
                 {
                     "cml_id": str(cml_id),
-                    "sublink_id": sublink_id,
+                    "sublink_id": str(sl),
                     "site_0_lon": float(site_0_lon[cml_idx]),
                     "site_0_lat": float(site_0_lat[cml_idx]),
                     "site_1_lon": float(site_1_lon[cml_idx]),
                     "site_1_lat": float(site_1_lat[cml_idx]),
-                    "frequency": float(frequency[sublink_idx, cml_idx]),
-                    "polarization": str(polarization[sublink_idx, cml_idx]),
+                    "frequency": float(frequency[cml_idx, sl_col]),
+                    "polarization": str(polarization[cml_idx, sl_col]) if has_polarization else None,
                     "length": float(length[cml_idx]),
+                    "user_id": USER_ID,
                 }
             )
 
     metadata_df = pd.DataFrame(metadata_records)
     logger.info(
-        f"Extracted {len(metadata_df)} metadata records ({metadata_df['cml_id'].nunique()} unique CML IDs)"
+        f"Extracted {len(metadata_df)} metadata records "
+        f"({metadata_df['cml_id'].nunique()} unique CML IDs, user_id='{USER_ID}')"
     )
-
-    return metadata_df
+    return metadata_df, valid_sublinks
 
 
 def copy_dataframe_to_db(cursor, df, table_name, columns):
@@ -148,12 +185,13 @@ def copy_dataframe_to_db(cursor, df, table_name, columns):
     cursor.copy_from(buffer, table_name, sep=",", null="\\N", columns=columns)
 
 
-def load_timeseries_from_netcdf(ds, metadata_df, cursor, conn):
+def load_timeseries_from_netcdf(ds, metadata_df, valid_sublinks, cursor, conn):
     """
     Load time-series data from NetCDF with shifted timestamps.
 
-    Preserves original temporal resolution and shifts timestamps
-    so that the data ends at the current time.
+    Handles both (sublink_id, cml_id, time) and (cml_id, sublink_id, time)
+    dimension orders, and reads RSL/TSL from ARCHIVE_RSL_VAR / ARCHIVE_TSL_VAR.
+    Only valid_sublinks (non-all-NaN) are loaded.
     """
     logger.info("Loading time-series data...")
 
@@ -190,27 +228,22 @@ def load_timeseries_from_netcdf(ds, metadata_df, cursor, conn):
     logger.info(f"Shifted time range:  {shifted_times[0]} to {shifted_times[-1]}")
     logger.info(f"Time shift applied: {time_shift}")
 
-    # Get NetCDF dimensions
-    # NetCDF shape: (sublink_id=2, cml_id=364, time=794887)
-    # But we need (time, sublink, cml) for iteration
-    n_sublinks = ds.sizes["sublink_id"]  # 2
-    n_cmls = ds.sizes["cml_id"]  # 364
-    cml_ids_nc = ds.cml_id.values  # (364,)
+    n_sublinks = len(valid_sublinks)
+    n_cmls = ds.sizes["cml_id"]
+    cml_ids_nc = ds.cml_id.values
 
-    # Build CML ID to DB mapping from metadata
-    # metadata_df has 728 rows (364 CMLs × 2 sublinks)
-    cml_to_dbid = {}  # Maps (cml_id, sublink_id) -> (cml_id_str, sublink_id_str)
-    for _, row in metadata_df.iterrows():
-        cml_to_dbid[(row["cml_id"], row["sublink_id"])] = (
-            row["cml_id"],
-            row["sublink_id"],
-        )
+    # Determine dimension order of RSL variable to set up indexing
+    rsl_dims = list(ds[RSL_VAR].dims)  # e.g. ['sublink_id','cml_id','time'] or ['cml_id','sublink_id','time']
+    sublink_first = rsl_dims.index("sublink_id") < rsl_dims.index("cml_id")
 
-    # Calculate total rows (728 CMLs × timestamps)
-    total_cmls = len(metadata_df)
-    total_rows = n_timestamps * total_cmls
+    # Map sublink_id string -> integer position in ds.sublink_id
+    all_sublinks = list(ds.sublink_id.values)
+    valid_sl_indices = [all_sublinks.index(sl) for sl in valid_sublinks]
+
+    # Calculate total rows (n_cmls × n_valid_sublinks × timestamps)
+    total_rows = n_timestamps * n_cmls * n_sublinks
     logger.info(
-        f"Total data points: {n_timestamps:,} timestamps × {total_cmls} CMLs = {total_rows:,} rows"
+        f"Total data points: {n_timestamps:,} timestamps × {n_cmls} CMLs × {n_sublinks} sublinks = {total_rows:,} rows"
     )
     logger.info(f"Processing in batches of {BATCH_SIZE:,} timestamps...")
 
@@ -227,14 +260,33 @@ def load_timeseries_from_netcdf(ds, metadata_df, cursor, conn):
         batch_start_abs = start_idx + batch_start_rel
         batch_end_abs = start_idx + batch_end_rel
 
-        # Load only this batch's data from NetCDF
-        # NetCDF data dimensions: (time, sublink_id, cml_id) = (794887, 2, 364)
-        tsl_batch = ds.tsl.isel(
-            time=slice(batch_start_abs, batch_end_abs)
-        ).values  # (batch_size, 2, 364)
-        rsl_batch = ds.rsl.isel(
-            time=slice(batch_start_abs, batch_end_abs)
-        ).values  # (batch_size, 2, 364)
+        # Load only this batch's data from NetCDF (valid sublinks only)
+        if sublink_first:
+            # (sublink_id, cml_id, time) -> select valid sublinks, slice time
+            tsl_batch = ds[TSL_VAR].isel(
+                sublink_id=valid_sl_indices,
+                time=slice(batch_start_abs, batch_end_abs),
+            ).values  # (n_valid_sublinks, n_cmls, batch_size)
+            rsl_batch = ds[RSL_VAR].isel(
+                sublink_id=valid_sl_indices,
+                time=slice(batch_start_abs, batch_end_abs),
+            ).values
+            # reshape to (batch_size, n_valid_sublinks, n_cmls)
+            tsl_batch = np.transpose(tsl_batch, (2, 0, 1))
+            rsl_batch = np.transpose(rsl_batch, (2, 0, 1))
+        else:
+            # (cml_id, sublink_id, time) -> select valid sublinks, slice time
+            tsl_batch = ds[TSL_VAR].isel(
+                sublink_id=valid_sl_indices,
+                time=slice(batch_start_abs, batch_end_abs),
+            ).values  # (n_cmls, n_valid_sublinks, batch_size)
+            rsl_batch = ds[RSL_VAR].isel(
+                sublink_id=valid_sl_indices,
+                time=slice(batch_start_abs, batch_end_abs),
+            ).values
+            # reshape to (batch_size, n_valid_sublinks, n_cmls)
+            tsl_batch = np.transpose(tsl_batch, (2, 1, 0))
+            rsl_batch = np.transpose(rsl_batch, (2, 1, 0))
 
         # Reshape data for database insertion
         # Create arrays for each column
@@ -246,16 +298,17 @@ def load_timeseries_from_netcdf(ds, metadata_df, cursor, conn):
         sublink_ids_arr = np.empty(batch_rows, dtype=object)
         tsl_arr = np.empty(batch_rows, dtype=float)
         rsl_arr = np.empty(batch_rows, dtype=float)
+        user_ids_arr = np.full(batch_rows, USER_ID, dtype=object)
 
         idx = 0
         for t_idx, timestamp in enumerate(batch_times):
             for cml_idx, cml_id in enumerate(cml_ids_nc):
-                for sublink_idx in range(n_sublinks):
+                for sl_rel, sl in enumerate(valid_sublinks):
                     times_arr[idx] = timestamp
                     cml_ids_arr[idx] = str(cml_id)
-                    sublink_ids_arr[idx] = f"sublink_{sublink_idx + 1}"
-                    tsl_arr[idx] = tsl_batch[t_idx, sublink_idx, cml_idx]
-                    rsl_arr[idx] = rsl_batch[t_idx, sublink_idx, cml_idx]
+                    sublink_ids_arr[idx] = str(sl)
+                    tsl_arr[idx] = tsl_batch[t_idx, sl_rel, cml_idx]
+                    rsl_arr[idx] = rsl_batch[t_idx, sl_rel, cml_idx]
                     idx += 1
 
         # Create DataFrame from arrays
@@ -266,6 +319,7 @@ def load_timeseries_from_netcdf(ds, metadata_df, cursor, conn):
                 "sublink_id": sublink_ids_arr,
                 "tsl": tsl_arr,
                 "rsl": rsl_arr,
+                "user_id": user_ids_arr,
             }
         )
 
@@ -274,7 +328,7 @@ def load_timeseries_from_netcdf(ds, metadata_df, cursor, conn):
             cursor,
             batch_df,
             "cml_data",
-            ["time", "cml_id", "sublink_id", "tsl", "rsl"],
+            ["time", "cml_id", "sublink_id", "tsl", "rsl", "user_id"],
         )
 
         rows_loaded += len(batch_df)
@@ -308,6 +362,8 @@ def main():
     logger.info("NetCDF to Database Archive Loader")
     logger.info("=" * 70)
     logger.info(f"NetCDF file: {NETCDF_FILE}")
+    logger.info(f"RSL variable: {RSL_VAR}, TSL variable: {TSL_VAR}")
+    logger.info(f"User ID: {USER_ID}")
 
     # Download NetCDF if needed
     if not os.path.exists(NETCDF_FILE):
@@ -354,7 +410,7 @@ def main():
         logger.info("Existing data cleared")
 
         # Load metadata
-        metadata_df = load_metadata_from_netcdf(ds)
+        metadata_df, valid_sublinks = load_metadata_from_netcdf(ds)
 
         logger.info("Loading metadata to database...")
         copy_dataframe_to_db(
@@ -371,13 +427,14 @@ def main():
                 "frequency",
                 "polarization",
                 "length",
+                "user_id",
             ],
         )
         conn.commit()
         logger.info(f"✓ Loaded {len(metadata_df)} metadata records")
 
         # Load time-series data
-        rows_loaded = load_timeseries_from_netcdf(ds, metadata_df, cursor, conn)
+        rows_loaded = load_timeseries_from_netcdf(ds, metadata_df, valid_sublinks, cursor, conn)
 
         # Verify loaded data
         cursor.execute(

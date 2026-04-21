@@ -31,7 +31,7 @@ RUNNING_IN_DOCKER = os.path.exists("/.dockerenv")
 # Configuration - supports both Docker network and localhost
 SFTP_HOST = os.getenv("SFTP_HOST", "localhost")
 SFTP_PORT = int(os.getenv("SFTP_PORT", "2222"))
-SFTP_USERNAME = "cml_user"
+SFTP_USERNAME = "demo_openmrg"
 SFTP_REMOTE_PATH = "/uploads"
 SSH_KEY_PATH = "ssh_keys/id_rsa"
 KNOWN_HOSTS_PATH = "ssh_keys/known_hosts"

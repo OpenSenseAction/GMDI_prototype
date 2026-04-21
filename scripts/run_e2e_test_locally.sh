@@ -21,15 +21,16 @@ if [ ! -f ssh_keys/id_rsa ]; then
     ssh-keygen -t ed25519 -f ssh_keys/sftp_host_ed25519_key -N "" -C "SFTP host ed25519 key"
     ssh-keygen -t rsa -b 4096 -f ssh_keys/sftp_host_rsa_key -N "" -C "SFTP host RSA key"
     
-    # Generate client key for MNO simulator
-    ssh-keygen -t rsa -b 4096 -f ssh_keys/id_rsa -N "" -C "MNO client key"
+    # Generate client key for demo_openmrg MNO simulator
+    ssh-keygen -t rsa -b 4096 -f ssh_keys/id_rsa -N "" -C "demo_openmrg client key"
     
-    # Create authorized_keys with the client public key
+    # Populate per-user authorized_keys mounted by the SFTP server
+    mkdir -p ssh_keys/demo_openmrg ssh_keys/demo_orange_cameroun
+    cp ssh_keys/id_rsa.pub ssh_keys/demo_openmrg/authorized_keys
+    touch ssh_keys/demo_orange_cameroun/authorized_keys
+    
+    # Legacy top-level authorized_keys
     cp ssh_keys/id_rsa.pub ssh_keys/authorized_keys
-    # Also populate per-user authorized_keys used by the multi-user SFTP setup
-    mkdir -p ssh_keys/user1 ssh_keys/user2
-    cp ssh_keys/id_rsa.pub ssh_keys/user1/authorized_keys
-    touch ssh_keys/user2/authorized_keys
     
     # Create known_hosts with server host keys
     echo "sftp_receiver $(cat ssh_keys/sftp_host_ed25519_key.pub)" > ssh_keys/known_hosts
@@ -37,6 +38,7 @@ if [ ! -f ssh_keys/id_rsa ]; then
     
     # Set correct permissions
     chmod 600 ssh_keys/id_rsa ssh_keys/sftp_host_ed25519_key ssh_keys/sftp_host_rsa_key
+    chmod 644 ssh_keys/demo_openmrg/authorized_keys ssh_keys/demo_orange_cameroun/authorized_keys
     chmod 644 ssh_keys/*.pub ssh_keys/authorized_keys ssh_keys/known_hosts
     
     echo "SSH keys generated"
@@ -48,7 +50,9 @@ echo ""
 
 # Start services
 echo "=== Step 3: Start services ==="
-docker compose up -d database sftp_receiver parser webserver mno_simulator
+export OPENMRG_NETCDF_FILE=/app/example_data/openMRG_cmls_20150827_12hours.nc
+export OPENMRG_NETCDF_FILE_URL=
+docker compose up -d database sftp_receiver parser_openmrg webserver mno_simulator_openmrg
 echo "Waiting 10 seconds for services to initialize..."
 sleep 10
 echo ""
@@ -96,19 +100,19 @@ echo ""
 
 echo "=== Step 7: Check directories ==="
 echo "SFTP uploads directory:"
-docker compose exec -T sftp_receiver ls -la /home/cml_user/uploads/ || echo "ERROR: Could not list SFTP directory"
+docker compose exec -T sftp_receiver ls -la /home/demo_openmrg/uploads/ || echo "ERROR: Could not list SFTP directory"
 echo ""
 
 echo "Parser incoming directory:"
-docker compose exec -T parser ls -la /app/data/incoming/ || echo "ERROR: Could not list parser directory"
+docker compose exec -T parser_openmrg ls -la /app/data/incoming/ || echo "ERROR: Could not list parser directory"
 echo ""
 
 echo "Parser archived directory:"
-docker compose exec -T parser ls -la /app/data/archived/ 2>/dev/null || echo "No archived files yet"
+docker compose exec -T parser_openmrg ls -la /app/data/archived/ 2>/dev/null || echo "No archived files yet"
 echo ""
 
 echo "Parser quarantine directory:"
-docker compose exec -T parser ls -la /app/data/quarantine/ 2>/dev/null || echo "No quarantined files yet"
+docker compose exec -T parser_openmrg ls -la /app/data/quarantine/ 2>/dev/null || echo "No quarantined files yet"
 echo ""
 
 echo "=== Step 8: Check database ==="
@@ -119,11 +123,11 @@ echo ""
 
 echo "=== Step 9: Show recent logs ==="
 echo "--- Parser logs (last 30 lines) ---"
-docker compose logs --tail=30 parser
+docker compose logs --tail=30 parser_openmrg
 echo ""
 
 echo "--- MNO Simulator logs (last 30 lines) ---"
-docker compose logs --tail=30 mno_simulator
+docker compose logs --tail=30 mno_simulator_openmrg
 echo ""
 
 echo "--- Database logs (last 20 lines) ---"

@@ -7,6 +7,7 @@ by altering timestamps and looping through the existing data.
 
 import urllib.request
 import urllib.error
+import os
 import xarray as xr
 import pandas as pd
 import numpy as np
@@ -88,6 +89,10 @@ class CMLDataGenerator:
         self.original_time_points = None
         self.time_delta = None
         self.loop_start_time = None
+        # Variable names to use for RSL/TSL (configurable for datasets that
+        # provide rsl_min/tsl_min instead of rsl/tsl)
+        self.rsl_var = os.getenv("NETCDF_RSL_VAR", "rsl")
+        self.tsl_var = os.getenv("NETCDF_TSL_VAR", "tsl")
 
         # Create output directory if it doesn't exist
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -118,6 +123,29 @@ class CMLDataGenerator:
             f"Dataset loaded with {len(self.original_time_points)} time points, "
             f"time delta: {self.time_delta}"
         )
+        logger.info(f"RSL variable: {self.rsl_var}, TSL variable: {self.tsl_var}")
+
+        # Identify sublinks that have at least one valid (non-NaN) value across
+        # all CMLs and time steps.  Fully-NaN sublinks are structural padding
+        # in the NetCDF file and should not be emitted as data rows.
+        rsl_data = self.dataset[self.rsl_var]  # (..., sublink_id, ...)
+        # Sample only the first N time steps to avoid loading the full dataset
+        # into memory (the file may have hundreds of thousands of time points).
+        sample_size = min(1000, len(self.original_time_points))
+        rsl_sample = rsl_data.isel(time=slice(0, sample_size))
+        # Compute a boolean mask: True where the sublink has ≥1 non-NaN value
+        # across all other dimensions.
+        sublink_dim = rsl_sample.dims.index("sublink_id")
+        other_axes = tuple(i for i in range(rsl_sample.ndim) if i != sublink_dim)
+        has_data = ~np.all(np.isnan(rsl_sample.values), axis=other_axes)
+        all_sublinks = self.dataset.sublink_id.values
+        self.valid_sublinks = all_sublinks[has_data]
+        n_dropped = len(all_sublinks) - len(self.valid_sublinks)
+        if n_dropped:
+            logger.info(
+                f"Dropped {n_dropped} fully-NaN sublinks; "
+                f"{len(self.valid_sublinks)} sublinks retained."
+            )
 
     def _get_netcdf_index_for_timestamp(self, timestamp: pd.Timestamp) -> int:
         """
@@ -189,12 +217,21 @@ class CMLDataGenerator:
             # Get NetCDF index for this timestamp
             original_index = self._get_netcdf_index_for_timestamp(ts)
 
-            # Get data for this time index
-            data_slice = self.dataset.isel(time=original_index)
+            # Get data for this time index, filtered to valid sublinks only
+            data_slice = self.dataset.sel(sublink_id=self.valid_sublinks).isel(time=original_index)
 
             # Convert to DataFrame
             df = data_slice.to_dataframe().reset_index()
             df["time"] = ts
+
+            # Rename rsl_min/tsl_min → rsl/tsl so the CSV format stays consistent
+            rename_map = {}
+            if self.rsl_var != "rsl":
+                rename_map[self.rsl_var] = "rsl"
+            if self.tsl_var != "tsl":
+                rename_map[self.tsl_var] = "tsl"
+            if rename_map:
+                df = df.rename(columns=rename_map)
 
             # Select relevant columns
             if "tsl" in df.columns and "rsl" in df.columns:
@@ -214,27 +251,35 @@ class CMLDataGenerator:
     def get_metadata_dataframe(self) -> pd.DataFrame:
         """
         Get CML metadata as a pandas DataFrame, with one row per (cml_id, sublink_id).
-        Includes: cml_id, sublink_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat, frequency, polarization, length
+        Only sublinks that contain at least one valid data value are included.
+        Includes: cml_id, sublink_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat,
+        frequency, polarization (if present, else None), length
         """
-        # Extract all coordinates and variables needed for metadata
-        # Assume sublink_id is a dimension, so we need to reset index to get it as a column
-        # This will produce one row per (cml_id, sublink_id)
-        required_columns = [
-            "cml_id",
-            "sublink_id",
-            "site_0_lon",
-            "site_0_lat",
-            "site_1_lon",
-            "site_1_lat",
-            "frequency",
-            "polarization",
-            "length",
-        ]
-        # Convert to DataFrame
-        df = self.dataset[required_columns].to_dataframe().reset_index()
-        # Remove duplicate columns if present
+        # Filter to valid sublinks before extracting metadata
+        ds = self.dataset.sel(sublink_id=self.valid_sublinks)
+
+        coord_vars = ["site_0_lon", "site_0_lat", "site_1_lon", "site_1_lat",
+                      "frequency", "length"]
+        available = [v for v in coord_vars if v in ds.coords or v in ds.data_vars]
+        df = ds[available].to_dataframe().reset_index()
+        # Keep only (cml_id, sublink_id) index columns plus the coordinate columns
+        keep = ["cml_id", "sublink_id"] + [v for v in available if v in df.columns]
+        df = df[[c for c in keep if c in df.columns]]
         df = df.loc[:, ~df.columns.duplicated()]
-        # Sort for deterministic output
+        # Drop polarization if already pulled in by to_dataframe() as a
+        # non-dimension coordinate (xarray includes it both as data and coord).
+        # We'll add it properly via merge below.
+        df = df.drop(columns=["polarization"], errors="ignore")
+
+        # Add polarization column (may not exist in all datasets)
+        if "polarization" in ds.coords or "polarization" in ds.data_vars:
+            pol_df = ds["polarization"].to_series().reset_index()
+            pol_df.columns = list(pol_df.columns[:-1]) + ["polarization"]
+            df = df.merge(pol_df[["cml_id", "sublink_id", "polarization"]],
+                          on=["cml_id", "sublink_id"], how="left")
+        else:
+            df["polarization"] = None
+
         df = df.sort_values(["cml_id", "sublink_id"]).reset_index(drop=True)
         return df
 

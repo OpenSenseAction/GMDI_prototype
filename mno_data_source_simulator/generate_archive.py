@@ -85,6 +85,8 @@ def generate_archive_data(
         netcdf_file=str(netcdf_path),
         loop_duration_seconds=archive_days * 24 * 3600,  # bounds the replay window
     )
+    rsl_var = generator.rsl_var
+    tsl_var = generator.tsl_var
 
     # Generate and save metadata using existing function
     logger.info("\nGenerating metadata...")
@@ -129,10 +131,12 @@ def generate_archive_data(
     # sequential disk read — much faster than indexed/fancy access.
     logger.info("  Loading RSL/TSL arrays from NetCDF (one contiguous slice)...")
     max_idx = int(unique_indices.max())
-    ds_slice = generator.dataset[["rsl", "tsl"]].isel(time=slice(0, max_idx + 1))
+    ds_slice = generator.dataset[[rsl_var, tsl_var]].sel(
+        sublink_id=generator.valid_sublinks
+    ).isel(time=slice(0, max_idx + 1))
     ds_stacked = ds_slice.stack(link=("cml_id", "sublink_id"))
-    rsl_arr = ds_stacked["rsl"].values  # shape: (max_idx+1, n_links)
-    tsl_arr = ds_stacked["tsl"].values
+    rsl_arr = ds_stacked[rsl_var].values  # shape: (max_idx+1, n_links)
+    tsl_arr = ds_stacked[tsl_var].values
     # Recover per-link identifiers from the stacked MultiIndex
     link_index = ds_stacked.indexes["link"]
     cml_ids = np.array([v[0] for v in link_index])

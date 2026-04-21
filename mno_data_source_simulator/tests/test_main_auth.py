@@ -289,3 +289,75 @@ class TestAuthenticationValidation:
 
         # Clean up
         del os.environ["SFTP_PASSWORD"]
+
+
+class TestEnvVarOverrides:
+    """Test that SFTP env var overrides are applied to config before use."""
+
+    @patch("main.ensure_netcdf_file")
+    @patch("main.CMLDataGenerator")
+    @patch("main.SFTPUploader")
+    def test_sftp_env_vars_override_config(
+        self, mock_sftp, mock_generator, mock_ensure, base_config
+    ):
+        """All SFTP_* env vars override the corresponding config.yml values."""
+        config = {k: dict(v) if isinstance(v, dict) else v for k, v in base_config.items()}
+        # Start with no key so auth is via the env-var override
+        config["sftp"].pop("private_key_path", None)
+
+        mock_sftp_instance = MagicMock()
+        mock_sftp.return_value = mock_sftp_instance
+
+        env_overrides = {
+            "SFTP_HOST": "env-host",
+            "SFTP_PORT": "2222",
+            "SFTP_USERNAME": "env-user",
+            "SFTP_REMOTE_PATH": "/env/path",
+            "SFTP_PRIVATE_KEY_PATH": "/env/key",
+            "SFTP_KNOWN_HOSTS_PATH": "/env/known_hosts",
+        }
+        os.environ.pop("SFTP_PASSWORD", None)
+
+        import main
+
+        with patch("main.load_config", return_value=config):
+            with patch.dict(os.environ, env_overrides, clear=False):
+                with patch("main.time.sleep", side_effect=KeyboardInterrupt):
+                    try:
+                        main.main()
+                    except KeyboardInterrupt:
+                        pass
+
+        mock_sftp.assert_called_once()
+        call_kwargs = mock_sftp.call_args[1]
+        assert call_kwargs["host"] == "env-host"
+        assert call_kwargs["port"] == 2222
+        assert call_kwargs["username"] == "env-user"
+        assert call_kwargs["remote_path"] == "/env/path"
+        assert call_kwargs["private_key_path"] == "/env/key"
+        assert call_kwargs["known_hosts_path"] == "/env/known_hosts"
+
+    @patch("main.ensure_netcdf_file")
+    @patch("main.CMLDataGenerator")
+    @patch("main.logger")
+    def test_sftp_use_ssh_key_false_removes_key_path(
+        self, mock_logger, mock_generator, mock_ensure, base_config
+    ):
+        """SFTP_USE_SSH_KEY=false removes private_key_path from config."""
+        config = {k: dict(v) if isinstance(v, dict) else v for k, v in base_config.items()}
+        config["sftp"]["private_key_path"] = "/original/key"
+        os.environ.pop("SFTP_PASSWORD", None)
+
+        import main
+
+        with patch("main.load_config", return_value=config):
+            with patch.dict(os.environ, {"SFTP_USE_SSH_KEY": "false"}, clear=False):
+                with patch("main.time.sleep", side_effect=KeyboardInterrupt):
+                    try:
+                        main.main()
+                    except KeyboardInterrupt:
+                        pass
+
+        # With key removed and no password, SFTP should warn about no auth method
+        warning_calls = [c for c in mock_logger.warning.call_args_list if c[0]]
+        assert any("No SFTP authentication method" in str(c) for c in warning_calls)

@@ -4,7 +4,7 @@ CREATE TABLE cml_data (
     sublink_id TEXT NOT NULL,
     rsl REAL,
     tsl REAL,
-    user_id TEXT NOT NULL DEFAULT 'user1',
+    user_id TEXT NOT NULL DEFAULT 'demo_openmrg',
     UNIQUE (time, cml_id, sublink_id, user_id)
 );
 
@@ -18,13 +18,13 @@ CREATE TABLE cml_metadata (
     frequency REAL,
     polarization TEXT,
     length REAL,
-    user_id TEXT NOT NULL DEFAULT 'user1',
+    user_id TEXT NOT NULL DEFAULT 'demo_openmrg',
     PRIMARY KEY (cml_id, sublink_id, user_id)
 );
 
 CREATE TABLE cml_stats (
     cml_id TEXT NOT NULL,
-    user_id TEXT NOT NULL DEFAULT 'user1',
+    user_id TEXT NOT NULL DEFAULT 'demo_openmrg',
     total_records BIGINT,
     valid_records BIGINT,
     null_records BIGINT,
@@ -40,11 +40,11 @@ CREATE TABLE cml_stats (
 
 -- update_cml_stats(target_cml_id, target_user_id)
 --
--- target_user_id defaults to 'user1' so the existing single-argument call
+-- target_user_id defaults to 'demo_openmrg' so the existing single-argument call
 -- sites in the parser continue to work until PR3 updates them.
 CREATE OR REPLACE FUNCTION update_cml_stats(
     target_cml_id  TEXT,
-    target_user_id TEXT DEFAULT 'user1'
+    target_user_id TEXT DEFAULT 'demo_openmrg'
 ) RETURNS VOID AS $$
 BEGIN
     INSERT INTO cml_stats (
@@ -176,11 +176,14 @@ SELECT add_compression_policy('cml_data', INTERVAL '7 days');
 -- Database roles and Row-Level Security (PR feat/db-roles-rls)
 --
 -- Role naming convention: PG login role name = user_id value in the data.
---   "user1" role ↔ user_id = 'user1' — enables current_user-based RLS
---   policies and the cml_data_1h_secure security-barrier view below.
+--   "demo_openmrg" role ↔ user_id = 'demo_openmrg'
+--   "demo_orange_cameroun" role ↔ user_id = 'demo_orange_cameroun'
+--   This enables current_user-based RLS policies and the security-barrier
+--   views below.
 --
--- user1: used by the user1 parser instance (writes) and by the webserver
---   (via SET ROLE) for DB-enforced scoped reads.
+-- demo_openmrg: used by the OpenMRG parser instance (writes) and by the
+--   webserver (via SET ROLE) for DB-enforced scoped reads.
+-- demo_orange_cameroun: used by the Orange Cameroun parser instance.
 -- webserver_role: used by the webserver process.  Has a read-all RLS policy
 --   for admin/aggregate queries; SET ROLEs to a user role for scoped reads.
 --
@@ -188,28 +191,28 @@ SELECT add_compression_policy('cml_data', INTERVAL '7 days');
 -- Override them via environment variables or a secrets manager in production.
 -- ---------------------------------------------------------------------------
 
-CREATE ROLE user1        LOGIN PASSWORD 'user1password';
-CREATE ROLE user2        LOGIN PASSWORD 'user2password';
-CREATE ROLE webserver_role LOGIN PASSWORD 'webserverpassword';
+CREATE ROLE demo_openmrg          LOGIN PASSWORD 'demo_openmrg_password';
+CREATE ROLE demo_orange_cameroun  LOGIN PASSWORD 'demo_orange_cameroun_password';
+CREATE ROLE webserver_role        LOGIN PASSWORD 'webserverpassword';
 
--- Allow webserver_role to impersonate user roles (SET ROLE user1/user2).
-GRANT user1 TO webserver_role;
-GRANT user2 TO webserver_role;
+-- Allow webserver_role to impersonate user roles (SET ROLE ...).
+GRANT demo_openmrg         TO webserver_role;
+GRANT demo_orange_cameroun TO webserver_role;
 
 -- Schema access.
-GRANT USAGE ON SCHEMA public TO user1, user2, webserver_role;
+GRANT USAGE ON SCHEMA public TO demo_openmrg, demo_orange_cameroun, webserver_role;
 
 -- Table permissions.
-GRANT SELECT, INSERT, UPDATE ON cml_data     TO user1, user2;
-GRANT SELECT, INSERT, UPDATE ON cml_metadata TO user1, user2;
-GRANT SELECT, INSERT, UPDATE ON cml_stats    TO user1, user2;
+GRANT SELECT, INSERT, UPDATE ON cml_data     TO demo_openmrg, demo_orange_cameroun;
+GRANT SELECT, INSERT, UPDATE ON cml_metadata TO demo_openmrg, demo_orange_cameroun;
+GRANT SELECT, INSERT, UPDATE ON cml_stats    TO demo_openmrg, demo_orange_cameroun;
 
 GRANT SELECT ON cml_data     TO webserver_role;
 GRANT SELECT ON cml_metadata TO webserver_role;
 GRANT SELECT ON cml_stats    TO webserver_role;
 
 -- Parser calls update_cml_stats() to upsert per-CML statistics.
-GRANT EXECUTE ON FUNCTION update_cml_stats(TEXT, TEXT) TO user1, user2;
+GRANT EXECUTE ON FUNCTION update_cml_stats(TEXT, TEXT) TO demo_openmrg, demo_orange_cameroun;
 
 -- Row-Level Security on cml_metadata and cml_stats.
 -- cml_data is excluded: TimescaleDB does not allow RLS on compressed
@@ -251,7 +254,7 @@ SELECT * FROM cml_data
 WHERE user_id = current_user
 WITH CHECK OPTION;
 
-GRANT SELECT ON cml_data_secure TO user1, user2;
+GRANT SELECT ON cml_data_secure TO demo_openmrg, demo_orange_cameroun;
 GRANT SELECT ON cml_data_secure TO webserver_role;
 
 -- Security-barrier view over cml_data_1h (continuous aggregate).
@@ -268,6 +271,6 @@ CREATE VIEW cml_data_1h_secure WITH (security_barrier) AS
 SELECT * FROM cml_data_1h
 WHERE user_id = current_user;
 
-GRANT SELECT ON cml_data_1h_secure TO user1, user2;
+GRANT SELECT ON cml_data_1h_secure TO demo_openmrg, demo_orange_cameroun;
 GRANT SELECT ON cml_data_1h        TO webserver_role;
 GRANT SELECT ON cml_data_1h_secure TO webserver_role;
