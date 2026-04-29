@@ -7,8 +7,24 @@ from psycopg2 import sql as pgsql
 import folium
 import requests
 from markupsafe import escape
-from flask import Flask, render_template, request, jsonify, Response, redirect, url_for, flash
-from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from flask import (
+    Flask,
+    render_template,
+    request,
+    jsonify,
+    Response,
+    redirect,
+    url_for,
+    flash,
+)
+from flask_login import (
+    LoginManager,
+    UserMixin,
+    login_user,
+    logout_user,
+    login_required,
+    current_user,
+)
 from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta
@@ -78,6 +94,7 @@ def safe_float(value):
 
 
 # ── Database helpers ─────────────────────────────────────────────────────────
+
 
 def get_db_connection():
     """Admin connection as webserver_role (cross-tenant queries)."""
@@ -653,7 +670,10 @@ def upload_file():
 
         safe_name = secure_filename(file.filename)
         if not safe_name or not allowed_file(safe_name):
-            return jsonify({"error": "File type not allowed. Allowed: nc, csv, h5, hdf5"}), 400
+            return (
+                jsonify({"error": "File type not allowed. Allowed: nc, csv, h5, hdf5"}),
+                400,
+            )
 
         # Generate unique filename to avoid collisions
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
