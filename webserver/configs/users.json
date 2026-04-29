@@ -1,0 +1,10 @@
+{
+  "demo_openmrg": {
+    "password_hash": "scrypt:32768:8:1$HLOwGuhFRtd4Dah3$f7dca30ff20c0da01f53569bf7396bdaec4bbd428ef1875f07791a857d57d8434c8fbfa67269453a0980769e1db6787ab46c01e8e33b57aa160d615db385a944",
+    "display_name": "OpenMRG Demo"
+  },
+  "demo_orange_cameroun": {
+    "password_hash": "scrypt:32768:8:1$EpwEQPpmJkYCDx4I$662c778d419645ac0f8be645b5af56543e1f47cfc5a4d33c261935db3750941d0ce9e107a5586415f112c5b31e57d85ada449d8c678a5de7169fce7854647a54",
+    "display_name": "Orange Cameroun Demo"
+  }
+}

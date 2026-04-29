@@ -3,20 +3,50 @@ import os
 import time
 import math
 import psycopg2
+from psycopg2 import sql as pgsql
 import folium
 import requests
 from markupsafe import escape
-from flask import Flask, render_template, request, jsonify, Response, redirect
+from flask import Flask, render_template, request, jsonify, Response, redirect, url_for, flash
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta
 from pathlib import Path
+from contextlib import contextmanager
 import uuid
 
 app = Flask(__name__)
+app.secret_key = os.getenv("SECRET_KEY", os.urandom(32))
+app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # WSGI-level enforcement
+
+# ── User store (loaded from file at startup) ──────────────────────────────────
+_users_config_path = os.getenv("USERS_CONFIG_PATH", "/app/configs/users.json")
+try:
+    with open(_users_config_path) as _f:
+        USERS = json.load(_f)
+except FileNotFoundError:
+    USERS = {}
+
+# ── Flask-Login setup ─────────────────────────────────────────────────────────
+login_manager = LoginManager(app)
+login_manager.login_view = "login"
+login_manager.login_message = "Please log in to access this page."
+
+
+class User(UserMixin):
+    def __init__(self, user_id: str):
+        self.id = user_id
+        self.display_name = USERS[user_id].get("display_name", user_id)
+
+
+@login_manager.user_loader
+def load_user(user_id: str):
+    return User(user_id) if user_id in USERS else None
+
 
 ALLOWED_EXTENSIONS = {"nc", "csv", "h5", "hdf5"}
 MAX_FILE_SIZE = 500 * 1024 * 1024  # 500 MB
-app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE  # WSGI-level enforcement
 
 # Data directories
 DATA_INCOMING_DIR = "/app/data_incoming"
@@ -47,9 +77,10 @@ def safe_float(value):
     return parsed
 
 
-# Database connection helper
+# ── Database helpers ─────────────────────────────────────────────────────────
+
 def get_db_connection():
-    """Create and return a database connection"""
+    """Admin connection as webserver_role (cross-tenant queries)."""
     try:
         conn = psycopg2.connect(os.getenv("DATABASE_URL"))
         return conn
@@ -58,10 +89,71 @@ def get_db_connection():
         return None
 
 
+@contextmanager
+def user_db_scope(user_id: str):
+    """Context manager: connection scoped to user_id for one request.
+
+    Connects as webserver_role then issues SET LOCAL ROLE <user_id>.
+    SET LOCAL is automatically reverted at transaction end, so role
+    bleed is impossible even on connection reuse.
+
+    The role name is composed with pgsql.Identifier (never %s) so it
+    cannot be used as a SQL injection vector.  user_id is also
+    allowlisted against USERS before reaching SQL composition.
+    """
+    if user_id not in USERS:
+        raise ValueError(f"Unknown user_id: {user_id!r}")
+
+    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                pgsql.SQL("SET LOCAL ROLE {}").format(pgsql.Identifier(user_id))
+            )
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+# ==================== AUTH ROUTES ====================
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for("overview"))
+    if request.method == "POST":
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        if username in USERS and check_password_hash(
+            USERS[username]["password_hash"], password
+        ):
+            login_user(User(username))
+            next_page = request.args.get("next")
+            # Guard against open-redirect: only allow relative paths.
+            if next_page and not next_page.startswith("/"):
+                next_page = None
+            return redirect(next_page or url_for("overview"))
+        flash("Invalid username or password.")
+    return render_template("login.html")
+
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for("login"))
+
+
 # ==================== LANDING PAGE ROUTES ====================
 
 
 @app.route("/")
+@login_required
 def overview():
     """Landing page with overview and processing status"""
     stats = {
@@ -73,27 +165,25 @@ def overview():
     }
 
     try:
-        conn = get_db_connection()
-        if conn:
+        with user_db_scope(current_user.id) as conn:
             cur = conn.cursor()
 
-            # Get count of CMLs
+            # Get count of CMLs visible to this user (RLS enforced)
             cur.execute("SELECT COUNT(DISTINCT cml_id) FROM cml_metadata")
             stats["total_cmls"] = cur.fetchone()[0]
 
-            # Get approximate count of data records (fast on large tables)
-            cur.execute("SELECT approximate_row_count('cml_data')")
+            # Approximate count via secure view
+            cur.execute("SELECT COUNT(*) FROM cml_data_secure")
             stats["total_records"] = cur.fetchone()[0]
 
-            # Get data date range (from 1h aggregate — fast, indexed)
-            cur.execute("SELECT MIN(bucket), MAX(bucket) FROM cml_data_1h")
+            # Get data date range (from 1h secure view)
+            cur.execute("SELECT MIN(bucket), MAX(bucket) FROM cml_data_1h_secure")
             result = cur.fetchone()
             if result:
                 stats["data_start_date"] = result[0]
                 stats["data_end_date"] = result[1]
 
             cur.close()
-            conn.close()
     except Exception as e:
         print(f"Error fetching landing stats: {e}")
 
@@ -103,20 +193,16 @@ def overview():
 # ==================== REAL-TIME DATA ROUTES ====================
 
 
-def generate_cml_map():
+def generate_cml_map(user_id: str):
     """Generate a Leaflet map showing all CMLs with clickable lines"""
     try:
-        conn = get_db_connection()
-        if not conn:
-            return None
-
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT DISTINCT ON (cml_id) cml_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat FROM cml_metadata ORDER BY cml_id"
-        )
-        data = cur.fetchall()
-        cur.close()
-        conn.close()
+        with user_db_scope(user_id) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT DISTINCT ON (cml_id) cml_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat FROM cml_metadata ORDER BY cml_id"
+            )
+            data = cur.fetchall()
+            cur.close()
 
         if not data:
             return None
@@ -269,18 +355,14 @@ def generate_cml_map():
         return None
 
 
-def get_available_cmls():
-    """Get list of available CMLs"""
+def get_available_cmls(user_id: str):
+    """Get list of CMLs visible to the given user."""
     try:
-        conn = get_db_connection()
-        if not conn:
-            return []
-
-        cur = conn.cursor()
-        cur.execute("SELECT DISTINCT cml_id FROM cml_metadata ORDER BY cml_id")
-        cmls = [row[0] for row in cur.fetchall()]
-        cur.close()
-        conn.close()
+        with user_db_scope(user_id) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT DISTINCT cml_id FROM cml_metadata ORDER BY cml_id")
+            cmls = [row[0] for row in cur.fetchall()]
+            cur.close()
         return cmls
     except Exception as e:
         print(f"Error fetching CMLs: {e}")
@@ -288,10 +370,11 @@ def get_available_cmls():
 
 
 @app.route("/realtime")
+@login_required
 def realtime():
     """Real-time data page"""
-    map_html = generate_cml_map()
-    cmls = get_available_cmls()
+    map_html = generate_cml_map(current_user.id)
+    cmls = get_available_cmls(current_user.id)
     default_cml = cmls[0] if cmls else None
 
     return render_template(
@@ -303,6 +386,7 @@ def realtime():
 
 
 @app.route("/grafana")
+@login_required
 def grafana_root_redirect():
     """Redirect /grafana to /grafana/ for proper subpath routing."""
     return redirect("/grafana/", code=302)
@@ -316,6 +400,7 @@ def grafana_root_redirect():
 @app.route(
     "/grafana/<path:path>", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
 )
+@login_required
 def grafana_proxy(path):
     """Proxy all requests to Grafana container."""
     grafana_url = f"http://grafana:3000/grafana/{path}"
@@ -349,20 +434,17 @@ def grafana_proxy(path):
 
 
 @app.route("/api/cml-metadata")
+@login_required
 def api_cml_metadata():
     """API endpoint for fetching CML metadata"""
     try:
-        conn = get_db_connection()
-        if not conn:
-            return jsonify({"cmls": []})
-
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT DISTINCT ON (cml_id) cml_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat FROM cml_metadata ORDER BY cml_id"
-        )
-        data = cur.fetchall()
-        cur.close()
-        conn.close()
+        with user_db_scope(current_user.id) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT DISTINCT ON (cml_id) cml_id, site_0_lon, site_0_lat, site_1_lon, site_1_lat FROM cml_metadata ORDER BY cml_id"
+            )
+            data = cur.fetchall()
+            cur.close()
 
         cmls = [
             {
@@ -381,20 +463,17 @@ def api_cml_metadata():
 
 
 @app.route("/api/cml-map")
+@login_required
 def api_cml_map():
     """API endpoint for fetching CML data optimized for map rendering"""
     try:
-        conn = get_db_connection()
-        if not conn:
-            return jsonify([])
-
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT DISTINCT ON (cml_id) cml_id::text, site_0_lon, site_0_lat, site_1_lon, site_1_lat FROM cml_metadata ORDER BY cml_id"
-        )
-        data = cur.fetchall()
-        cur.close()
-        conn.close()
+        with user_db_scope(current_user.id) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT DISTINCT ON (cml_id) cml_id::text, site_0_lon, site_0_lat, site_1_lon, site_1_lat FROM cml_metadata ORDER BY cml_id"
+            )
+            data = cur.fetchall()
+            cur.close()
 
         cmls = [
             {
@@ -411,43 +490,40 @@ def api_cml_map():
 
 
 @app.route("/api/cml-stats")
+@login_required
 def api_cml_stats():
     """API endpoint for fetching per-CML statistics for data quality visualization"""
     try:
-        conn = get_db_connection()
-        if not conn:
-            return jsonify([])
-
-        cur = conn.cursor()
-        cur.execute(
+        with user_db_scope(current_user.id) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT
+                    cs.cml_id::text,
+                    cs.total_records,
+                    cs.valid_records,
+                    cs.null_records,
+                    cs.completeness_percent,
+                    cs.min_rsl,
+                    cs.max_rsl,
+                    cs.mean_rsl,
+                    cs.stddev_rsl,
+                    cs.last_rsl,
+                    ROUND(STDDEV(cd.rsl)::numeric, 2) as stddev_last_60min
+                FROM cml_stats cs
+                LEFT JOIN (
+                    SELECT cml_id, rsl
+                    FROM cml_data_secure
+                    WHERE time >= (SELECT MAX(bucket) FROM cml_data_1h_secure) - INTERVAL '60 minutes'
+                ) cd ON cs.cml_id = cd.cml_id
+                GROUP BY cs.cml_id, cs.total_records, cs.valid_records, cs.null_records,
+                         cs.completeness_percent, cs.min_rsl, cs.max_rsl, cs.mean_rsl,
+                         cs.stddev_rsl, cs.last_rsl
+                ORDER BY cs.cml_id
             """
-            SELECT
-                cs.cml_id::text,
-                cs.total_records,
-                cs.valid_records,
-                cs.null_records,
-                cs.completeness_percent,
-                cs.min_rsl,
-                cs.max_rsl,
-                cs.mean_rsl,
-                cs.stddev_rsl,
-                cs.last_rsl,
-                ROUND(STDDEV(cd.rsl)::numeric, 2) as stddev_last_60min
-            FROM cml_stats cs
-            LEFT JOIN (
-                SELECT cml_id, rsl
-                FROM cml_data
-                WHERE time >= (SELECT MAX(bucket) FROM cml_data_1h) - INTERVAL '60 minutes'
-            ) cd ON cs.cml_id = cd.cml_id
-            GROUP BY cs.cml_id, cs.total_records, cs.valid_records, cs.null_records,
-                     cs.completeness_percent, cs.min_rsl, cs.max_rsl, cs.mean_rsl,
-                     cs.stddev_rsl, cs.last_rsl
-            ORDER BY cs.cml_id
-        """
-        )
-        data = cur.fetchall()
-        cur.close()
-        conn.close()
+            )
+            data = cur.fetchall()
+            cur.close()
 
         stats = [
             {
@@ -472,18 +548,15 @@ def api_cml_stats():
 
 
 @app.route("/api/data-time-range")
+@login_required
 def api_data_time_range():
     """API endpoint for fetching the actual time range of available data"""
     try:
-        conn = get_db_connection()
-        if not conn:
-            return jsonify({"earliest": None, "latest": None})
-
-        cur = conn.cursor()
-        cur.execute("SELECT MIN(bucket), MAX(bucket) FROM cml_data_1h")
-        result = cur.fetchone()
-        cur.close()
-        conn.close()
+        with user_db_scope(current_user.id) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT MIN(bucket), MAX(bucket) FROM cml_data_1h_secure")
+            result = cur.fetchone()
+            cur.close()
 
         if result and result[0] and result[1]:
             # Format as ISO 8601 strings
@@ -499,8 +572,8 @@ def api_data_time_range():
 # ==================== ARCHIVE STATISTICS ROUTES ====================
 
 
-def get_archive_statistics():
-    """Fetch aggregated statistics from the long-term archive"""
+def get_archive_statistics(user_id: str):
+    """Fetch aggregated statistics from the long-term archive for the given user."""
     stats = {
         "total_records": 0,
         "cml_count": 0,
@@ -508,29 +581,25 @@ def get_archive_statistics():
     }
 
     try:
-        conn = get_db_connection()
-        if not conn:
-            return stats
+        with user_db_scope(user_id) as conn:
+            cur = conn.cursor()
 
-        cur = conn.cursor()
+            # Row count via secure view
+            cur.execute("SELECT COUNT(*) FROM cml_data_secure")
+            stats["total_records"] = cur.fetchone()[0]
 
-        # Total records (approximate, fast on large tables)
-        cur.execute("SELECT approximate_row_count('cml_data')")
-        stats["total_records"] = cur.fetchone()[0]
+            # CML count (RLS enforced)
+            cur.execute("SELECT COUNT(DISTINCT cml_id) FROM cml_metadata")
+            stats["cml_count"] = cur.fetchone()[0]
 
-        # CML count
-        cur.execute("SELECT COUNT(DISTINCT cml_id) FROM cml_metadata")
-        stats["cml_count"] = cur.fetchone()[0]
+            # Date range (from 1h secure view)
+            cur.execute("SELECT MIN(bucket), MAX(bucket) FROM cml_data_1h_secure")
+            result = cur.fetchone()
+            if result:
+                stats["date_range"]["start"] = result[0]
+                stats["date_range"]["end"] = result[1]
 
-        # Date range (from 1h aggregate — fast, indexed)
-        cur.execute("SELECT MIN(bucket), MAX(bucket) FROM cml_data_1h")
-        result = cur.fetchone()
-        if result:
-            stats["date_range"]["start"] = result[0]
-            stats["date_range"]["end"] = result[1]
-
-        cur.close()
-        conn.close()
+            cur.close()
     except Exception as e:
         print(f"Error fetching archive statistics: {e}")
 
@@ -538,9 +607,10 @@ def get_archive_statistics():
 
 
 @app.route("/archive")
+@login_required
 def archive():
     """Archive statistics page"""
-    stats = get_archive_statistics()
+    stats = get_archive_statistics(current_user.id)
     return render_template("archive.html", stats=stats)
 
 
@@ -548,6 +618,7 @@ def archive():
 
 
 @app.route("/data-uploads")
+@login_required
 def data_uploads():
     """Data uploads page"""
     return render_template("data_uploads.html")
@@ -567,6 +638,7 @@ def get_file_size_mb(filepath):
 
 
 @app.route("/api/upload", methods=["POST"])
+@login_required
 def upload_file():
     """Handle file upload via drag and drop"""
     try:
@@ -627,6 +699,7 @@ def upload_file():
 
 
 @app.route("/api/files", methods=["GET"])
+@login_required
 def get_files():
     """Get list of files in data_incoming and data_staged_for_parsing directories"""
     try:

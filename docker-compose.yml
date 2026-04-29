@@ -185,13 +185,16 @@ services:
       - database
       - sftp_receiver
     environment:
-      - DATABASE_URL=postgresql://myuser:mypassword@database:5432/mydatabase
+      - DATABASE_URL=postgresql://webserver_role:webserverpassword@database:5432/mydatabase
+      - SECRET_KEY=${SECRET_KEY:-changeme-set-a-real-secret-in-production}
+      - USERS_CONFIG_PATH=/app/configs/users.json
       - STORAGE_BACKEND=local  # Options: local, s3, minio
       - STORAGE_BASE_PATH=/app/data
     volumes:
       - sftp_openmrg_uploads:/app/data/incoming:ro  # Read-only access to OpenMRG SFTP uploads
       - webserver_data_staged:/app/data/staged
       - webserver_data_archived:/app/data/archived
+      - ./webserver/configs:/app/configs:ro
 
   sftp_receiver:
     image: atmoz/sftp:latest
