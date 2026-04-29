@@ -1,9 +1,11 @@
+import json
 import os
 import time
 import math
 import psycopg2
 import folium
 import requests
+from markupsafe import escape
 from flask import Flask, render_template, request, jsonify, Response, redirect
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -124,7 +126,7 @@ def generate_cml_map():
         m = folium.Map(location=[avg_lat, avg_lon], zoom_start=8)
 
         # Store CML IDs list for JavaScript
-        cml_ids_json = str([str(row[0]) for row in data]).replace("'", '"')
+        cml_ids_json = json.dumps([str(row[0]) for row in data])
 
         # Add CML lines with onclick handlers
         for idx, row in enumerate(data):
@@ -147,10 +149,12 @@ def generate_cml_map():
             }
 
             # Create a custom popup with onclick
+            cml_id_js = json.dumps(str(cml_id))
+            cml_id_html = str(escape(cml_id))
             popup_html = f"""
             <div>
-                <strong>CML ID: {cml_id}</strong><br>
-                <button onclick="window.handleCmlClick('{cml_id}'); return false;" style="margin-top: 5px; padding: 5px 10px; background-color: #0066cc; color: white; border: none; border-radius: 3px; cursor: pointer;">
+                <strong>CML ID: {cml_id_html}</strong><br>
+                <button onclick="window.handleCmlClick({cml_id_js}); return false;" style="margin-top: 5px; padding: 5px 10px; background-color: #0066cc; color: white; border: none; border-radius: 3px; cursor: pointer;">
                     Load Data
                 </button>
             </div>
