@@ -1,4 +1,5 @@
 import sys
+from contextlib import contextmanager
 from unittest.mock import Mock
 
 import pytest
@@ -45,7 +46,18 @@ def test_api_cml_stats_returns_cached_stats(monkeypatch):
     mock_cursor.close = Mock()
     mock_conn.close = Mock()
 
-    monkeypatch.setattr(wm, "get_db_connection", lambda: mock_conn)
+    # The route now uses user_db_scope(current_user.id) instead of get_db_connection().
+    # Mock user_db_scope to yield the mock connection, and disable login enforcement.
+    @contextmanager
+    def mock_user_db_scope(user_id):
+        yield mock_conn
+
+    mock_user = Mock()
+    mock_user.id = "demo_openmrg"
+
+    monkeypatch.setattr(wm, "user_db_scope", mock_user_db_scope)
+    monkeypatch.setattr(wm, "current_user", mock_user)
+    monkeypatch.setitem(wm.app.config, "LOGIN_DISABLED", True)
 
     client = wm.app.test_client()
     resp = client.get("/api/cml-stats")
