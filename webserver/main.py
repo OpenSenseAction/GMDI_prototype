@@ -5,11 +5,16 @@ import psycopg2
 import folium
 import requests
 from flask import Flask, render_template, request, jsonify, Response, redirect
+from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta
 from pathlib import Path
 import uuid
 
 app = Flask(__name__)
+
+ALLOWED_EXTENSIONS = {"nc", "csv", "h5", "hdf5"}
+MAX_FILE_SIZE = 500 * 1024 * 1024  # 500 MB
+app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE  # WSGI-level enforcement
 
 # Data directories
 DATA_INCOMING_DIR = "/app/data_incoming"
@@ -546,9 +551,6 @@ def data_uploads():
 
 # ==================== DATA UPLOAD API ====================
 
-ALLOWED_EXTENSIONS = {"nc", "csv", "h5", "hdf5"}
-MAX_FILE_SIZE = 500 * 1024 * 1024  # 500 MB
-
 
 def allowed_file(filename):
     """Check if file extension is allowed"""
@@ -573,20 +575,25 @@ def upload_file():
         if file.filename == "":
             return jsonify({"error": "No file selected"}), 400
 
-        if not allowed_file(file.filename):
-            return (
-                jsonify({"error": "File type not allowed. Allowed: nc, csv, h5, hdf5"}),
-                400,
-            )
+        safe_name = secure_filename(file.filename)
+        if not safe_name or not allowed_file(safe_name):
+            return jsonify({"error": "File type not allowed. Allowed: nc, csv, h5, hdf5"}), 400
 
         # Generate unique filename to avoid collisions
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         unique_id = str(uuid.uuid4())[:8]
-        original_name = file.filename.rsplit(".", 1)[0]
-        extension = file.filename.rsplit(".", 1)[1]
+        original_name = safe_name.rsplit(".", 1)[0]
+        extension = safe_name.rsplit(".", 1)[1]
         new_filename = f"{original_name}_{timestamp}_{unique_id}.{extension}"
 
         filepath = os.path.join(DATA_INCOMING_DIR, new_filename)
+
+        # Enforce size limit via Content-Length before writing to disk.
+        # MAX_CONTENT_LENGTH rejects oversized requests at the WSGI layer;
+        # also guard here in case that config is not set.
+        content_length = request.content_length
+        if content_length and content_length > MAX_FILE_SIZE:
+            return jsonify({"error": "File size exceeds 500 MB limit"}), 400
 
         # Save file
         file.save(filepath)
@@ -602,7 +609,7 @@ def upload_file():
                 {
                     "success": True,
                     "filename": new_filename,
-                    "original_filename": file.filename,
+                    "original_filename": safe_name,
                     "size_mb": round(file_size_mb, 2),
                     "upload_time": timestamp,
                 }
