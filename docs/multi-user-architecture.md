@@ -2,8 +2,10 @@
 
 ## Status
 
-PRs 1–5 are merged. The database schema, isolation model, and webserver login are in place.
-PRs 6–8 remain and are described below.
+The core multi-user changes have been merged to the repository (GitHub PRs #32, #33, #35, #40, #41).
+The database schema, RLS/isolation model, parser wiring, SFTP multi-user ingestion,
+webserver authentication, and Grafana auth proxy are in place. Remaining implementation
+work: `feat/web-api-upload` and `feat/user-onboarding` (see PR6 / PR7 below).
 
 | PR | Branch | Status | Scope |
 |----|--------|--------|-------|
@@ -14,7 +16,17 @@ PRs 6–8 remain and are described below.
 | 5 | `feat/webserver-auth` | merged | Login, session, DB role switching — go-live milestone |
 | 6 | `feat/web-api-upload` | not started | HTTP API upload + drag-and-drop |
 | 7 | `feat/user-onboarding` | not started | `add_user.sh`, docs |
-| 8 | `feat/grafana-auth-proxy` | not started | Per-user Grafana datasources + auth proxy header |
+| 8 | `feat/grafana-auth-proxy` | merged | Per-user Grafana datasources + auth proxy header |
+
+### Recent merged GitHub PRs
+
+- #32 — `feat/db-add-user-id`: added `user_id` columns, back-compatible defaults, and updated primary keys/indexes (migration `001_add_user_id.sql`).
+- #33 — `feat/db-roles-rls`: created per-user roles and Row-Level Security, security-barrier views, and grants (migration `004_add_roles_rls.sql`).
+- #35 — `feat/sftp-multi-user` (includes parser wiring): per-user SFTP directories, per-user parser services, onboarding `demo_orange_cameroun` (`006_add_user2.sql`), and parser now stamps `user_id` on writes.
+- #40 — `feat/webserver-auth`: webserver login/session management and per-request `SET ROLE` DB impersonation (uses `webserver_role` credentials).
+- #41 — `feat/grafana-auth-proxy`: Grafana auth proxy + per-org/postgres datasources and bootstrap (`grafana/init_grafana.py` and provisioning).
+
+These PRs are merged; the rest of this document describes architecture and remaining tasks.
 
 ---
 
@@ -154,7 +166,7 @@ backward-compat `UNIQUE (cml_id, sublink_id)` constraint is dropped (see migrati
 ```python
 class Config:
     DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://myuser:mypassword@database:5432/mydatabase")
-    USER_ID = os.getenv("USER_ID")          # required in multi-user mode
+    USER_ID = os.getenv("USER_ID", "demo_openmrg")  # currently defaults to 'demo_openmrg' for convenience; set explicitly in production
     ...
 
 def main():
@@ -268,6 +280,7 @@ services:
       - parser_user2_archived:/app/data/archived
       - parser_user2_quarantine:/app/data/quarantine
 
+
 volumes:
   sftp_user1_uploads:
   sftp_user2_uploads:
@@ -276,6 +289,12 @@ volumes:
   parser_user2_archived:
   parser_user2_quarantine:
 ```
+
+Note: the current `docker-compose.yml` and migrations rename the example `user1`/`user2`
+to more descriptive dataset users (`demo_openmrg` / `demo_orange_cameroun`) via
+`database/migrations/007_rename_users_add_orange_cameroun.sql`.  The compose services
+in this repository are named `parser_openmrg` and `parser_orange_cameroun` (see
+`docker-compose.yml`) and the migrations/tests reference the `demo_*` role names.
 
 ---
 
