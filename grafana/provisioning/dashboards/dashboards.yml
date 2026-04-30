@@ -1,7 +1,7 @@
 apiVersion: 1
 
 providers:
-  - name: 'CML Dashboards'
+  - name: 'CML Dashboards (org 1)'
     orgId: 1
     folder: ''
     type: file
@@ -11,3 +11,6 @@ providers:
     allowUiUpdates: false
     options:
       path: /etc/grafana/provisioning/dashboards/definitions
+
+  # Dashboards for org 2 are copied via the Grafana API by the init_grafana
+  # service after org 2 is created (see grafana/init_grafana.py).

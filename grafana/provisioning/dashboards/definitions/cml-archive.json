@@ -18,7 +18,7 @@
             "type": "timeseries",
             "datasource": {
                 "type": "grafana-postgresql-datasource",
-                "uid": "PostgreSQL"
+                "uid": "${datasource}"
             },
             "gridPos": {
                 "h": 9,
@@ -30,11 +30,11 @@
                 {
                     "datasource": {
                         "type": "grafana-postgresql-datasource",
-                        "uid": "PostgreSQL"
+                        "uid": "${datasource}"
                     },
                     "format": "time_series",
                     "rawQuery": true,
-                    "rawSql": "SELECT\n  bucket AS \"time\",\n  'sublinks' AS metric,\n  COUNT(*) AS value\nFROM cml_data_1h\nWHERE bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nGROUP BY bucket\nORDER BY 1 ASC",
+                    "rawSql": "SELECT\n  bucket AS \"time\",\n  'sublinks' AS metric,\n  COUNT(*) AS value\nFROM cml_data_1h_secure\nWHERE bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nGROUP BY bucket\nORDER BY 1 ASC",
                     "refId": "A"
                 }
             ],
@@ -105,7 +105,7 @@
             "type": "timeseries",
             "datasource": {
                 "type": "grafana-postgresql-datasource",
-                "uid": "PostgreSQL"
+                "uid": "${datasource}"
             },
             "gridPos": {
                 "h": 9,
@@ -117,11 +117,11 @@
                 {
                     "datasource": {
                         "type": "grafana-postgresql-datasource",
-                        "uid": "PostgreSQL"
+                        "uid": "${datasource}"
                     },
                     "format": "time_series",
                     "rawQuery": true,
-                    "rawSql": "SELECT\n  bucket AS \"time\",\n  'data points' AS metric,\n  COUNT(*) * 360 AS value\nFROM cml_data_1h\nWHERE bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nGROUP BY bucket\nORDER BY 1 ASC",
+                    "rawSql": "SELECT\n  bucket AS \"time\",\n  'data points' AS metric,\n  COUNT(*) * 360 AS value\nFROM cml_data_1h_secure\nWHERE bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nGROUP BY bucket\nORDER BY 1 ASC",
                     "refId": "A"
                 }
             ],
@@ -188,7 +188,20 @@
         }
     ],
     "templating": {
-        "list": []
+        "list": [
+            {
+                "current": {},
+                "hide": 2,
+                "includeAll": false,
+                "multi": false,
+                "name": "datasource",
+                "options": [],
+                "query": "grafana-postgresql-datasource",
+                "refresh": 1,
+                "type": "datasource",
+                "label": "Datasource"
+            }
+        ]
     },
     "annotations": {
         "list": []

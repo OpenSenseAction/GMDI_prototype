@@ -231,25 +231,47 @@ services:
 
   grafana:
     image: grafana/grafana:latest
-    ports:
-      - "3000:3000"
     depends_on:
       - database
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_INSTALL_PLUGINS=grafana-piechart-panel
       - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
       - GF_SECURITY_ALLOW_EMBEDDING=true
       - GF_SERVER_ROOT_URL=http://localhost:5000/grafana/
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
-      - GF_AUTH_DISABLE_LOGIN_FORM=true
       - GF_SECURITY_COOKIE_SAMESITE=none
       - GF_SECURITY_COOKIE_SECURE=false
+      # Auth proxy — Grafana trusts the X-WEBAUTH-USER header injected by the
+      # Flask proxy (webserver service).  Anonymous access and the login form are
+      # disabled so Grafana itself is not reachable without going through the proxy.
+      - GF_AUTH_PROXY_ENABLED=true
+      - GF_AUTH_PROXY_HEADER_NAME=X-WEBAUTH-USER
+      - GF_AUTH_PROXY_HEADER_PROPERTY=username
+      - GF_AUTH_PROXY_AUTO_SIGN_UP=true
+      # No whitelist needed: port 3000 is not exposed to the host, so only
+      # containers in the same Docker Compose network can reach Grafana.
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_AUTH_ANONYMOUS_ENABLED=false
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health | grep -q 'database'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # One-shot bootstrap: creates org 2, pre-creates Grafana users in their correct
+  # org, then exits.  Runs every time the stack starts (idempotent).
+  init_grafana:
+    build:
+      context: ./grafana
+      dockerfile: Dockerfile
+    depends_on:
+      grafana:
+        condition: service_healthy
+    restart: "no"
 
   # Integration test runner (run with: docker compose run --rm integration_tests)
   integration_tests:

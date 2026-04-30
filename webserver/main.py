@@ -54,6 +54,7 @@ class User(UserMixin):
     def __init__(self, user_id: str):
         self.id = user_id
         self.display_name = USERS[user_id].get("display_name", user_id)
+        self.grafana_org_id = USERS[user_id].get("grafana_org_id", 1)
 
 
 @login_manager.user_loader
@@ -399,6 +400,7 @@ def realtime():
         map_html=map_html,
         cmls=cmls,
         selected_cml=default_cml,
+        grafana_org_id=current_user.grafana_org_id,
     )
 
 
@@ -419,10 +421,20 @@ def grafana_root_redirect():
 )
 @login_required
 def grafana_proxy(path):
-    """Proxy all requests to Grafana container."""
+    """Proxy all requests to Grafana container.
+
+    Injects X-WEBAUTH-USER so Grafana's auth proxy mode maps the request to
+    the correct Grafana user.  Any X-WEBAUTH-USER header sent by the browser
+    is stripped first to prevent identity forgery.
+    """
     grafana_url = f"http://grafana:3000/grafana/{path}"
     method = request.method
-    headers = {key: value for key, value in request.headers if key.lower() != "host"}
+    headers = {
+        key: value
+        for key, value in request.headers
+        if key.lower() not in ("host", "x-webauth-user")
+    }
+    headers["X-WEBAUTH-USER"] = current_user.id
     data = request.get_data()
     params = request.args
 
@@ -628,7 +640,9 @@ def get_archive_statistics(user_id: str):
 def archive():
     """Archive statistics page"""
     stats = get_archive_statistics(current_user.id)
-    return render_template("archive.html", stats=stats)
+    return render_template(
+        "archive.html", stats=stats, grafana_org_id=current_user.grafana_org_id
+    )
 
 
 # ==================== DATA UPLOADS ROUTES ====================

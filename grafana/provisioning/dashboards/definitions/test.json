@@ -10,5 +10,21 @@
         "from": "now-6h",
         "to": "now"
     },
-    "panels": []
+    "panels": [],
+    "templating": {
+        "list": [
+            {
+                "current": {},
+                "hide": 2,
+                "includeAll": false,
+                "multi": false,
+                "name": "datasource",
+                "options": [],
+                "query": "grafana-postgresql-datasource",
+                "refresh": 1,
+                "type": "datasource",
+                "label": "Datasource"
+            }
+        ]
+    }
 }

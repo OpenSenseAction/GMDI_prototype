@@ -25,7 +25,7 @@
         {
             "datasource": {
                 "type": "grafana-postgresql-datasource",
-                "uid": "PostgreSQL"
+                "uid": "${datasource}"
             },
             "fieldConfig": {
                 "defaults": {
@@ -56,7 +56,7 @@
         {
             "datasource": {
                 "type": "grafana-postgresql-datasource",
-                "uid": "PostgreSQL"
+                "uid": "${datasource}"
             },
             "gridPos": {
                 "h": 1,
@@ -78,7 +78,7 @@
         {
             "datasource": {
                 "type": "grafana-postgresql-datasource",
-                "uid": "PostgreSQL"
+                "uid": "${datasource}"
             },
             "fieldConfig": {
                 "defaults": {
@@ -369,37 +369,37 @@
                 {
                     "datasource": {
                         "type": "grafana-postgresql-datasource",
-                        "uid": "PostgreSQL"
+                        "uid": "${datasource}"
                     },
                     "format": "time_series",
                     "rawQuery": true,
-                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' min' AS metric,\n  rsl_min AS value\nFROM cml_data_1h\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' min' AS metric,\n  rsl_min AS value\nFROM cml_data_1h_secure\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
                     "refId": "A"
                 },
                 {
                     "datasource": {
                         "type": "grafana-postgresql-datasource",
-                        "uid": "PostgreSQL"
+                        "uid": "${datasource}"
                     },
                     "format": "time_series",
                     "rawQuery": true,
-                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' max' AS metric,\n  rsl_max AS value\nFROM cml_data_1h\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' max' AS metric,\n  rsl_max AS value\nFROM cml_data_1h_secure\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
                     "refId": "B"
                 },
                 {
                     "datasource": {
                         "type": "grafana-postgresql-datasource",
-                        "uid": "PostgreSQL"
+                        "uid": "${datasource}"
                     },
                     "format": "time_series",
                     "rawQuery": true,
-                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' avg' AS metric,\n  rsl_avg AS value\nFROM cml_data_1h\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' avg' AS metric,\n  rsl_avg AS value\nFROM cml_data_1h_secure\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
                     "refId": "C"
                 },
                 {
                     "datasource": {
                         "type": "grafana-postgresql-datasource",
-                        "uid": "PostgreSQL"
+                        "uid": "${datasource}"
                     },
                     "format": "time_series",
                     "rawQuery": true,
@@ -409,7 +409,7 @@
                 {
                     "datasource": {
                         "type": "grafana-postgresql-datasource",
-                        "uid": "PostgreSQL"
+                        "uid": "${datasource}"
                     },
                     "format": "time_series",
                     "rawQuery": true,
@@ -423,7 +423,7 @@
         {
             "datasource": {
                 "type": "grafana-postgresql-datasource",
-                "uid": "PostgreSQL"
+                "uid": "${datasource}"
             },
             "fieldConfig": {
                 "defaults": {
@@ -714,37 +714,37 @@
                 {
                     "datasource": {
                         "type": "grafana-postgresql-datasource",
-                        "uid": "PostgreSQL"
+                        "uid": "${datasource}"
                     },
                     "format": "time_series",
                     "rawQuery": true,
-                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' min' AS metric,\n  tsl_min AS value\nFROM cml_data_1h\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' min' AS metric,\n  tsl_min AS value\nFROM cml_data_1h_secure\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
                     "refId": "A"
                 },
                 {
                     "datasource": {
                         "type": "grafana-postgresql-datasource",
-                        "uid": "PostgreSQL"
+                        "uid": "${datasource}"
                     },
                     "format": "time_series",
                     "rawQuery": true,
-                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' max' AS metric,\n  tsl_max AS value\nFROM cml_data_1h\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' max' AS metric,\n  tsl_max AS value\nFROM cml_data_1h_secure\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
                     "refId": "B"
                 },
                 {
                     "datasource": {
                         "type": "grafana-postgresql-datasource",
-                        "uid": "PostgreSQL"
+                        "uid": "${datasource}"
                     },
                     "format": "time_series",
                     "rawQuery": true,
-                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' avg' AS metric,\n  tsl_avg AS value\nFROM cml_data_1h\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+                    "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' avg' AS metric,\n  tsl_avg AS value\nFROM cml_data_1h_secure\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
                     "refId": "C"
                 },
                 {
                     "datasource": {
                         "type": "grafana-postgresql-datasource",
-                        "uid": "PostgreSQL"
+                        "uid": "${datasource}"
                     },
                     "format": "time_series",
                     "rawQuery": true,
@@ -754,7 +754,7 @@
                 {
                     "datasource": {
                         "type": "grafana-postgresql-datasource",
-                        "uid": "PostgreSQL"
+                        "uid": "${datasource}"
                     },
                     "format": "time_series",
                     "rawQuery": true,
@@ -768,7 +768,7 @@
         {
             "datasource": {
                 "type": "grafana-postgresql-datasource",
-                "uid": "PostgreSQL"
+                "uid": "${datasource}"
             },
             "fieldConfig": {
                 "defaults": {
@@ -862,7 +862,7 @@
                 {
                     "datasource": {
                         "type": "grafana-postgresql-datasource",
-                        "uid": "PostgreSQL"
+                        "uid": "${datasource}"
                     },
                     "format": "table",
                     "rawQuery": true,
@@ -885,6 +885,18 @@
     "templating": {
         "list": [
             {
+                "current": {},
+                "hide": 2,
+                "includeAll": false,
+                "multi": false,
+                "name": "datasource",
+                "options": [],
+                "query": "grafana-postgresql-datasource",
+                "refresh": 1,
+                "type": "datasource",
+                "label": "Datasource"
+            },
+            {
                 "current": {
                     "selected": false,
                     "text": "10001",
@@ -892,7 +904,7 @@
                 },
                 "datasource": {
                     "type": "grafana-postgresql-datasource",
-                    "uid": "PostgreSQL"
+                    "uid": "${datasource}"
                 },
                 "definition": "SELECT DISTINCT cml_id::text FROM cml_metadata ORDER BY cml_id",
                 "description": null,
