@@ -25,7 +25,7 @@
         {
             "datasource": {
                 "type": "grafana-postgresql-datasource",
-                "uid": "PostgreSQL"
+                "uid": "${datasource}"
             },
             "fieldConfig": {
                 "defaults": {
@@ -109,7 +109,7 @@
                 {
                     "datasource": {
                         "type": "grafana-postgresql-datasource",
-                        "uid": "PostgreSQL"
+                        "uid": "${datasource}"
                     },
                     "editorMode": "code",
                     "format": "table",
@@ -147,6 +147,18 @@
     ],
     "templating": {
         "list": [
+            {
+                "current": {},
+                "hide": 2,
+                "includeAll": false,
+                "multi": false,
+                "name": "datasource",
+                "options": [],
+                "query": "grafana-postgresql-datasource",
+                "refresh": 1,
+                "type": "datasource",
+                "label": "Datasource"
+            },
             {
                 "current": {
                     "selected": false,

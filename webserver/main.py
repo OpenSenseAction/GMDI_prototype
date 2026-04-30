@@ -54,6 +54,7 @@ class User(UserMixin):
     def __init__(self, user_id: str):
         self.id = user_id
         self.display_name = USERS[user_id].get("display_name", user_id)
+        self.grafana_org_id = USERS[user_id].get("grafana_org_id", 1)
 
 
 @login_manager.user_loader
@@ -399,6 +400,7 @@ def realtime():
         map_html=map_html,
         cmls=cmls,
         selected_cml=default_cml,
+        grafana_org_id=current_user.grafana_org_id,
     )
 
 
@@ -638,7 +640,9 @@ def get_archive_statistics(user_id: str):
 def archive():
     """Archive statistics page"""
     stats = get_archive_statistics(current_user.id)
-    return render_template("archive.html", stats=stats)
+    return render_template(
+        "archive.html", stats=stats, grafana_org_id=current_user.grafana_org_id
+    )
 
 
 # ==================== DATA UPLOADS ROUTES ====================
