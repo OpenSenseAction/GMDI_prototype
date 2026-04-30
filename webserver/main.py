@@ -419,10 +419,20 @@ def grafana_root_redirect():
 )
 @login_required
 def grafana_proxy(path):
-    """Proxy all requests to Grafana container."""
+    """Proxy all requests to Grafana container.
+
+    Injects X-WEBAUTH-USER so Grafana's auth proxy mode maps the request to
+    the correct Grafana user.  Any X-WEBAUTH-USER header sent by the browser
+    is stripped first to prevent identity forgery.
+    """
     grafana_url = f"http://grafana:3000/grafana/{path}"
     method = request.method
-    headers = {key: value for key, value in request.headers if key.lower() != "host"}
+    headers = {
+        key: value
+        for key, value in request.headers
+        if key.lower() not in ("host", "x-webauth-user")
+    }
+    headers["X-WEBAUTH-USER"] = current_user.id
     data = request.get_data()
     params = request.args
 
