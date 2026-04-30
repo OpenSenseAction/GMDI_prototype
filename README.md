@@ -122,3 +122,140 @@ environment:
   - STORAGE_S3_ENDPOINT=http://minio:9000
 ```
 
+## Multi-Tenancy
+
+Each tenant has:
+- a PostgreSQL login role whose name **equals** the `user_id` stored in the data tables
+- a Grafana organisation (org) with a dedicated datasource connecting as that role
+- a Flask login account in `webserver/configs/users.json`
+
+Row-Level Security on `cml_metadata` and `cml_stats`, plus the
+`cml_data_1h_secure` security-barrier view, ensure each DB role only reads its
+own data without any application-level filtering.
+
+### Adding a new tenant from a deployment repo
+
+The canonical deployment pattern is a **separate git repo** that includes this
+repo as a git submodule and overrides configuration with a
+`docker-compose.override.yml`.
+
+#### 1. Database — add a migration in the deployment repo
+
+Create a SQL migration file (e.g. `migrations/008_add_acme.sql`):
+
+```sql
+-- Idempotent: safe to re-run
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'acme') THEN
+        CREATE ROLE acme LOGIN PASSWORD 'change-me-in-production';
+    END IF;
+END
+$$;
+
+GRANT USAGE ON SCHEMA public TO acme;
+GRANT SELECT, INSERT, UPDATE ON cml_data     TO acme;
+GRANT SELECT, INSERT, UPDATE ON cml_metadata TO acme;
+GRANT SELECT, INSERT, UPDATE ON cml_stats    TO acme;
+GRANT EXECUTE ON FUNCTION update_cml_stats(TEXT, TEXT) TO acme;
+GRANT SELECT ON cml_data_secure    TO acme;
+GRANT SELECT ON cml_data_1h_secure TO acme;
+GRANT acme TO webserver_role;
+```
+
+Apply it to the running database:
+
+```sh
+docker compose exec -T database psql -U myuser -d mydatabase \
+  < migrations/008_add_acme.sql
+```
+
+No new RLS policies are needed; the generic `WHERE user_id = current_user`
+policies cover every role automatically.
+
+#### 2. Grafana bootstrap — extend `init_grafana.py` via override
+
+In your deployment repo, create an override that replaces `ORGS` / `USERS` in
+`grafana/init_grafana.py`, or mount a patched copy of the file.  The simplest
+approach is to extend via environment variables.  Until `init_grafana.py`
+supports env-driven tenant lists, the easiest override is to **replace the
+script** with a deployment-repo copy that appends the new tenant:
+
+```python
+# deployment-repo/grafana/init_grafana.py  (copy of the upstream file + additions)
+
+ORGS = [
+    {"id": 1, "name": "demo_openmrg"},
+    {"id": 2, "name": "demo_orange_cameroun"},
+    {"id": 3, "name": "acme"},          # ← new tenant
+]
+
+USERS = [
+    {"login": "demo_openmrg",        "org_id": 1, "role": "Viewer"},
+    {"login": "demo_orange_cameroun", "org_id": 2, "role": "Viewer"},
+    {"login": "acme",                 "org_id": 3, "role": "Viewer"},  # ← new
+]
+```
+
+And add the datasource + dashboard copy call in `__main__`:
+
+```python
+create_datasource_for_org(
+    org_id=3,
+    name="PostgreSQL",
+    uid="ds_acme",
+    user="acme",
+    password="change-me-in-production",
+)
+copy_dashboards_to_org(target_org_id=3, source_org_id=1)
+```
+
+Mount the patched script via `docker-compose.override.yml`:
+
+```yaml
+services:
+  init_grafana:
+    volumes:
+      - ./grafana/init_grafana.py:/app/init_grafana.py:ro
+```
+
+#### 3. Webserver users — mount an overridden `users.json`
+
+The deployment repo should provide its own `webserver/configs/users.json`
+(already live-mounted, no rebuild needed):
+
+```json
+{
+    "demo_openmrg":        { "password_hash": "scrypt:...", "display_name": "OpenMRG Demo",      "grafana_org_id": 1 },
+    "demo_orange_cameroun":{ "password_hash": "scrypt:...", "display_name": "Orange Cameroun Demo","grafana_org_id": 2 },
+    "acme":                { "password_hash": "scrypt:...", "display_name": "Acme Corp",           "grafana_org_id": 3 }
+}
+```
+
+Generate a password hash with:
+
+```sh
+docker compose run --rm webserver python3 -c \
+  "from werkzeug.security import generate_password_hash; print(generate_password_hash('your-password'))"
+```
+
+#### 4. SFTP keys — mount from the deployment repo
+
+The `sftp_receiver` reads authorised keys from `ssh_keys/authorized_keys` and
+per-user key directories.  Add the new tenant's public key there via the
+deployment repo's volume mounts in `docker-compose.override.yml`.
+
+#### 5. Apply and restart
+
+```sh
+# Apply the DB migration (only needed once per database volume lifetime)
+docker compose exec -T database psql -U myuser -d mydatabase \
+  < migrations/008_add_acme.sql
+
+# Restart so init_grafana re-runs bootstrap (creates org 3, datasource, copies dashboards)
+docker compose restart init_grafana
+# Or on a fresh stack: docker compose up -d
+```
+
+`init_grafana` is idempotent — re-running it on an existing stack is safe.
+
