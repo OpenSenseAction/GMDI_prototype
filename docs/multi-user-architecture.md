@@ -2,18 +2,19 @@
 
 ## Status
 
-PRs 1–2 are merged. The database schema and isolation model are in place.
-PRs 3–7 remain and are described below.
+PRs 1–5 are merged. The database schema, isolation model, and webserver login are in place.
+PRs 6–8 remain and are described below.
 
 | PR | Branch | Status | Scope |
 |----|--------|--------|-------|
 | 1 | `feat/db-add-user-id` | merged | `user_id` columns, updated aggregate + compression |
 | 2 | `feat/db-roles-rls` | merged | Roles, RLS, security-barrier views |
-| 3 | `feat/parser-user-id` | **next** | Parser injects `user_id`; removes compat defaults |
-| 4 | `feat/sftp-multi-user` | not started | Per-user SFTP dirs, volumes, parser instances |
-| 5 | `feat/webserver-auth` | not started | Login, session, DB role switching — go-live milestone |
+| 3 | `feat/parser-user-id` | merged | Parser injects `user_id`; removes compat defaults |
+| 4 | `feat/sftp-multi-user` | merged | Per-user SFTP dirs, volumes, parser instances |
+| 5 | `feat/webserver-auth` | merged | Login, session, DB role switching — go-live milestone |
 | 6 | `feat/web-api-upload` | not started | HTTP API upload + drag-and-drop |
 | 7 | `feat/user-onboarding` | not started | `add_user.sh`, docs |
+| 8 | `feat/grafana-auth-proxy` | not started | Per-user Grafana datasources + auth proxy header |
 
 ---
 
@@ -557,13 +558,115 @@ No second user should be onboarded until this is resolved.
 
 ---
 
+## PR8 — `feat/grafana-auth-proxy`
+
+**Goal:** Grafana dashboards are scoped to the logged-in user without a separate Grafana login.
+Users retain full interactive dashboard access and can build their own panels.
+
+### Known gap (until this PR)
+
+Grafana currently connects as `myuser` (superuser) and sees all tenants' data regardless of
+which user is logged in to the webserver. The `/grafana/` proxy is gated by `@login_required`
+(PR5), so unauthenticated access is blocked, but data isolation within Grafana is not enforced.
+
+### Approach — Grafana auth proxy + per-user datasources
+
+Grafana's [Auth Proxy](https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/configure-authentication/auth-proxy/)
+mode trusts an upstream header (`X-WEBAUTH-USER`) set by a reverse proxy or, in our case, the
+Flask `/grafana/` proxy. Grafana auto-provisions a Grafana user on first login and maps them to
+an org/team. Combined with per-user PostgreSQL datasources (each connecting as the matching PG
+role), queries are automatically scoped to that user's data via RLS and security-barrier views.
+
+**Data isolation chain:**
+```
+Flask session → X-WEBAUTH-USER header → Grafana user → per-user datasource → PG role → RLS
+```
+
+### Changes
+
+**`grafana/provisioning/datasources/postgres.yml`** — replace single `myuser` datasource with
+one datasource per user:
+
+```yaml
+apiVersion: 1
+datasources:
+  - name: demo_openmrg
+    uid: ds_demo_openmrg
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: database:5432
+    database: mydatabase
+    user: demo_openmrg
+    secureJsonData:
+      password: <demo_openmrg password>
+    jsonData:
+      sslmode: disable
+
+  - name: demo_orange_cameroun
+    uid: ds_demo_orange_cameroun
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: database:5432
+    database: mydatabase
+    user: demo_orange_cameroun
+    secureJsonData:
+      password: <demo_orange_cameroun password>
+    jsonData:
+      sslmode: disable
+```
+
+**`grafana/provisioning/datasources/postgres.yml`** — also keep an admin datasource connecting
+as `webserver_role` for cross-tenant dashboards used by operators.
+
+**`docker-compose.yml` — Grafana environment:**
+
+```yaml
+  grafana:
+    environment:
+      - GF_AUTH_PROXY_ENABLED=true
+      - GF_AUTH_PROXY_HEADER_NAME=X-WEBAUTH-USER
+      - GF_AUTH_PROXY_HEADER_PROPERTY=username
+      - GF_AUTH_PROXY_AUTO_SIGN_UP=true
+      - GF_AUTH_PROXY_WHITELIST=webserver  # only accept header from the webserver container
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+```
+
+**`webserver/main.py` — inject header in Grafana proxy:**
+
+```python
+@app.route("/grafana/", defaults={"path": ""}, methods=[...])
+@app.route("/grafana/<path:path>", methods=[...])
+@login_required
+def grafana_proxy(path):
+    headers = {k: v for k, v in request.headers if k.lower() != "host"}
+    headers["X-WEBAUTH-USER"] = current_user.id   # inject identity
+    ...
+```
+
+### Onboarding impact
+
+`scripts/add_user.sh` (PR7) must also provision the Grafana datasource and add a `GF_`
+environment variable or Grafana API call to create the user's org/team mapping.
+
+### Security notes
+
+- `GF_AUTH_PROXY_WHITELIST` must restrict the trusted header to the webserver container IP/name
+  so external clients cannot forge `X-WEBAUTH-USER`.
+- Grafana datasource passwords are dev defaults; rotate before production.
+- Per-user datasources connecting as PG login roles provide the same DB-level isolation as the
+  webserver (RLS on `cml_metadata`/`cml_stats`, security-barrier views for `cml_data`).
+
+---
+
 ## Success criteria
 
 - Each user's `cml_metadata` and `cml_stats` rows are invisible to other user roles (RLS).
 - Each user role cannot read `cml_data` directly; only `cml_data_secure` is accessible.
 - `webserver_role` without `SET ROLE` can read all tenants' metadata and stats (admin path).
 - After `SET ROLE user1`, all queries on `cml_data_secure` and `cml_data_1h_secure` return only `user_id = 'user1'` rows.
-- The webserver requires login on all routes (PR5).
+- The webserver requires login on all routes (PR5). ✓
 - A second user can be fully onboarded without touching the running DB schema (PR7).
+- Grafana dashboards are scoped to the logged-in user; no cross-tenant data visible (PR8).
 - Database RAM stays ≤ 3 GB for 10 users (compression + aggregate already in place).
 
