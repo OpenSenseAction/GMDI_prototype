@@ -74,3 +74,13 @@ def test_logout_redirects_to_login(client):
     resp = client.get("/logout")
     assert resp.status_code == 302
     assert "login" in resp.headers["Location"]
+
+
+def test_logout_when_authenticated_clears_session(client, test_user):
+    username, password = test_user
+    client.post("/login", data={"username": username, "password": password})
+    resp = client.get("/logout")
+    assert resp.status_code == 302
+    assert "login" in resp.headers["Location"]
+    # Session is cleared: next protected request redirects again
+    assert client.get("/").status_code == 302
