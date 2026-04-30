@@ -231,8 +231,6 @@ services:
 
   grafana:
     image: grafana/grafana:latest
-    ports:
-      - "3000:3000"
     depends_on:
       - database
     environment:
@@ -251,9 +249,8 @@ services:
       - GF_AUTH_PROXY_HEADER_NAME=X-WEBAUTH-USER
       - GF_AUTH_PROXY_HEADER_PROPERTY=username
       - GF_AUTH_PROXY_AUTO_SIGN_UP=true
-      # Restrict trusted header to requests coming from the webserver container.
-      # In Docker Compose the value is the service hostname; Grafana resolves it.
-      - GF_AUTH_PROXY_WHITELIST=webserver
+      # No whitelist needed: port 3000 is not exposed to the host, so only
+      # containers in the same Docker Compose network can reach Grafana.
       - GF_AUTH_DISABLE_LOGIN_FORM=true
       - GF_AUTH_ANONYMOUS_ENABLED=false
     volumes:
