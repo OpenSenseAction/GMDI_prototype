@@ -648,6 +648,91 @@ def archive():
 # ==================== DATA UPLOADS ROUTES ====================
 
 
+@app.route("/pipeline-log")
+@login_required
+def pipeline_log():
+    """File processing log explorer — filterable, paginated."""
+    STATUS_OPTIONS = ["", "archived", "quarantined"]
+    per_page = 50
+
+    status_filter = request.args.get("status", "")
+    search = request.args.get("search", "").strip()
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except ValueError:
+        page = 1
+
+    if status_filter not in STATUS_OPTIONS:
+        status_filter = ""
+
+    rows = []
+    total = 0
+    stats = {"archived": 0, "quarantined": 0, "total_rows_written": 0}
+
+    try:
+        with user_db_scope(current_user.id) as conn:
+            cur = conn.cursor()
+
+            # Summary counts (always over all time for this user)
+            cur.execute(
+                """
+                SELECT
+                    COUNT(*) FILTER (WHERE status = 'archived')    AS archived,
+                    COUNT(*) FILTER (WHERE status = 'quarantined') AS quarantined,
+                    COALESCE(SUM(rows_written) FILTER (WHERE status = 'archived'), 0) AS total_rows
+                FROM file_processing_log
+                """
+            )
+            r = cur.fetchone()
+            stats = {"archived": r[0], "quarantined": r[1], "total_rows_written": r[2]}
+
+            # Build filtered query
+            conditions = []
+            params = []
+            if status_filter:
+                conditions.append("status = %s")
+                params.append(status_filter)
+            if search:
+                conditions.append("filename ILIKE %s")
+                params.append(f"%{search}%")
+
+            where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+
+            cur.execute(f"SELECT COUNT(*) FROM file_processing_log {where}", params)
+            total = cur.fetchone()[0]
+
+            offset = (page - 1) * per_page
+            cur.execute(
+                f"""
+                SELECT id, filename, status, rows_written, error_message, processed_at
+                FROM file_processing_log
+                {where}
+                ORDER BY processed_at DESC
+                LIMIT %s OFFSET %s
+                """,
+                params + [per_page, offset],
+            )
+            rows = cur.fetchall()
+    except Exception as e:
+        flash(f"Database error: {escape(str(e))}")
+
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    return render_template(
+        "pipeline_log.html",
+        rows=rows,
+        stats=stats,
+        status_filter=status_filter,
+        search=search,
+        page=page,
+        total=total,
+        total_pages=total_pages,
+        per_page=per_page,
+    )
+
+
+# ==================== DATA UPLOADS ROUTES ====================
+
+
 @app.route("/data-uploads")
 @login_required
 def data_uploads():

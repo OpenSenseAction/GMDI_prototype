@@ -133,6 +133,24 @@ def main():
                 logger.info("Continuing without SFTP upload")
                 sftp_uploader = None
 
+    # Apply environment variable overrides for generator settings
+    if os.getenv("GENERATION_FREQUENCY_SECONDS"):
+        config["generator"]["generation_frequency_seconds"] = int(
+            os.getenv("GENERATION_FREQUENCY_SECONDS")
+        )
+    if os.getenv("TIMESTAMPS_PER_FILE"):
+        config["generator"]["timestamps_per_file"] = int(
+            os.getenv("TIMESTAMPS_PER_FILE")
+        )
+    if os.getenv("TIME_RESOLUTION_SECONDS"):
+        config["generator"]["time_resolution_seconds"] = int(
+            os.getenv("TIME_RESOLUTION_SECONDS")
+        )
+    if os.getenv("UPLOAD_FREQUENCY_SECONDS"):
+        config["sftp"]["upload_frequency_seconds"] = int(
+            os.getenv("UPLOAD_FREQUENCY_SECONDS")
+        )
+
     # Get upload frequency
     upload_frequency = config["sftp"]["upload_frequency_seconds"]
     last_upload_time = time.time()
