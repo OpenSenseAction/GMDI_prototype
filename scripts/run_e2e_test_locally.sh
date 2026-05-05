@@ -52,7 +52,7 @@ echo ""
 echo "=== Step 3: Start services ==="
 export OPENMRG_NETCDF_FILE=/app/example_data/openMRG_cmls_20150827_12hours.nc
 export OPENMRG_NETCDF_FILE_URL=
-docker compose up -d database sftp_receiver parser_openmrg webserver mno_simulator_openmrg
+docker compose up -d database sftp_receiver parser_demo_openmrg_main webserver mno_simulator_openmrg
 echo "Waiting 10 seconds for services to initialize..."
 sleep 10
 echo ""
@@ -100,19 +100,19 @@ echo ""
 
 echo "=== Step 7: Check directories ==="
 echo "SFTP uploads directory:"
-docker compose exec -T sftp_receiver ls -la /home/demo_openmrg/uploads/ || echo "ERROR: Could not list SFTP directory"
+docker compose exec -T sftp_receiver ls -la /home/demo_openmrg/uploads/main/ || echo "ERROR: Could not list SFTP directory"
 echo ""
 
 echo "Parser incoming directory:"
-docker compose exec -T parser_openmrg ls -la /app/data/incoming/ || echo "ERROR: Could not list parser directory"
+docker compose exec -T parser_demo_openmrg_main ls -la /app/data/incoming/ || echo "ERROR: Could not list parser directory"
 echo ""
 
 echo "Parser archived directory:"
-docker compose exec -T parser_openmrg ls -la /app/data/archived/ 2>/dev/null || echo "No archived files yet"
+docker compose exec -T parser_demo_openmrg_main ls -la /app/data/archived/ 2>/dev/null || echo "No archived files yet"
 echo ""
 
 echo "Parser quarantine directory:"
-docker compose exec -T parser_openmrg ls -la /app/data/quarantine/ 2>/dev/null || echo "No quarantined files yet"
+docker compose exec -T parser_demo_openmrg_main ls -la /app/data/quarantine/ 2>/dev/null || echo "No quarantined files yet"
 echo ""
 
 echo "=== Step 8: Check database ==="
@@ -123,7 +123,7 @@ echo ""
 
 echo "=== Step 9: Show recent logs ==="
 echo "--- Parser logs (last 30 lines) ---"
-docker compose logs --tail=30 parser_openmrg
+docker compose logs --tail=30 parser_demo_openmrg_main
 echo ""
 
 echo "--- MNO Simulator logs (last 30 lines) ---"
