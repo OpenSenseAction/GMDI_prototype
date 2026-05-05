@@ -5,7 +5,7 @@ This module is designed for unit testing and reuse.
 
 from pathlib import Path
 import logging
-from typing import List
+from typing import Dict, List
 import pandas as pd
 from .parsers.demo_csv_data.parse_raw import parse_rawdata_csv
 from .parsers.demo_csv_data.parse_metadata import parse_metadata_csv
@@ -41,12 +41,14 @@ def process_rawdata_files_batch(
         dfs: List[pd.DataFrame] = []
         parsed_files: List[Path] = []
         failed_files: List[Path] = []
+        file_row_counts: Dict[Path, int] = {}
 
         for filepath in batch:
             try:
                 df = parse_rawdata_csv(filepath)
                 if df is not None and not df.empty:
                     dfs.append(df)
+                    file_row_counts[filepath] = len(df)
                     parsed_files.append(filepath)
                 else:
                     failed_files.append(filepath)
@@ -56,7 +58,14 @@ def process_rawdata_files_batch(
 
         for filepath in failed_files:
             if filepath.exists():
-                file_manager.quarantine_file(filepath, "Parse error during batch processing")
+                file_manager.quarantine_file(
+                    filepath, "Parse error during batch processing"
+                )
+            db_writer.log_file_event(
+                filepath.name,
+                "quarantined",
+                error_message="Parse error during batch processing",
+            )
 
         if not dfs:
             logger.info("Batch %d: no parseable files, skipping write", batch_num)
@@ -75,6 +84,11 @@ def process_rawdata_files_batch(
             )
             for filepath in parsed_files:
                 file_manager.archive_file(filepath)
+                db_writer.log_file_event(
+                    filepath.name,
+                    "archived",
+                    rows_written=file_row_counts.get(filepath),
+                )
         except Exception:
             logger.exception(
                 "Batch %d write failed; %d files remain in incoming for retry",
@@ -104,7 +118,9 @@ def process_cml_file(filepath: Path, db_writer, file_manager, logger=None):
         db_writer.connect()
     except Exception as e:
         logger.exception("Failed to connect to DB")
-        file_manager.quarantine_file(filepath, f"DB connection failed: {e}")
+        error_msg = f"DB connection failed: {e}"
+        file_manager.quarantine_file(filepath, error_msg)
+        db_writer.log_file_event(filepath.name, "quarantined", error_message=error_msg)
         raise
 
     try:
@@ -113,6 +129,7 @@ def process_cml_file(filepath: Path, db_writer, file_manager, logger=None):
             rows = db_writer.write_metadata(df)
             logger.info(f"Wrote {rows} metadata rows from {filepath.name}")
             file_manager.archive_file(filepath)
+            db_writer.log_file_event(filepath.name, "archived", rows_written=rows)
             return "metadata"
         elif "raw" in name or "data" in name:
             df = parse_rawdata_csv(filepath)
@@ -130,13 +147,17 @@ def process_cml_file(filepath: Path, db_writer, file_manager, logger=None):
                 )
             logger.info(f"Wrote {rows} data rows from {filepath.name}")
             file_manager.archive_file(filepath)
+            db_writer.log_file_event(filepath.name, "archived", rows_written=rows)
             return "rawdata"
         else:
-            file_manager.quarantine_file(
-                filepath, f"Unsupported file type: {filepath.name}"
+            error_msg = f"Unsupported file type: {filepath.name}"
+            file_manager.quarantine_file(filepath, error_msg)
+            db_writer.log_file_event(
+                filepath.name, "quarantined", error_message=error_msg
             )
             return "unsupported"
     except Exception as e:
         logger.exception("Error handling file")
         file_manager.quarantine_file(filepath, str(e))
+        db_writer.log_file_event(filepath.name, "quarantined", error_message=str(e))
         raise

@@ -31,7 +31,9 @@ class DBWriter:
         db.close()
     """
 
-    def __init__(self, db_url: str, user_id: str = "demo_openmrg", connect_timeout: int = 10):
+    def __init__(
+        self, db_url: str, user_id: str = "demo_openmrg", connect_timeout: int = 10
+    ):
         self.db_url = db_url
         self.user_id = user_id
         self.connect_timeout = connect_timeout
@@ -311,6 +313,54 @@ class DBWriter:
             raise
 
         return rows_written
+
+    def log_file_event(
+        self,
+        filename: str,
+        status: str,
+        rows_written: Optional[int] = None,
+        error_message: Optional[str] = None,
+    ) -> None:
+        """Insert one row into file_processing_log.
+
+        Best-effort: logs and swallows exceptions so a logging failure never
+        disrupts the main processing path.
+
+        Args:
+            filename: Bare filename (no path).
+            status: 'archived' or 'quarantined'.
+            rows_written: Number of DB rows written (None for metadata / quarantined files).
+            error_message: Human-readable error string for quarantined files.
+        """
+        if not self.is_connected():
+            try:
+                self.connect()
+            except Exception:
+                logger.warning(
+                    "log_file_event: could not connect, skipping log for %s", filename
+                )
+                return
+
+        cur = self.conn.cursor()
+        try:
+            cur.execute(
+                "INSERT INTO file_processing_log "
+                "(user_id, filename, status, rows_written, error_message) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (self.user_id, filename, status, rows_written, error_message),
+            )
+            self.conn.commit()
+        except Exception:
+            logger.exception(
+                "Failed to write file_processing_log entry for %s", filename
+            )
+            try:
+                self.conn.rollback()
+            except Exception:
+                pass
+        finally:
+            if cur and not cur.closed:
+                cur.close()
 
     def refresh_stats(self) -> None:
         """Recalculate cml_stats for all known CMLs. Intended to be called
