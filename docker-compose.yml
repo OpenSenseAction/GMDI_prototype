@@ -26,7 +26,8 @@ services:
     build: ./mno_data_source_simulator
     restart: unless-stopped
     depends_on:
-      - sftp_receiver
+      sftp_receiver:
+        condition: service_healthy
     volumes:
       - ./parser/example_data:/app/example_data  # writable so the file can be downloaded
       - mno_openmrg_data_to_upload:/app/data_to_upload
@@ -47,7 +48,8 @@ services:
     build: ./mno_data_source_simulator
     restart: unless-stopped
     depends_on:
-      - sftp_receiver
+      sftp_receiver:
+        condition: service_healthy
     volumes:
       - ./parser/example_data:/app/example_data:ro
       - mno_orange_cameroun_data_to_upload:/app/data_to_upload
@@ -214,6 +216,12 @@ services:
       - ./sftp_receiver/entrypoint.sh:/custom-entrypoint.sh:ro
     entrypoint: ["/custom-entrypoint.sh"]
     command: ["demo_openmrg::1001:1001:uploads", "demo_orange_cameroun::1002:1002:uploads"]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "22"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   # Optional: MinIO for S3-compatible object storage (uncomment to use)
   # minio:
