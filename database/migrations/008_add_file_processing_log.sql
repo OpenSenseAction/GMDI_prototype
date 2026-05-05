@@ -22,19 +22,18 @@ CREATE INDEX IF NOT EXISTS file_processing_log_status_time_idx
     ON file_processing_log (status, processed_at DESC);
 
 -- Row-Level Security: each login role only sees its own rows (user_id = current_user).
--- myuser (superuser) bypasses RLS so the parser continues to INSERT without restriction.
+-- The parser connects as the per-user role, so RLS is enforced; INSERT is permitted
+-- because the user_id column must equal current_user (guaranteed by the parser).
 ALTER TABLE file_processing_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE file_processing_log FORCE ROW LEVEL SECURITY;
 CREATE POLICY user_isolation ON file_processing_log
     USING (user_id = current_user);
 
--- Grant read access to all user roles so Grafana dashboards can query this table.
--- Each role connects to Postgres as their own login (demo_openmrg, demo_orange_cameroun)
--- and Grafana reads the log for that org's datasource.
--- webserver_role needs it for any admin views.
-GRANT SELECT ON file_processing_log TO demo_openmrg, demo_orange_cameroun, webserver_role;
+-- Grant read+write access to user roles: the parser connects as the per-user
+-- role (e.g. demo_openmrg) and INSERTs a log entry for every processed file.
+-- webserver_role only needs SELECT (read-only admin/dashboard view).
+GRANT SELECT, INSERT ON file_processing_log TO demo_openmrg, demo_orange_cameroun;
+GRANT SELECT            ON file_processing_log TO webserver_role;
 
--- Sequence used by the BIGSERIAL primary key: needed for INSERTs by the parser
--- (which connects as myuser/superuser, so this is a no-op in practice,
--- but keeps the intent explicit for future role changes).
+-- Sequence used by the BIGSERIAL primary key: required for INSERT by user roles.
 GRANT USAGE ON SEQUENCE file_processing_log_id_seq TO demo_openmrg, demo_orange_cameroun;
