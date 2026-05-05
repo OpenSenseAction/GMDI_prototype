@@ -16,8 +16,22 @@ import main as wm  # noqa: E402
 # Helpers / fixtures
 # ---------------------------------------------------------------------------
 
-_LOG_ROW = (1, "cml_data_20260505.csv", "archived", 756, None, datetime(2026, 5, 5, 9, 0))
-_LOG_ROW_Q = (2, "bad_file.csv", "quarantined", None, "Parse error", datetime(2026, 5, 5, 8, 0))
+_LOG_ROW = (
+    1,
+    "cml_data_20260505.csv",
+    "archived",
+    756,
+    None,
+    datetime(2026, 5, 5, 9, 0),
+)
+_LOG_ROW_Q = (
+    2,
+    "bad_file.csv",
+    "quarantined",
+    None,
+    "Parse error",
+    datetime(2026, 5, 5, 8, 0),
+)
 _STATS = (10, 2, 5000)  # archived, quarantined, total_rows
 
 
