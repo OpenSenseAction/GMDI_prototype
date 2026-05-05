@@ -462,7 +462,9 @@ class SFTPUploader:
             except (paramiko.SSHException, OSError) as e:
                 logger.error(f"Connection error uploading {file_path.name}: {e}")
                 if reconnect_attempted:
-                    logger.error("Connection still unstable after reconnect; aborting batch")
+                    logger.error(
+                        "Connection still unstable after reconnect; aborting batch"
+                    )
                     break
                 reconnect_attempted = True
                 if not self.reconnect():
@@ -472,10 +474,14 @@ class SFTPUploader:
                 try:
                     self.upload_file(str(file_path))
                     file_path.unlink()
-                    logger.info(f"Deleted {file_path.name} after upload (after reconnect)")
+                    logger.info(
+                        f"Deleted {file_path.name} after upload (after reconnect)"
+                    )
                     uploaded_count += 1
                 except Exception as retry_e:
-                    logger.error(f"Retry after reconnect failed for {file_path.name}: {retry_e}")
+                    logger.error(
+                        f"Retry after reconnect failed for {file_path.name}: {retry_e}"
+                    )
                     continue
             except Exception as e:
                 logger.error(f"Unexpected error uploading {file_path.name}: {e}")

@@ -438,8 +438,9 @@ def test_reconnect_close_raises_still_attempts_connect(test_dirs, mock_sftp):
     uploader = _make_uploader(test_dirs)
     uploader.connect()
 
-    with patch.object(uploader, "close", side_effect=OSError("close error")), \
-         patch.object(uploader, "connect") as mock_connect:
+    with patch.object(
+        uploader, "close", side_effect=OSError("close error")
+    ), patch.object(uploader, "connect") as mock_connect:
         result = uploader.reconnect()
 
     assert result is True
@@ -483,8 +484,9 @@ def test_upload_reconnects_when_disconnected_at_start(
 
     # Upfront check: False → reconnect → then per-file checks: all True
     is_connected_seq = [False, True, True, True]
-    with patch.object(uploader, "_is_connected", side_effect=is_connected_seq), \
-         patch.object(uploader, "reconnect", return_value=True):
+    with patch.object(
+        uploader, "_is_connected", side_effect=is_connected_seq
+    ), patch.object(uploader, "reconnect", return_value=True):
         count = uploader.upload_pending_files()
 
     assert count == 3
@@ -506,8 +508,9 @@ def test_upload_aborts_mid_batch_when_transport_dies(
     #   call 2 (per-file, file 1)  → True  (upload succeeds)
     #   call 3 (per-file, file 2)  → False (transport died)
     is_connected_seq = [True, True, False]
-    with patch.object(uploader, "_is_connected", side_effect=is_connected_seq), \
-         patch.object(uploader, "reconnect", return_value=False):
+    with patch.object(
+        uploader, "_is_connected", side_effect=is_connected_seq
+    ), patch.object(uploader, "reconnect", return_value=False):
         count = uploader.upload_pending_files()
 
     # Only the first file uploaded before transport died
@@ -529,8 +532,9 @@ def test_upload_continues_after_successful_mid_batch_reconnect(
     #   call 3 (file 2)       → False  (transport lost)
     #   call 4 (file 3)       → True   (after reconnect)
     is_connected_seq = [True, True, False, True]
-    with patch.object(uploader, "_is_connected", side_effect=is_connected_seq), \
-         patch.object(uploader, "reconnect", return_value=True):
+    with patch.object(
+        uploader, "_is_connected", side_effect=is_connected_seq
+    ), patch.object(uploader, "reconnect", return_value=True):
         count = uploader.upload_pending_files()
 
     assert count == 3
@@ -653,7 +657,6 @@ def test_second_call_processes_remaining_files(test_dirs, sample_csv_files, mock
     assert first == 2
     assert second == 1
     assert len(list(Path(test_dirs["source"]).glob("*.csv"))) == 0
-
 
 
 def test_remote_directory_creation(test_dirs, mock_sftp):
