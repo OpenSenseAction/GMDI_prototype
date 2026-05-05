@@ -1,0 +1,46 @@
+# users.yml — single source of truth for all user configuration
+#
+# Run `python scripts/generate_config.py` after editing this file to
+# regenerate all derived artifacts:
+#   docker-compose.override.yml
+#   sftp_receiver/entrypoint.sh
+#   webserver/configs/users.json          (preserves existing password hashes)
+#   grafana/provisioning/datasources/postgres.yml
+#   grafana/init_grafana.py               (ORGS/USERS lists)
+#   database/migrations/NNN_add_<id>.sql  (only for new users)
+#   ssh_keys/<id>/                        (key pair generated if missing)
+#
+# Then commit the regenerated files alongside this one.
+#
+# Schema:
+#   id            — PostgreSQL role name = SFTP username = user_id in data rows.
+#                   The generic current_user RLS policy covers every role
+#                   automatically without per-user policy changes.
+#   uid           — Linux UID inside the SFTP container (must be unique).
+#   display_name  — Human-readable label shown in the webserver UI.
+#   grafana_org_id — Grafana organisation number (1-based; 1 = default org).
+#   sources       — List of independent CML subnetworks for this user.
+#     id          — Subdirectory name: /home/<user_id>/uploads/<source_id>/
+#     parser      — Selects which parser Docker image / config to use.
+#                   Supported: openmrg, orange_cameroun
+#
+# All sources of one user share the same user_id, so Grafana sees their
+# data unified.  Each source gets its own named Docker volume and parser
+# service (parser_<user_id>_<source_id>).
+
+users:
+  - id: demo_openmrg
+    uid: 1001
+    display_name: OpenMRG Demo
+    grafana_org_id: 1
+    sources:
+      - id: main
+        parser: openmrg
+
+  - id: demo_orange_cameroun
+    uid: 1002
+    display_name: Orange Cameroun Demo
+    grafana_org_id: 2
+    sources:
+      - id: douala
+        parser: orange_cameroun

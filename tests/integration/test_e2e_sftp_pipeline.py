@@ -32,7 +32,7 @@ RUNNING_IN_DOCKER = os.path.exists("/.dockerenv")
 SFTP_HOST = os.getenv("SFTP_HOST", "localhost")
 SFTP_PORT = int(os.getenv("SFTP_PORT", "2222"))
 SFTP_USERNAME = "demo_openmrg"
-SFTP_REMOTE_PATH = "/uploads"
+SFTP_REMOTE_PATH = "/uploads/main"
 SSH_KEY_PATH = "ssh_keys/id_rsa"
 KNOWN_HOSTS_PATH = "ssh_keys/known_hosts"
 

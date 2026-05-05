@@ -6,6 +6,7 @@ on:
     paths:
       - 'tests/**'
       - 'docker-compose.yml'
+      - 'docker-compose.override.yml'
       - 'parser/**'
       - 'webserver/**'
       - 'mno_data_source_simulator/**'
@@ -16,6 +17,7 @@ on:
     paths:
       - 'tests/**'
       - 'docker-compose.yml'
+      - 'docker-compose.override.yml'
       - 'parser/**'
       - 'webserver/**'
       - 'mno_data_source_simulator/**'
@@ -73,7 +75,7 @@ jobs:
         OPENMRG_NETCDF_FILE: /app/example_data/openMRG_cmls_20150827_12hours.nc
         OPENMRG_NETCDF_FILE_URL: ""
       run: |
-        docker compose up -d database sftp_receiver parser_openmrg webserver mno_simulator_openmrg
+        docker compose up -d database sftp_receiver parser_demo_openmrg_main webserver mno_simulator_openmrg
         sleep 10
     
     - name: Wait for services to be ready
@@ -106,11 +108,11 @@ jobs:
         
         # Check if files appeared in SFTP
         echo "Checking SFTP uploads directory..."
-        docker compose exec -T sftp_receiver ls -la /home/demo_openmrg/uploads/ || echo "Could not list SFTP directory"
+        docker compose exec -T sftp_receiver ls -la /home/demo_openmrg/uploads/main/ || echo "Could not list SFTP directory"
         
         # Check if parser sees the files
         echo "Checking parser incoming directory..."
-        docker compose exec -T parser_openmrg ls -la /app/data/incoming/ || echo "Could not list parser directory"
+        docker compose exec -T parser_demo_openmrg_main ls -la /app/data/incoming/ || echo "Could not list parser directory"
         
         echo "All services are ready"
     
@@ -134,7 +136,7 @@ jobs:
         
         echo ""
         echo "=== Parser Logs ==="
-        docker compose logs parser_openmrg
+        docker compose logs parser_demo_openmrg_main
         
         echo ""
         echo "=== Webserver Logs ==="
@@ -146,19 +148,19 @@ jobs:
         
         echo ""
         echo "=== SFTP Directory Contents ==="
-        docker compose exec -T sftp_receiver ls -la /home/cml_user/uploads/ || echo "Could not access SFTP directory"
+        docker compose exec -T sftp_receiver ls -la /home/demo_openmrg/uploads/main/ || echo "Could not access SFTP directory"
         
         echo ""
         echo "=== Parser Incoming Directory Contents ==="
-        docker compose exec -T parser_openmrg ls -la /app/data/incoming/ || echo "Could not access parser directory"
+        docker compose exec -T parser_demo_openmrg_main ls -la /app/data/incoming/ || echo "Could not access parser directory"
         
         echo ""
         echo "=== Parser Archived Directory Contents ==="
-        docker compose exec -T parser_openmrg ls -la /app/data/archived/ || echo "Could not access parser archived directory"
+        docker compose exec -T parser_demo_openmrg_main ls -la /app/data/archived/ || echo "Could not access parser archived directory"
         
         echo ""
         echo "=== Parser Quarantine Directory Contents ==="
-        docker compose exec -T parser_openmrg ls -la /app/data/quarantine/ || echo "Could not access parser quarantine directory"
+        docker compose exec -T parser_demo_openmrg_main ls -la /app/data/quarantine/ || echo "Could not access parser quarantine directory"
     
     - name: Cleanup
       if: always()

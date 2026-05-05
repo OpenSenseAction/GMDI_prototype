@@ -4,12 +4,12 @@ Grafana bootstrap script — run once at stack startup.
 Creates the per-tenant Grafana Organisations and pre-creates Grafana users so
 each user is automatically placed in their correct org with Viewer role.
 
-Layout:
-  Org 1  (default, id=1)  — demo_openmrg
-  Org 2                   — demo_orange_cameroun
+ORGS and USERS are generated from users.yml by scripts/generate_config.py.
+Do not edit them by hand — run the generator instead.
 
 Org 1 datasource is provisioned from grafana/provisioning/datasources/postgres.yml.
-Org 2 datasource and dashboards are created via the Grafana API by this script.
+Datasources for additional orgs are created via the Grafana API by this script
+(those orgs do not exist when Grafana starts, so provisioning cannot cover them).
 """
 
 import sys
@@ -251,21 +251,25 @@ if __name__ == "__main__":
     rename_default_org()
     for org in ORGS[1:]:  # org 1 always exists; create 2+
         get_or_create_org(org["id"], org["name"])
-    # Create datasource for org 2 via API (cannot use provisioning file as org 2
-    # does not exist when Grafana starts)
-    create_datasource_for_org(
-        org_id=2,
-        name="PostgreSQL",
-        uid="ds_demo_orange_cameroun",
-        user="demo_orange_cameroun",
-        password="demo_orange_cameroun_password",
-    )
-    # Reload provisioning (dashboards for org 1)
+    # Create a datasource via API for every org whose id > 1.
+    # Org 1 datasource is provisioned from the YAML file (postgres.yml); it
+    # cannot be provisioned here because provisioning runs before init_grafana.
+    # Additional orgs do not exist until this script creates them, so their
+    # datasources must be created via the API after the org exists.
+    for org in ORGS[1:]:
+        create_datasource_for_org(
+            org_id=org["id"],
+            name="PostgreSQL",
+            uid=f'ds_{org["name"]}',
+            user=org["name"],
+            password=f'{org["name"]}_password',
+        )
+    # Reload provisioning then copy dashboards from org 1 into all other orgs
     time.sleep(2)
     trigger_provisioning_reload()
     time.sleep(2)
-    # Copy dashboards from org 1 into org 2
-    copy_dashboards_to_org(target_org_id=2, source_org_id=1)
+    for org in ORGS[1:]:
+        copy_dashboards_to_org(target_org_id=org["id"], source_org_id=1)
     for user in USERS:
         get_or_create_user(user["login"], user["org_id"], user["role"])
     print("Grafana bootstrap complete.")
