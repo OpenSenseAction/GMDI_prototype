@@ -698,9 +698,7 @@ def pipeline_log():
 
             where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
-            cur.execute(
-                f"SELECT COUNT(*) FROM file_processing_log {where}", params
-            )
+            cur.execute(f"SELECT COUNT(*) FROM file_processing_log {where}", params)
             total = cur.fetchone()[0]
 
             offset = (page - 1) * per_page
