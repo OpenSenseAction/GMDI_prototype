@@ -82,7 +82,7 @@ The integration tests validate different aspects of the data pipeline. Tests fal
 **Type:** Infrastructure test  
 **Purpose:** Confirms SFTP uploads directory has correct permissions  
 **What it checks:**
-- Write permissions on `/uploads` directory
+- Write permissions on `/uploads/main` directory
 - File creation succeeds
 - File cleanup works
 
