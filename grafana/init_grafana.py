@@ -4,12 +4,12 @@ Grafana bootstrap script — run once at stack startup.
 Creates the per-tenant Grafana Organisations and pre-creates Grafana users so
 each user is automatically placed in their correct org with Viewer role.
 
-Layout:
-  Org 1  (default, id=1)  — demo_openmrg
-  Org 2                   — demo_orange_cameroun
+ORGS and USERS are generated from users.yml by scripts/generate_config.py.
+Do not edit them by hand — run the generator instead.
 
 Org 1 datasource is provisioned from grafana/provisioning/datasources/postgres.yml.
-Org 2 datasource and dashboards are created via the Grafana API by this script.
+Datasources for additional orgs are created via the Grafana API by this script
+(those orgs do not exist when Grafana starts, so provisioning cannot cover them).
 """
 
 import sys
@@ -256,15 +256,13 @@ if __name__ == "__main__":
     # cannot be provisioned here because provisioning runs before init_grafana.
     # Additional orgs do not exist until this script creates them, so their
     # datasources must be created via the API after the org exists.
-    for org_user in USERS:
-        if org_user["org_id"] == 1:
-            continue
+    for org in ORGS[1:]:
         create_datasource_for_org(
-            org_id=org_user["org_id"],
+            org_id=org["id"],
             name="PostgreSQL",
-            uid=f'ds_{org_user["login"]}',
-            user=org_user["login"],
-            password=f'{org_user["login"]}_password',
+            uid=f'ds_{org["name"]}',
+            user=org["name"],
+            password=f'{org["name"]}_password',
         )
     # Reload provisioning then copy dashboards from org 1 into all other orgs
     time.sleep(2)

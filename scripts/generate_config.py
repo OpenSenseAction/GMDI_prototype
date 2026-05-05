@@ -21,6 +21,7 @@ Outputs (all paths relative to the repository root):
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -463,8 +464,6 @@ def update_init_grafana(users: list[dict], init_grafana_path: Path) -> None:
 
 
 def ensure_ssh_keys(users: list[dict], ssh_keys_dir: Path) -> None:
-    import shutil
-
     keygen_available = shutil.which("ssh-keygen") is not None
     if not keygen_available:
         print(
