@@ -251,21 +251,27 @@ if __name__ == "__main__":
     rename_default_org()
     for org in ORGS[1:]:  # org 1 always exists; create 2+
         get_or_create_org(org["id"], org["name"])
-    # Create datasource for org 2 via API (cannot use provisioning file as org 2
-    # does not exist when Grafana starts)
-    create_datasource_for_org(
-        org_id=2,
-        name="PostgreSQL",
-        uid="ds_demo_orange_cameroun",
-        user="demo_orange_cameroun",
-        password="demo_orange_cameroun_password",
-    )
-    # Reload provisioning (dashboards for org 1)
+    # Create a datasource via API for every org whose id > 1.
+    # Org 1 datasource is provisioned from the YAML file (postgres.yml); it
+    # cannot be provisioned here because provisioning runs before init_grafana.
+    # Additional orgs do not exist until this script creates them, so their
+    # datasources must be created via the API after the org exists.
+    for org_user in USERS:
+        if org_user["org_id"] == 1:
+            continue
+        create_datasource_for_org(
+            org_id=org_user["org_id"],
+            name="PostgreSQL",
+            uid=f'ds_{org_user["login"]}',
+            user=org_user["login"],
+            password=f'{org_user["login"]}_password',
+        )
+    # Reload provisioning then copy dashboards from org 1 into all other orgs
     time.sleep(2)
     trigger_provisioning_reload()
     time.sleep(2)
-    # Copy dashboards from org 1 into org 2
-    copy_dashboards_to_org(target_org_id=2, source_org_id=1)
+    for org in ORGS[1:]:
+        copy_dashboards_to_org(target_org_id=org["id"], source_org_id=1)
     for user in USERS:
         get_or_create_user(user["login"], user["org_id"], user["role"])
     print("Grafana bootstrap complete.")
