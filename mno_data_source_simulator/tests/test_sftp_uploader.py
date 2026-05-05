@@ -19,15 +19,12 @@ def test_dirs():
     """Create temporary directories for testing."""
     tmp_base = tempfile.mkdtemp()
     source_dir = Path(tmp_base) / "data_to_upload"
-    archive_dir = Path(tmp_base) / "data_uploaded"
 
     source_dir.mkdir(parents=True, exist_ok=True)
-    archive_dir.mkdir(parents=True, exist_ok=True)
 
     yield {
         "base": tmp_base,
         "source": str(source_dir),
-        "archive": str(archive_dir),
     }
 
     shutil.rmtree(tmp_base)
@@ -95,7 +92,6 @@ def test_uploader_initialization(test_dirs):
         password="test_pass",
         remote_path="/upload",
         source_dir=test_dirs["source"],
-        archive_dir=test_dirs["archive"],
     )
 
     assert uploader.host == "localhost"
@@ -103,7 +99,6 @@ def test_uploader_initialization(test_dirs):
     assert uploader.username == "test_user"
     assert uploader.remote_path == "/upload"
     assert uploader.source_dir.exists()
-    assert uploader.archive_dir.exists()
 
 
 def test_uploader_connection(test_dirs, mock_sftp):
@@ -115,7 +110,6 @@ def test_uploader_connection(test_dirs, mock_sftp):
         password="test_pass",
         remote_path="/upload",
         source_dir=test_dirs["source"],
-        archive_dir=test_dirs["archive"],
     )
 
     uploader.connect()
@@ -149,7 +143,6 @@ def test_get_pending_files(test_dirs, sample_csv_files):
         password="test_pass",
         remote_path="/upload",
         source_dir=test_dirs["source"],
-        archive_dir=test_dirs["archive"],
     )
 
     pending = uploader.get_pending_files()
@@ -168,7 +161,6 @@ def test_get_pending_files_empty(test_dirs):
         password="test_pass",
         remote_path="/upload",
         source_dir=test_dirs["source"],
-        archive_dir=test_dirs["archive"],
     )
 
     pending = uploader.get_pending_files()
@@ -184,7 +176,6 @@ def test_upload_file(test_dirs, sample_csv_files, mock_sftp):
         password="test_pass",
         remote_path="/upload",
         source_dir=test_dirs["source"],
-        archive_dir=test_dirs["archive"],
     )
 
     uploader.connect()
@@ -209,7 +200,6 @@ def test_upload_dataframe_as_csv(test_dirs, mock_sftp):
         password="test_pass",
         remote_path="/upload",
         source_dir=test_dirs["source"],
-        archive_dir=test_dirs["archive"],
     )
 
     uploader.connect()
@@ -248,7 +238,6 @@ def test_upload_pending_files(test_dirs, sample_csv_files, mock_sftp):
         password="test_pass",
         remote_path="/upload",
         source_dir=test_dirs["source"],
-        archive_dir=test_dirs["archive"],
     )
 
     uploader.connect()
@@ -260,12 +249,9 @@ def test_upload_pending_files(test_dirs, sample_csv_files, mock_sftp):
     assert count == 3
     assert mock_sftp["sftp"].put.call_count == 3
 
-    # Verify files were moved to archive
+    # Verify files were deleted from source
     source_files = list(Path(test_dirs["source"]).glob("*.csv"))
-    archive_files = list(Path(test_dirs["archive"]).glob("*.csv"))
-
     assert len(source_files) == 0
-    assert len(archive_files) == 3
 
     uploader.close()
 
@@ -279,7 +265,6 @@ def test_upload_pending_files_no_connection(test_dirs, sample_csv_files):
         password="test_pass",
         remote_path="/upload",
         source_dir=test_dirs["source"],
-        archive_dir=test_dirs["archive"],
     )
 
     # Try to upload without connecting
@@ -296,7 +281,6 @@ def test_context_manager(test_dirs, mock_sftp):
         password="test_pass",
         remote_path="/upload",
         source_dir=test_dirs["source"],
-        archive_dir=test_dirs["archive"],
     ) as uploader:
         # Verify connection was established
         assert uploader.sftp is not None
@@ -315,7 +299,6 @@ def test_upload_with_connection_error(test_dirs):
         password="test_pass",
         remote_path="/upload",
         source_dir=test_dirs["source"],
-        archive_dir=test_dirs["archive"],
     )
 
     # Should raise exception on connection failure
@@ -334,7 +317,6 @@ def test_upload_continues_on_individual_file_error(
         password="test_pass",
         remote_path="/upload",
         source_dir=test_dirs["source"],
-        archive_dir=test_dirs["archive"],
     )
 
     uploader.connect()
@@ -373,7 +355,6 @@ def _make_uploader(test_dirs, **kwargs):
         password="test_pass",
         remote_path="/upload",
         source_dir=test_dirs["source"],
-        archive_dir=test_dirs["archive"],
     )
     defaults.update(kwargs)
     return SFTPUploader(**defaults)
@@ -457,8 +438,9 @@ def test_reconnect_close_raises_still_attempts_connect(test_dirs, mock_sftp):
     uploader = _make_uploader(test_dirs)
     uploader.connect()
 
-    with patch.object(uploader, "close", side_effect=OSError("close error")), \
-         patch.object(uploader, "connect") as mock_connect:
+    with patch.object(
+        uploader, "close", side_effect=OSError("close error")
+    ), patch.object(uploader, "connect") as mock_connect:
         result = uploader.reconnect()
 
     assert result is True
@@ -502,8 +484,9 @@ def test_upload_reconnects_when_disconnected_at_start(
 
     # Upfront check: False → reconnect → then per-file checks: all True
     is_connected_seq = [False, True, True, True]
-    with patch.object(uploader, "_is_connected", side_effect=is_connected_seq), \
-         patch.object(uploader, "reconnect", return_value=True):
+    with patch.object(
+        uploader, "_is_connected", side_effect=is_connected_seq
+    ), patch.object(uploader, "reconnect", return_value=True):
         count = uploader.upload_pending_files()
 
     assert count == 3
@@ -525,8 +508,9 @@ def test_upload_aborts_mid_batch_when_transport_dies(
     #   call 2 (per-file, file 1)  → True  (upload succeeds)
     #   call 3 (per-file, file 2)  → False (transport died)
     is_connected_seq = [True, True, False]
-    with patch.object(uploader, "_is_connected", side_effect=is_connected_seq), \
-         patch.object(uploader, "reconnect", return_value=False):
+    with patch.object(
+        uploader, "_is_connected", side_effect=is_connected_seq
+    ), patch.object(uploader, "reconnect", return_value=False):
         count = uploader.upload_pending_files()
 
     # Only the first file uploaded before transport died
@@ -548,8 +532,9 @@ def test_upload_continues_after_successful_mid_batch_reconnect(
     #   call 3 (file 2)       → False  (transport lost)
     #   call 4 (file 3)       → True   (after reconnect)
     is_connected_seq = [True, True, False, True]
-    with patch.object(uploader, "_is_connected", side_effect=is_connected_seq), \
-         patch.object(uploader, "reconnect", return_value=True):
+    with patch.object(
+        uploader, "_is_connected", side_effect=is_connected_seq
+    ), patch.object(uploader, "reconnect", return_value=True):
         count = uploader.upload_pending_files()
 
     assert count == 3
@@ -674,7 +659,6 @@ def test_second_call_processes_remaining_files(test_dirs, sample_csv_files, mock
     assert len(list(Path(test_dirs["source"]).glob("*.csv"))) == 0
 
 
-
 def test_remote_directory_creation(test_dirs, mock_sftp):
     """Test that remote directory is created if it doesn't exist."""
     uploader = SFTPUploader(
@@ -684,7 +668,6 @@ def test_remote_directory_creation(test_dirs, mock_sftp):
         password="test_pass",
         remote_path="/upload/cml_data",
         source_dir=test_dirs["source"],
-        archive_dir=test_dirs["archive"],
     )
 
     uploader.connect()

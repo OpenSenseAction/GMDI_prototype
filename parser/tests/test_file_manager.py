@@ -18,6 +18,7 @@ def test_archive_and_quarantine(tmp_path):
 
     archived_path = fm.archive_file(f)
     assert archived_path.exists()
+    assert archived_path.suffix == ".gz"
     assert not f.exists()
 
     # create a file to quarantine

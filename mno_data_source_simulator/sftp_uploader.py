@@ -7,7 +7,6 @@ This module handles uploading CML data to an SFTP server.
 import paramiko
 import io
 import logging
-import shutil
 import re
 import os
 from datetime import datetime
@@ -31,7 +30,6 @@ class SFTPUploader:
         known_hosts_path: Optional[str] = None,
         remote_path: str = "/upload",
         source_dir: str = "data_to_upload",
-        archive_dir: str = "data_uploaded",
         connection_timeout: int = 30,
         max_files_per_call: int = 200,
     ):
@@ -57,8 +55,6 @@ class SFTPUploader:
             Remote directory path where files will be uploaded.
         source_dir : str, optional
             Local directory to read files from (default: "data_to_upload").
-        archive_dir : str, optional
-            Local directory to move uploaded files to (default: "data_uploaded").
         connection_timeout : int, optional
             Connection timeout in seconds (default: 30).
         """
@@ -79,15 +75,12 @@ class SFTPUploader:
         self.remote_path = self._validate_remote_path(remote_path)
 
         self.source_dir = Path(source_dir)
-        self.archive_dir = Path(archive_dir)
         self.client: Optional[paramiko.SSHClient] = None
         self.sftp: Optional[paramiko.SFTPClient] = None
 
         # Create directories if they don't exist
         self.source_dir.mkdir(parents=True, exist_ok=True)
-        self.archive_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"Source directory: {self.source_dir}")
-        logger.info(f"Archive directory: {self.archive_dir}")
 
     def _validate_remote_path(self, path: str) -> str:
         """
@@ -405,7 +398,7 @@ class SFTPUploader:
     def upload_pending_files(self) -> int:
         """
         Upload all pending CSV files from source directory to SFTP server.
-        After successful upload, move files to archive directory.
+        After successful upload, delete files from the source directory.
 
         If the connection is lost mid-batch a single reconnect is attempted;
         the current file is retried once and uploading continues.  If the
@@ -457,10 +450,9 @@ class SFTPUploader:
                 # Upload the file
                 remote_file_path = self.upload_file(str(file_path))
 
-                # Move to archive directory
-                archive_path = self.archive_dir / file_path.name
-                shutil.move(str(file_path), str(archive_path))
-                logger.info(f"Moved {file_path.name} to archive")
+                # Delete after successful upload
+                file_path.unlink()
+                logger.info(f"Deleted {file_path.name} after upload")
 
                 uploaded_count += 1
 
@@ -470,7 +462,9 @@ class SFTPUploader:
             except (paramiko.SSHException, OSError) as e:
                 logger.error(f"Connection error uploading {file_path.name}: {e}")
                 if reconnect_attempted:
-                    logger.error("Connection still unstable after reconnect; aborting batch")
+                    logger.error(
+                        "Connection still unstable after reconnect; aborting batch"
+                    )
                     break
                 reconnect_attempted = True
                 if not self.reconnect():
@@ -479,12 +473,15 @@ class SFTPUploader:
                 # Retry this file with the fresh connection
                 try:
                     self.upload_file(str(file_path))
-                    archive_path = self.archive_dir / file_path.name
-                    shutil.move(str(file_path), str(archive_path))
-                    logger.info(f"Moved {file_path.name} to archive (after reconnect)")
+                    file_path.unlink()
+                    logger.info(
+                        f"Deleted {file_path.name} after upload (after reconnect)"
+                    )
                     uploaded_count += 1
                 except Exception as retry_e:
-                    logger.error(f"Retry after reconnect failed for {file_path.name}: {retry_e}")
+                    logger.error(
+                        f"Retry after reconnect failed for {file_path.name}: {retry_e}"
+                    )
                     continue
             except Exception as e:
                 logger.error(f"Unexpected error uploading {file_path.name}: {e}")

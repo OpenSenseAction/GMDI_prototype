@@ -10,7 +10,7 @@
 
 ### ✅ Unit Tests (`tests/test_sftp_uploader.py`, `tests/test_generator.py`, `tests/test_sftp_security.py`, `tests/test_main_auth.py`)
 - 48 total unit tests covering:
-  - SFTP uploader functionality (connection, uploads, error handling, file archiving)
+  - SFTP uploader functionality (connection, uploads, error handling, post-upload deletion)
   - Data generator (CSV generation, metadata, timestamp handling)
   - Security features (path validation, filename sanitization, authentication methods, host key verification, timeouts)
   - Authentication validation (password vs SSH key, explicit configuration)

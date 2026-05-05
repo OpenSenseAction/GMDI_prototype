@@ -18,15 +18,12 @@ def test_dirs():
     """Create temporary directories for testing."""
     tmp_base = tempfile.mkdtemp()
     source_dir = Path(tmp_base) / "data_to_upload"
-    archive_dir = Path(tmp_base) / "data_uploaded"
 
     source_dir.mkdir(parents=True, exist_ok=True)
-    archive_dir.mkdir(parents=True, exist_ok=True)
 
     yield {
         "base": tmp_base,
         "source": str(source_dir),
-        "archive": str(archive_dir),
     }
 
     shutil.rmtree(tmp_base)
@@ -44,7 +41,6 @@ class TestPathValidation:
             password="pass",
             remote_path="/upload/data",
             source_dir=test_dirs["source"],
-            archive_dir=test_dirs["archive"],
         )
         assert uploader.remote_path == "/upload/data"
 
@@ -58,7 +54,6 @@ class TestPathValidation:
                 password="pass",
                 remote_path="upload/data",  # No leading /
                 source_dir=test_dirs["source"],
-                archive_dir=test_dirs["archive"],
             )
 
     def test_reject_path_traversal(self, test_dirs):
@@ -71,7 +66,6 @@ class TestPathValidation:
                 password="pass",
                 remote_path="/upload/../../../etc",
                 source_dir=test_dirs["source"],
-                archive_dir=test_dirs["archive"],
             )
 
     def test_reject_invalid_characters(self, test_dirs):
@@ -84,7 +78,6 @@ class TestPathValidation:
                 password="pass",
                 remote_path="/upload/data;rm -rf /",
                 source_dir=test_dirs["source"],
-                archive_dir=test_dirs["archive"],
             )
 
     def test_path_normalization(self, test_dirs):
@@ -96,7 +89,6 @@ class TestPathValidation:
             password="pass",
             remote_path="/upload//data",
             source_dir=test_dirs["source"],
-            archive_dir=test_dirs["archive"],
         )
         # Should normalize double slashes
         assert uploader.remote_path == "/upload/data"
@@ -114,7 +106,6 @@ class TestFilenameValidation:
             password="pass",
             remote_path="/upload",
             source_dir=test_dirs["source"],
-            archive_dir=test_dirs["archive"],
         )
         result = uploader._sanitize_filename("data_file.csv")
         assert result == "data_file.csv"
@@ -128,7 +119,6 @@ class TestFilenameValidation:
             password="pass",
             remote_path="/upload",
             source_dir=test_dirs["source"],
-            archive_dir=test_dirs["archive"],
         )
         with pytest.raises(ValueError, match="Invalid filename"):
             uploader._sanitize_filename("../etc/passwd")
@@ -145,7 +135,6 @@ class TestFilenameValidation:
             password="pass",
             remote_path="/upload",
             source_dir=test_dirs["source"],
-            archive_dir=test_dirs["archive"],
         )
         with pytest.raises(ValueError, match="Hidden files not allowed"):
             uploader._sanitize_filename(".hidden_file.csv")
@@ -159,7 +148,6 @@ class TestFilenameValidation:
             password="pass",
             remote_path="/upload",
             source_dir=test_dirs["source"],
-            archive_dir=test_dirs["archive"],
         )
         with pytest.raises(ValueError, match="invalid characters"):
             uploader._sanitize_filename("file;rm -rf.csv")
@@ -192,7 +180,6 @@ class TestAuthenticationMethods:
                 private_key_path=str(key_file),
                 remote_path="/upload",
                 source_dir=test_dirs["source"],
-                archive_dir=test_dirs["archive"],
             )
 
             uploader.connect()
@@ -224,7 +211,6 @@ class TestAuthenticationMethods:
             password="secret_pass",
             remote_path="/upload",
             source_dir=test_dirs["source"],
-            archive_dir=test_dirs["archive"],
         )
 
         uploader.connect()
@@ -249,7 +235,6 @@ class TestAuthenticationMethods:
             # No password or private_key_path
             remote_path="/upload",
             source_dir=test_dirs["source"],
-            archive_dir=test_dirs["archive"],
         )
 
         with pytest.raises(ValueError, match="Either password or private_key_path"):
@@ -272,7 +257,6 @@ class TestAuthenticationMethods:
                 private_key_path="/invalid/key/path",
                 remote_path="/upload",
                 source_dir=test_dirs["source"],
-                archive_dir=test_dirs["archive"],
             )
 
             with pytest.raises(ValueError, match="Invalid private key file"):
@@ -298,7 +282,6 @@ class TestHostKeyVerification:
             password="pass",
             remote_path="/upload",
             source_dir=test_dirs["source"],
-            archive_dir=test_dirs["archive"],
         )
 
         uploader.connect()
@@ -330,7 +313,6 @@ class TestHostKeyVerification:
             known_hosts_path=str(known_hosts),
             remote_path="/upload",
             source_dir=test_dirs["source"],
-            archive_dir=test_dirs["archive"],
         )
 
         uploader.connect()
@@ -360,7 +342,6 @@ class TestConnectionTimeout:
             password="pass",
             remote_path="/upload",
             source_dir=test_dirs["source"],
-            archive_dir=test_dirs["archive"],
         )
 
         uploader.connect()
@@ -388,7 +369,6 @@ class TestConnectionTimeout:
             connection_timeout=60,
             remote_path="/upload",
             source_dir=test_dirs["source"],
-            archive_dir=test_dirs["archive"],
         )
 
         uploader.connect()
@@ -419,7 +399,6 @@ class TestExceptionHandling:
             password="wrong_pass",
             remote_path="/upload",
             source_dir=test_dirs["source"],
-            archive_dir=test_dirs["archive"],
         )
 
         with pytest.raises(paramiko.AuthenticationException):
@@ -439,7 +418,6 @@ class TestExceptionHandling:
             password="pass",
             remote_path="/upload",
             source_dir=test_dirs["source"],
-            archive_dir=test_dirs["archive"],
         )
 
         with pytest.raises(paramiko.SSHException):
@@ -459,7 +437,6 @@ class TestExceptionHandling:
             password="pass",
             remote_path="/upload",
             source_dir=test_dirs["source"],
-            archive_dir=test_dirs["archive"],
         )
 
         with pytest.raises(OSError):

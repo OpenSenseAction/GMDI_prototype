@@ -13,15 +13,13 @@ Simulates a Mobile Network Operator (MNO) data source by reading CML data from N
 
 **Modules:**
 - `data_generator.py` - Reads NetCDF, generates CSV files with current timestamps
-- `sftp_uploader.py` - Uploads files via SFTP, archives after successful upload
+- `sftp_uploader.py` - Uploads files via SFTP, deletes local file after successful upload
 - `main.py` - Orchestrates generation and upload
 
 **Data Flow:**
 1. Generate CSV → `data_to_upload/`
 2. Upload to SFTP server
-3. Move to `data_uploaded/` archive
-
-Benefits: Local inspection, resilient to upload failures, manual upload capability.
+3. Delete local file after successful upload
 
 ## Quick Start
 
@@ -118,7 +116,7 @@ ssh-keyscan -p 22 sftp.example.com >> ~/.ssh/known_hosts
 ## Inspecting Data
 
 ```bash
-# View generated files
+# View files waiting to be uploaded
 ls data_to_upload/
 
 # With Docker

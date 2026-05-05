@@ -46,5 +46,3 @@ generator:
 file_management:
   # Directory for files waiting to be uploaded
   source_dir: "data_to_upload"
-  # Directory for files that have been uploaded
-  archive_dir: "data_uploaded"

@@ -6,7 +6,7 @@ Parses CML CSV files uploaded via SFTP and writes to the Postgres/TimescaleDB da
 
 - Auto-processes CSV files: `cml_data_*.csv` → `cml_data` table, `cml_metadata_*.csv` → `cml_metadata` table
 - Ingests raw data even when metadata is missing (logs warnings for missing IDs)
-- Archives successful files to `archived/YYYY-MM-DD/`, quarantines failures with `.error.txt` notes
+- Archives successful files to `archived/YYYY-MM-DD/` as `.csv.gz`, quarantines failures with `.error.txt` notes
 - Plugin-style parsers for extensibility
 - DB connection retry with exponential backoff
 - Cross-device file move fallback (move → copy)
@@ -118,5 +118,5 @@ pytest parser/tests/ -v
 - Check quarantine dir for `.error.txt` notes
 - Review logs for DB connection or parse errors
 
-**Archived files:** `/app/data/archived/YYYY-MM-DD/filename.csv`  
+**Archived files:** `/app/data/archived/YYYY-MM-DD/filename.csv.gz`  
 **Quarantine notes:** `/app/data/quarantine/filename.csv.error.txt`
