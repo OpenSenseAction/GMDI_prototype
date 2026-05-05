@@ -476,7 +476,7 @@ def ensure_ssh_keys(users: list[dict], ssh_keys_dir: Path) -> None:
     for u in users:
         uid = u["id"]
         key_dir = ssh_keys_dir / uid
-        key_dir.mkdir(exist_ok=True)
+        key_dir.mkdir(parents=True, exist_ok=True)
         priv_key = key_dir / "id_ed25519"
         auth_keys = key_dir / "authorized_keys"
 

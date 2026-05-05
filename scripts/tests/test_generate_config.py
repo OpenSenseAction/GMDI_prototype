@@ -53,7 +53,9 @@ def test_custom_ssh_keys_dir_written_verbatim():
     """A relative path like ../ssh_keys is written as-is into the compose file."""
     output = generate_compose_override(USERS, ssh_keys_dir="../ssh_keys")
     assert "../ssh_keys/alice/authorized_keys" in output
-    assert "./ssh_keys" not in output
+    # Must not contain the default prefix (note: ../ssh_keys contains the
+    # substring ssh_keys, so check for the full default prefix ./ssh_keys/)
+    assert "./ssh_keys/" not in output
 
 
 def test_absolute_ssh_keys_dir_written_verbatim(tmp_path):
@@ -108,7 +110,7 @@ def test_main_ssh_keys_dir_override_uses_external_dir(tmp_path, monkeypatch):
     repo_root = tmp_path / "repo"
     for subdir in ("sftp_receiver", "webserver/configs", "database/migrations",
                    "grafana/provisioning/datasources", "grafana", "ssh_keys"):
-        (repo_root / subdir).mkdir(parents=True)
+        (repo_root / subdir).mkdir(parents=True, exist_ok=True)
 
     # Minimal users.yml (deployment-level, one real user)
     _make_users_yml(tmp_path)  # tmp_path/users.yml
@@ -145,7 +147,7 @@ def test_main_default_ssh_keys_dir_stays_inside_repo(tmp_path):
     repo_root = tmp_path / "repo"
     for subdir in ("sftp_receiver", "webserver/configs", "database/migrations",
                    "grafana/provisioning/datasources", "grafana", "ssh_keys"):
-        (repo_root / subdir).mkdir(parents=True)
+        (repo_root / subdir).mkdir(parents=True, exist_ok=True)
 
     _make_users_yml(repo_root)
     (repo_root / "webserver" / "configs" / "users.json").write_text("{}")
