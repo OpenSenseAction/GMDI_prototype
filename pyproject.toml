@@ -1,5 +1,5 @@
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "scripts/tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
@@ -17,7 +17,7 @@ addopts = """
 # `pytest-timeout` if you need per-test timeouts.
 
 [tool.coverage.run]
-source = ["tests"]
+source = ["tests", "scripts"]
 omit = [
     "*/venv/*",
     "*/__pycache__/*",
