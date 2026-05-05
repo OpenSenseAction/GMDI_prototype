@@ -19,9 +19,7 @@ Outputs (all paths relative to the repository root):
 """
 
 import argparse
-import glob
 import json
-import os
 import re
 import subprocess
 import sys
@@ -75,33 +73,6 @@ def _validate(users: list[dict]) -> None:
 # ---------------------------------------------------------------------------
 # 1. docker-compose.override.yml
 # ---------------------------------------------------------------------------
-
-_PARSER_ENV_BY_PARSER_TYPE = {
-    "openmrg": {
-        "NETCDF_FILE": (
-            "${OPENMRG_NETCDF_FILE:-/app/example_data/openMRG_cmls_20150827_3months.nc}"
-        ),
-        "NETCDF_FILE_URL": (
-            "${OPENMRG_NETCDF_FILE_URL:-"
-            "https://bwsyncandshare.kit.edu/s/jSAFftGXcJjQbSJ/download}"
-        ),
-    },
-    "orange_cameroun": {
-        "NETCDF_FILE": "/app/example_data/cml_raw_douala.nc",
-        "NETCDF_RSL_VAR": "rsl_min",
-        "NETCDF_TSL_VAR": "tsl_min",
-    },
-}
-
-_MNO_SIM_EXTRA_BY_PARSER_TYPE = {
-    "openmrg": {},
-    "orange_cameroun": {
-        "GENERATION_FREQUENCY_SECONDS": "900",
-        "TIMESTAMPS_PER_FILE": "1",
-        "TIME_RESOLUTION_SECONDS": "900",
-        "UPLOAD_FREQUENCY_SECONDS": "900",
-    },
-}
 
 
 def _sftp_volumes_entry(user: dict) -> list[str]:
@@ -390,7 +361,7 @@ def generate_grafana_datasources(users: list[dict]) -> str:
         "  # cml_metadata/cml_stats and security-barrier views",
         "  # (cml_data_secure, cml_data_1h_secure) scope all queries to that",
         "  # role's data automatically.",
-        "#",
+        "  #",
         "  # Dashboards use a ${datasource} template variable of type",
         "  # 'datasource' filtered to grafana-postgresql-datasource.  Because",
         "  # each org has only one such datasource the variable auto-selects",
@@ -596,7 +567,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # 4. Database migrations (only for new users)
     migrations_dir = repo_root / "database" / "migrations"
-    generate_user_migrations(users, migrations_dir)
+    generate_user_migrations(users, migrations_dir)  # prints its own status lines
 
     # 5. Grafana datasources provisioning file
     ds_path = repo_root / "grafana" / "provisioning" / "datasources" / "postgres.yml"
