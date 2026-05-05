@@ -31,7 +31,6 @@ services:
     volumes:
       - ./parser/example_data:/app/example_data  # writable so the file can be downloaded
       - mno_openmrg_data_to_upload:/app/data_to_upload
-      - mno_openmrg_data_uploaded:/app/data_uploaded
       - ./ssh_keys:/app/ssh_keys:ro
     environment:
       - NETCDF_FILE=${OPENMRG_NETCDF_FILE:-/app/example_data/openMRG_cmls_20150827_3months.nc}
@@ -53,7 +52,6 @@ services:
     volumes:
       - ./parser/example_data:/app/example_data:ro
       - mno_orange_cameroun_data_to_upload:/app/data_to_upload
-      - mno_orange_cameroun_data_uploaded:/app/data_uploaded
       - ./ssh_keys:/app/ssh_keys:ro
     environment:
       - NETCDF_FILE=/app/example_data/cml_raw_douala.nc
@@ -275,7 +273,5 @@ volumes:
   webserver_data_archived:
   grafana_data:
   mno_openmrg_data_to_upload:
-  mno_openmrg_data_uploaded:
   mno_orange_cameroun_data_to_upload:
-  mno_orange_cameroun_data_uploaded:
   # minio_data:  # Uncomment if using MinIO

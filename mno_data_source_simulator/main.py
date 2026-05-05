@@ -123,7 +123,6 @@ def main():
                     known_hosts_path=known_hosts,
                     remote_path=config["sftp"]["remote_path"],
                     source_dir=config["file_management"]["source_dir"],
-                    archive_dir=config["file_management"]["archive_dir"],
                     connection_timeout=config["sftp"].get("connection_timeout", 30),
                 )
                 sftp_uploader.connect()

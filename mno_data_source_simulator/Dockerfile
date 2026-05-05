@@ -17,7 +17,7 @@ COPY config.yml .
 RUN mkdir -p /app/example_data
 
 # Create directories for data management
-RUN mkdir -p /app/data_to_upload /app/data_uploaded
+RUN mkdir -p /app/data_to_upload
 
 # Run the application
 CMD ["python", "main.py"]
