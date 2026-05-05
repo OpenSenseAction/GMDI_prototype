@@ -50,15 +50,12 @@ def test_dirs():
     """Create temporary directories for testing."""
     tmp_base = tempfile.mkdtemp()
     source_dir = Path(tmp_base) / "data_to_upload"
-    archive_dir = Path(tmp_base) / "data_uploaded"
 
     source_dir.mkdir(parents=True, exist_ok=True)
-    archive_dir.mkdir(parents=True, exist_ok=True)
 
     yield {
         "base": tmp_base,
         "source": str(source_dir),
-        "archive": str(archive_dir),
     }
 
     shutil.rmtree(tmp_base)
@@ -100,7 +97,6 @@ def test_real_sftp_connection(test_dirs):
         known_hosts_path=KNOWN_HOSTS_PATH,
         remote_path=SFTP_REMOTE_PATH,
         source_dir=test_dirs["source"],
-        archive_dir=test_dirs["archive"],
     )
 
     # This will fail if SFTP server is not running
@@ -123,7 +119,6 @@ def test_real_sftp_upload_file(test_dirs, sample_csv_files):
         known_hosts_path=KNOWN_HOSTS_PATH,
         remote_path=SFTP_REMOTE_PATH,
         source_dir=test_dirs["source"],
-        archive_dir=test_dirs["archive"],
     )
 
     try:
@@ -160,7 +155,6 @@ def test_real_sftp_upload_pending_files(test_dirs, sample_csv_files):
         known_hosts_path=KNOWN_HOSTS_PATH,
         remote_path=SFTP_REMOTE_PATH,
         source_dir=test_dirs["source"],
-        archive_dir=test_dirs["archive"],
     )
 
     try:
@@ -171,12 +165,9 @@ def test_real_sftp_upload_pending_files(test_dirs, sample_csv_files):
 
         assert count == 3
 
-        # Verify files were moved to archive
+        # Verify files were deleted from source
         source_files = list(Path(test_dirs["source"]).glob("*.csv"))
-        archive_files = list(Path(test_dirs["archive"]).glob("*.csv"))
-
         assert len(source_files) == 0
-        assert len(archive_files) == 3
 
         # Verify files exist on server
         for filepath in sample_csv_files:
@@ -206,7 +197,6 @@ def test_real_sftp_context_manager(test_dirs, sample_csv_files):
             known_hosts_path=KNOWN_HOSTS_PATH,
             remote_path=SFTP_REMOTE_PATH,
             source_dir=test_dirs["source"],
-            archive_dir=test_dirs["archive"],
         ) as uploader:
             # Upload a file
             local_file = sample_csv_files[0]
