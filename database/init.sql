@@ -301,6 +301,7 @@ ALTER TABLE file_processing_log FORCE ROW LEVEL SECURITY;
 CREATE POLICY user_isolation ON file_processing_log
     USING (user_id = current_user);
 
-GRANT SELECT ON file_processing_log TO demo_openmrg, demo_orange_cameroun, webserver_role;
+GRANT SELECT, INSERT ON file_processing_log TO demo_openmrg, demo_orange_cameroun;
+GRANT SELECT            ON file_processing_log TO webserver_role;
 GRANT USAGE ON SEQUENCE file_processing_log_id_seq TO demo_openmrg, demo_orange_cameroun;
 GRANT SELECT ON cml_data_1h_secure TO webserver_role;

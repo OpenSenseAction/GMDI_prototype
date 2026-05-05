@@ -278,6 +278,11 @@ GRANT SELECT, INSERT, UPDATE ON cml_metadata, cml_stats TO {user_id};
 GRANT SELECT, INSERT, UPDATE ON cml_data_secure TO {user_id};
 GRANT SELECT ON cml_data_1h_secure TO {user_id};
 
+-- file_processing_log: parser INSERTs a row for every processed file;
+-- webserver_role only needs SELECT.
+GRANT SELECT, INSERT ON file_processing_log TO {user_id};
+GRANT USAGE ON SEQUENCE file_processing_log_id_seq TO {user_id};
+
 -- ---------------------------------------------------------------------------
 -- Step 4: Allow webserver_role to impersonate this user
 -- ---------------------------------------------------------------------------
@@ -370,7 +375,12 @@ def generate_grafana_datasources(users: list[dict]) -> str:
         "  # the correct one — no user interaction required.",
         "",
     ]
-    for u in users:
+    # Only org 1 (the Grafana default org) is provisioned here.  Grafana reads
+    # this file at startup, before init_grafana.py has had a chance to create
+    # orgs 2+.  Provisioning a non-existent org causes Grafana to exit with
+    # "org.notFound".  Additional orgs are created by init_grafana.py and their
+    # datasources are registered there via the Grafana API.
+    for u in users[:1]:
         uid = u["id"]
         org_id = u["grafana_org_id"]
         lines += [
@@ -392,10 +402,11 @@ def generate_grafana_datasources(users: list[dict]) -> str:
             "",
         ]
     lines += [
-        "# Note: provisioning files only apply to Grafana organisations that",
-        "# already exist when Grafana starts.  Org 1 (the default) always",
-        "# exists.  Additional orgs are created by the init_grafana service",
-        "# (grafana/init_grafana.py) before it triggers a provisioning reload.",
+        "# Note: only org 1 is listed above, intentionally.  Grafana reads this",
+        "# file at startup, before init_grafana.py has created orgs 2+.  Listing",
+        "# a non-existent org here causes Grafana to exit with 'org.notFound'.",
+        "# Datasources for additional orgs are registered by init_grafana.py via",
+        "# the Grafana API after those orgs have been created.",
     ]
     return "\n".join(lines) + "\n"
 

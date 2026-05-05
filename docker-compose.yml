@@ -60,7 +60,7 @@ services:
       - SFTP_USERNAME=demo_orange_cameroun
       - SFTP_REMOTE_PATH=/uploads/douala
       - SFTP_USE_SSH_KEY=true
-      - SFTP_PRIVATE_KEY_PATH=/app/ssh_keys/id_rsa_demo_orange_cameroun
+      - SFTP_PRIVATE_KEY_PATH=/app/ssh_keys/id_rsa_orange_cameroun
       - SFTP_KNOWN_HOSTS_PATH=/app/ssh_keys/known_hosts
       - NETCDF_RSL_VAR=rsl_min
       - NETCDF_TSL_VAR=tsl_min
