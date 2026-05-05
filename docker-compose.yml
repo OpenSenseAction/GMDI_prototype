@@ -64,6 +64,10 @@ services:
       - SFTP_KNOWN_HOSTS_PATH=/app/ssh_keys/known_hosts
       - NETCDF_RSL_VAR=rsl_min
       - NETCDF_TSL_VAR=tsl_min
+      - GENERATION_FREQUENCY_SECONDS=900
+      - TIMESTAMPS_PER_FILE=1
+      - TIME_RESOLUTION_SECONDS=900
+      - UPLOAD_FREQUENCY_SECONDS=900
 
   parser_openmrg:
     build: ./parser
