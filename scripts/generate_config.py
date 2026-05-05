@@ -34,6 +34,7 @@ import yaml
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def load_users(users_file: Path) -> list[dict]:
     with open(users_file) as f:
         data = yaml.safe_load(f)
@@ -59,9 +60,7 @@ def _validate(users: list[dict]) -> None:
 
         grafana_org = u["grafana_org_id"]
         if grafana_org in seen_grafana_orgs:
-            raise ValueError(
-                f"Duplicate grafana_org_id {grafana_org} (user {uid!r})"
-            )
+            raise ValueError(f"Duplicate grafana_org_id {grafana_org} (user {uid!r})")
         seen_grafana_orgs.add(grafana_org)
 
         for src in u.get("sources", []):
@@ -110,9 +109,7 @@ def _sftp_volumes_entry(user: dict) -> list[str]:
     lines = []
     for src in user["sources"]:
         vol = f"sftp_{user['id']}_{src['id']}"
-        lines.append(
-            f"      - {vol}:/home/{user['id']}/uploads/{src['id']}"
-        )
+        lines.append(f"      - {vol}:/home/{user['id']}/uploads/{src['id']}")
     lines.append(
         f"      - ./ssh_keys/{user['id']}/authorized_keys"
         f":/home/{user['id']}/.ssh/keys/authorized_keys:ro"
@@ -125,9 +122,7 @@ def _sftp_command_args(users: list[dict]) -> str:
     parts = []
     for u in users:
         for src in u["sources"]:
-            parts.append(
-                f'"{u["id"]}::{u["uid"]}:{u["uid"]}:uploads/{src["id"]}"'
-            )
+            parts.append(f'"{u["id"]}::{u["uid"]}:{u["uid"]}:uploads/{src["id"]}"')
     return ", ".join(parts)
 
 
@@ -137,31 +132,32 @@ def _parser_service(user: dict, src: dict) -> str:
     arch_vol = f"parser_{user['id']}_{src['id']}_archived"
     quar_vol = f"parser_{user['id']}_{src['id']}_quarantine"
     db_url = (
-        f"postgresql://{user['id']}:{user['id']}_password"
-        "@database:5432/mydatabase"
+        f"postgresql://{user['id']}:{user['id']}_password" "@database:5432/mydatabase"
     )
-    return "\n".join([
-        f"  {svc}:",
-        f"    build: ./parser",
-        f"    depends_on:",
-        f"      database:",
-        f"        condition: service_healthy",
-        f"    environment:",
-        f"      - DATABASE_URL={db_url}",
-        f"      - USER_ID={user['id']}",
-        f"      - PARSER_INCOMING_DIR=/app/data/incoming",
-        f"      - PARSER_ARCHIVED_DIR=/app/data/archived",
-        f"      - PARSER_QUARANTINE_DIR=/app/data/quarantine",
-        f"      - PARSER_ENABLED=true",
-        f"      - PROCESS_EXISTING_ON_STARTUP=true",
-        f"      - LOG_LEVEL=INFO",
-        f"    volumes:",
-        f"      - {sftp_vol}:/app/data/incoming",
-        f"      - {arch_vol}:/app/data/archived",
-        f"      - {quar_vol}:/app/data/quarantine",
-        f"    restart: unless-stopped",
-        "",
-    ])
+    return "\n".join(
+        [
+            f"  {svc}:",
+            f"    build: ./parser",
+            f"    depends_on:",
+            f"      database:",
+            f"        condition: service_healthy",
+            f"    environment:",
+            f"      - DATABASE_URL={db_url}",
+            f"      - USER_ID={user['id']}",
+            f"      - PARSER_INCOMING_DIR=/app/data/incoming",
+            f"      - PARSER_ARCHIVED_DIR=/app/data/archived",
+            f"      - PARSER_QUARANTINE_DIR=/app/data/quarantine",
+            f"      - PARSER_ENABLED=true",
+            f"      - PROCESS_EXISTING_ON_STARTUP=true",
+            f"      - LOG_LEVEL=INFO",
+            f"    volumes:",
+            f"      - {sftp_vol}:/app/data/incoming",
+            f"      - {arch_vol}:/app/data/archived",
+            f"      - {quar_vol}:/app/data/quarantine",
+            f"    restart: unless-stopped",
+            "",
+        ]
+    )
 
 
 def generate_compose_override(users: list[dict]) -> str:
@@ -205,6 +201,7 @@ def generate_compose_override(users: list[dict]) -> str:
 # 2. sftp_receiver/entrypoint.sh
 # ---------------------------------------------------------------------------
 
+
 def generate_entrypoint_sh(users: list[dict]) -> str:
     lines = [
         "#!/bin/bash",
@@ -215,9 +212,7 @@ def generate_entrypoint_sh(users: list[dict]) -> str:
     ]
     for user in users:
         for src in user["sources"]:
-            lines.append(
-                f"mkdir -p /home/{user['id']}/uploads/{src['id']}"
-            )
+            lines.append(f"mkdir -p /home/{user['id']}/uploads/{src['id']}")
             lines.append(
                 f"chown -R {user['uid']}:{user['uid']} "
                 f"/home/{user['id']}/uploads/{src['id']}"
@@ -234,6 +229,7 @@ def generate_entrypoint_sh(users: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 # 3. webserver/configs/users.json
 # ---------------------------------------------------------------------------
+
 
 def generate_users_json(users: list[dict], existing_json: dict) -> dict:
     """
@@ -354,9 +350,7 @@ def _next_migration_number(migrations_dir: Path) -> str:
     return f"{n:03d}"
 
 
-def generate_user_migrations(
-    users: list[dict], migrations_dir: Path
-) -> list[Path]:
+def generate_user_migrations(users: list[dict], migrations_dir: Path) -> list[Path]:
     """Write a migration SQL file for each user not already migrated."""
     already_done = _existing_migrated_users(migrations_dir)
     new_files = []
@@ -369,9 +363,13 @@ def generate_user_migrations(
         filename = f"{num}_add_{uid}.sql"
         path = migrations_dir / filename
         path.write_text(
-            _SQL_TEMPLATE.format(user_id=uid, migration_path=f"database/migrations/{filename}")
+            _SQL_TEMPLATE.format(
+                user_id=uid, migration_path=f"database/migrations/{filename}"
+            )
         )
-        print(f"  [migrations] Created {path.relative_to(migrations_dir.parent.parent)}")
+        print(
+            f"  [migrations] Created {path.relative_to(migrations_dir.parent.parent)}"
+        )
         new_files.append(path)
     return new_files
 
@@ -379,6 +377,7 @@ def generate_user_migrations(
 # ---------------------------------------------------------------------------
 # 5. grafana/provisioning/datasources/postgres.yml
 # ---------------------------------------------------------------------------
+
 
 def generate_grafana_datasources(users: list[dict]) -> str:
     lines = [
@@ -431,6 +430,7 @@ def generate_grafana_datasources(users: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 # 6. grafana/init_grafana.py — replace ORGS / USERS lists
 # ---------------------------------------------------------------------------
+
 
 def _orgs_list_literal(users: list[dict]) -> str:
     """Render the ORGS list as a Python literal."""
@@ -490,6 +490,7 @@ def update_init_grafana(users: list[dict], init_grafana_path: Path) -> None:
 # 7. SSH key generation
 # ---------------------------------------------------------------------------
 
+
 def ensure_ssh_keys(users: list[dict], ssh_keys_dir: Path) -> None:
     import shutil
 
@@ -513,10 +514,15 @@ def ensure_ssh_keys(users: list[dict], ssh_keys_dir: Path) -> None:
         elif keygen_available:
             subprocess.run(
                 [
-                    "ssh-keygen", "-t", "ed25519",
-                    "-f", str(priv_key),
-                    "-N", "",
-                    "-C", f"{uid}@gmdi",
+                    "ssh-keygen",
+                    "-t",
+                    "ed25519",
+                    "-f",
+                    str(priv_key),
+                    "-N",
+                    "",
+                    "-C",
+                    f"{uid}@gmdi",
                 ],
                 check=True,
                 capture_output=True,
@@ -540,6 +546,7 @@ def ensure_ssh_keys(users: list[dict], ssh_keys_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -592,9 +599,7 @@ def main(argv: list[str] | None = None) -> None:
     generate_user_migrations(users, migrations_dir)
 
     # 5. Grafana datasources provisioning file
-    ds_path = (
-        repo_root / "grafana" / "provisioning" / "datasources" / "postgres.yml"
-    )
+    ds_path = repo_root / "grafana" / "provisioning" / "datasources" / "postgres.yml"
     ds_path.write_text(generate_grafana_datasources(users))
     print(f"  [grafana]    Written {ds_path.relative_to(repo_root)}")
 

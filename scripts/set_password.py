@@ -27,8 +27,7 @@ def main(argv: list[str] | None = None) -> None:
         "--users-json",
         default=None,
         help=(
-            "Path to users.json "
-            "(default: <repo-root>/webserver/configs/users.json)"
+            "Path to users.json " "(default: <repo-root>/webserver/configs/users.json)"
         ),
     )
     args = parser.parse_args(argv)
