@@ -29,23 +29,8 @@ datasources:
     isDefault: true
     editable: false
 
-  # Org 2 — demo_orange_cameroun
-  - name: PostgreSQL
-    uid: ds_demo_orange_cameroun
-    type: grafana-postgresql-datasource
-    access: proxy
-    orgId: 2
-    url: database:5432
-    database: mydatabase
-    user: demo_orange_cameroun
-    secureJsonData:
-      password: demo_orange_cameroun_password
-    jsonData:
-      sslmode: disable
-    isDefault: true
-    editable: false
-
-# Note: provisioning files only apply to Grafana organisations that
-# already exist when Grafana starts.  Org 1 (the default) always
-# exists.  Additional orgs are created by the init_grafana service
-# (grafana/init_grafana.py) before it triggers a provisioning reload.
+# Note: only org 1 is listed above, intentionally.  Grafana reads this
+# file at startup, before init_grafana.py has created orgs 2+.  Listing
+# a non-existent org here causes Grafana to exit with 'org.notFound'.
+# Datasources for additional orgs are registered by init_grafana.py via
+# the Grafana API after those orgs have been created.
