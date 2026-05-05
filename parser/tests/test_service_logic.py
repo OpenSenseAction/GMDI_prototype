@@ -56,9 +56,7 @@ def test_multiple_batches(tmp_path, mock_db_writer, mock_file_manager):
     """Files exceeding batch_size are split into multiple batches."""
     files = [_make_raw_csv(tmp_path, f"raw_{i}.csv") for i in range(5)]
 
-    process_rawdata_files_batch(
-        files, mock_db_writer, mock_file_manager, batch_size=2
-    )
+    process_rawdata_files_batch(files, mock_db_writer, mock_file_manager, batch_size=2)
 
     # 5 files / batch_size=2 → 3 batches
     assert mock_db_writer.connect.call_count == 3
@@ -89,13 +87,11 @@ def test_unparseable_file_is_quarantined(tmp_path, mock_db_writer, mock_file_man
 
     with patch(
         "parser.service_logic.parse_rawdata_csv",
-        side_effect=lambda p: (_ for _ in ()).throw(ValueError("bad csv"))
-        if p == bad
-        else pd.read_csv(p),
+        side_effect=lambda p: (
+            (_ for _ in ()).throw(ValueError("bad csv")) if p == bad else pd.read_csv(p)
+        ),
     ):
-        process_rawdata_files_batch(
-            [good, bad], mock_db_writer, mock_file_manager
-        )
+        process_rawdata_files_batch([good, bad], mock_db_writer, mock_file_manager)
 
     mock_file_manager.quarantine_file.assert_called_once_with(
         bad, "Parse error during batch processing"
@@ -103,7 +99,9 @@ def test_unparseable_file_is_quarantined(tmp_path, mock_db_writer, mock_file_man
     mock_file_manager.archive_file.assert_called_once_with(good)
 
 
-def test_file_returning_none_is_quarantined(tmp_path, mock_db_writer, mock_file_manager):
+def test_file_returning_none_is_quarantined(
+    tmp_path, mock_db_writer, mock_file_manager
+):
     """A file whose parser returns None is quarantined."""
     f = _make_raw_csv(tmp_path, "raw.csv")
 
@@ -116,7 +114,9 @@ def test_file_returning_none_is_quarantined(tmp_path, mock_db_writer, mock_file_
     mock_db_writer.write_rawdata.assert_not_called()
 
 
-def test_file_returning_empty_df_is_quarantined(tmp_path, mock_db_writer, mock_file_manager):
+def test_file_returning_empty_df_is_quarantined(
+    tmp_path, mock_db_writer, mock_file_manager
+):
     """A file whose parser returns an empty DataFrame is quarantined."""
     f = _make_raw_csv(tmp_path, "raw.csv")
 
@@ -207,12 +207,16 @@ def _make_metadata_csv(tmp_path, name="cml_metadata.csv"):
     return p
 
 
-def test_process_cml_file_metadata_archived(tmp_path, mock_db_writer, mock_file_manager):
+def test_process_cml_file_metadata_archived(
+    tmp_path, mock_db_writer, mock_file_manager
+):
     """Metadata files are written, archived, and logged as archived."""
     f = _make_metadata_csv(tmp_path)
     mock_db_writer.write_metadata.return_value = 1
 
-    with patch("parser.service_logic.parse_metadata_csv", return_value=pd.DataFrame({"x": [1]})):
+    with patch(
+        "parser.service_logic.parse_metadata_csv", return_value=pd.DataFrame({"x": [1]})
+    ):
         result = process_cml_file(f, mock_db_writer, mock_file_manager)
 
     assert result == "metadata"
@@ -242,7 +246,9 @@ def test_process_cml_file_rawdata_archived(tmp_path, mock_db_writer, mock_file_m
     )
 
 
-def test_process_cml_file_unsupported_quarantined(tmp_path, mock_db_writer, mock_file_manager):
+def test_process_cml_file_unsupported_quarantined(
+    tmp_path, mock_db_writer, mock_file_manager
+):
     """Files with unrecognised names are quarantined and logged."""
     f = tmp_path / "unknown_file.xyz"
     f.write_text("anything")
@@ -255,7 +261,9 @@ def test_process_cml_file_unsupported_quarantined(tmp_path, mock_db_writer, mock
     assert mock_db_writer.log_file_event.call_args.args[1] == "quarantined"
 
 
-def test_process_cml_file_db_connect_failure_quarantines(tmp_path, mock_db_writer, mock_file_manager):
+def test_process_cml_file_db_connect_failure_quarantines(
+    tmp_path, mock_db_writer, mock_file_manager
+):
     """If DB connect fails, file is quarantined, logged, and exception re-raised."""
     f = _make_raw_csv(tmp_path, "cml_data.csv")
     mock_db_writer.connect.side_effect = Exception("no db")
@@ -268,7 +276,9 @@ def test_process_cml_file_db_connect_failure_quarantines(tmp_path, mock_db_write
     assert mock_db_writer.log_file_event.call_args.args[1] == "quarantined"
 
 
-def test_process_cml_file_write_failure_quarantines(tmp_path, mock_db_writer, mock_file_manager):
+def test_process_cml_file_write_failure_quarantines(
+    tmp_path, mock_db_writer, mock_file_manager
+):
     """If the DB write raises, file is quarantined, logged, and exception re-raised."""
     f = _make_raw_csv(tmp_path, "cml_data.csv", rows=2)
     mock_db_writer.write_rawdata.side_effect = Exception("write error")
@@ -279,4 +289,6 @@ def test_process_cml_file_write_failure_quarantines(tmp_path, mock_db_writer, mo
 
     mock_file_manager.quarantine_file.assert_called_once()
     assert mock_db_writer.log_file_event.call_args.args[1] == "quarantined"
-    assert "write error" in mock_db_writer.log_file_event.call_args.kwargs.get("error_message", "")
+    assert "write error" in mock_db_writer.log_file_event.call_args.kwargs.get(
+        "error_message", ""
+    )
