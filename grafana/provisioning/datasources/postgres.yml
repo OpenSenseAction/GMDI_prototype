@@ -7,7 +7,7 @@ datasources:
   # cml_metadata/cml_stats and security-barrier views
   # (cml_data_secure, cml_data_1h_secure) scope all queries to that
   # role's data automatically.
-#
+  #
   # Dashboards use a ${datasource} template variable of type
   # 'datasource' filtered to grafana-postgresql-datasource.  Because
   # each org has only one such datasource the variable auto-selects
