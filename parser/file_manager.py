@@ -5,6 +5,7 @@ an accompanying `.error.txt` that contains failure details.
 """
 
 from pathlib import Path
+import gzip
 import shutil
 import datetime
 import logging
@@ -43,14 +44,20 @@ class FileManager:
                 return False
 
     def archive_file(self, filepath: Path) -> Path:
-        """Move `filepath` to archive/YYYY-MM-DD/ and return destination path."""
+        """Gzip-compress `filepath` into archive/YYYY-MM-DD/ and return destination path."""
         filepath = Path(filepath)
         if not filepath.exists():
             raise FileNotFoundError(f"File not found: {filepath}")
 
         dest_dir = self._archive_subdir()
-        dest = dest_dir / filepath.name
-        if not self._safe_move(filepath, dest):
+        dest = dest_dir / (filepath.name + ".gz")
+        try:
+            with filepath.open("rb") as f_in, gzip.open(dest, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
+            filepath.unlink()
+            logger.info(f"Archived (gzip) {filepath} → {dest}")
+        except Exception:
+            dest.unlink(missing_ok=True)
             raise RuntimeError(f"Failed to archive file {filepath}")
         return dest
 
@@ -94,4 +101,4 @@ class FileManager:
     def get_archived_path(self, filepath: Path) -> Path:
         """Return the destination archive path for a given filepath (without moving)."""
         subdir = self._archive_subdir()
-        return subdir / Path(filepath).name
+        return subdir / (Path(filepath).name + ".gz")

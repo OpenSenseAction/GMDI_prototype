@@ -31,34 +31,32 @@ def test_quarantine_file_not_found(tmp_path):
 def test_safe_move_fallback_to_copy(tmp_path):
     """Test _safe_move falls back to copy when move fails."""
     incoming = tmp_path / "incoming"
-    archived = tmp_path / "archived"
     quarantine = tmp_path / "quarantine"
     incoming.mkdir()
 
-    fm = FileManager(str(incoming), str(archived), str(quarantine))
+    fm = FileManager(str(incoming), str(tmp_path / "archived"), str(quarantine))
 
     f = incoming / "test.csv"
     f.write_text("data")
 
-    # Mock shutil.move to fail, copy2 to succeed
+    # _safe_move is used by quarantine_file; verify fallback via that path
     with patch("parser.file_manager.shutil.move") as mock_move:
         mock_move.side_effect = OSError("Cross-device link")
 
-        dest = fm.archive_file(f)
+        dest = fm.quarantine_file(f, "parse error")
 
-        assert dest.exists()
-        # File should be copied since move failed
+        # File should have been copied since move failed
+        assert (quarantine / "test.csv").exists()
         mock_move.assert_called_once()
 
 
 def test_safe_move_both_fail(tmp_path):
-    """Test archive fails when both move and copy fail."""
+    """Test quarantine fails gracefully when both move and copy fail."""
     incoming = tmp_path / "incoming"
-    archived = tmp_path / "archived"
     quarantine = tmp_path / "quarantine"
     incoming.mkdir()
 
-    fm = FileManager(str(incoming), str(archived), str(quarantine))
+    fm = FileManager(str(incoming), str(tmp_path / "archived"), str(quarantine))
 
     f = incoming / "test.csv"
     f.write_text("data")
@@ -68,8 +66,9 @@ def test_safe_move_both_fail(tmp_path):
             mock_move.side_effect = OSError("Move failed")
             mock_copy.side_effect = OSError("Copy failed")
 
-            with pytest.raises(RuntimeError, match="Failed to archive"):
-                fm.archive_file(f)
+            # quarantine_file falls back to an orphan note rather than raising
+            result = fm.quarantine_file(f, "parse error")
+            assert ".orphan" in result.name or ".error.txt" in result.name
 
 
 def test_quarantine_creates_orphan_on_move_copy_failure(tmp_path):
@@ -101,7 +100,7 @@ def test_get_archived_path(tmp_path):
 
     path = fm.get_archived_path(Path("test.csv"))
 
-    assert "test.csv" in str(path)
+    assert "test.csv.gz" in str(path)
     assert not path.exists()  # File not actually moved
 
 
