@@ -317,3 +317,73 @@ def test__update_stats_for_cmls_rollback_on_error(mock_connection):
         writer._update_stats_for_cmls(["100"])
 
     mock_connection.rollback.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# log_file_event
+# ---------------------------------------------------------------------------
+
+
+def test_log_file_event_success(mock_connection):
+    """log_file_event inserts a row and commits."""
+    writer = DBWriter("postgresql://test", user_id="demo_openmrg")
+    writer.conn = mock_connection
+    cur = mock_connection.cursor.return_value
+
+    writer.log_file_event("file.csv", "archived", rows_written=42)
+
+    cur.execute.assert_called_once()
+    sql, params = cur.execute.call_args[0]
+    assert "file_processing_log" in sql
+    assert params == ("demo_openmrg", "file.csv", "archived", 42, None)
+    mock_connection.commit.assert_called_once()
+
+
+def test_log_file_event_quarantined(mock_connection):
+    """log_file_event stores error_message for quarantined status."""
+    writer = DBWriter("postgresql://test", user_id="demo_openmrg")
+    writer.conn = mock_connection
+    cur = mock_connection.cursor.return_value
+
+    writer.log_file_event("bad.csv", "quarantined", error_message="parse failed")
+
+    _, params = cur.execute.call_args[0]
+    assert params[2] == "quarantined"
+    assert params[4] == "parse failed"
+    mock_connection.commit.assert_called_once()
+
+
+def test_log_file_event_swallows_db_error(mock_connection):
+    """log_file_event does not propagate DB errors."""
+    writer = DBWriter("postgresql://test", user_id="demo_openmrg")
+    writer.conn = mock_connection
+    cur = mock_connection.cursor.return_value
+    cur.execute.side_effect = Exception("table missing")
+
+    writer.log_file_event("file.csv", "archived")  # must not raise
+    mock_connection.rollback.assert_called()
+
+
+def test_log_file_event_reconnects_when_disconnected():
+    """log_file_event reconnects if not connected before inserting."""
+    with patch("parser.db_writer.psycopg2.connect") as mock_connect:
+        mock_conn = Mock()
+        mock_cursor = Mock()
+        mock_cursor.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_conn
+
+        writer = DBWriter("postgresql://test", user_id="demo_openmrg")
+        # conn is None — not connected
+        writer.log_file_event("file.csv", "archived", rows_written=5)
+
+        mock_connect.assert_called_once()
+        mock_cursor.execute.assert_called_once()
+
+
+def test_log_file_event_skips_when_connect_fails():
+    """log_file_event is silent when reconnection fails."""
+    with patch("parser.db_writer.psycopg2.connect", side_effect=Exception("no db")):
+        with patch("parser.db_writer.time.sleep"):
+            writer = DBWriter("postgresql://test")
+            writer.log_file_event("file.csv", "archived")  # must not raise

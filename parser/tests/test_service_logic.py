@@ -6,7 +6,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
-from ..service_logic import process_rawdata_files_batch
+from ..service_logic import process_rawdata_files_batch, process_cml_file
 
 
 @pytest.fixture
@@ -159,3 +159,124 @@ def test_db_write_failure_leaves_files_in_place(
 
     mock_file_manager.archive_file.assert_not_called()
     mock_file_manager.quarantine_file.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# log_file_event calls in batch processing
+# ---------------------------------------------------------------------------
+
+
+def test_batch_logs_archived_files(tmp_path, mock_db_writer, mock_file_manager):
+    """Successful files each get a log_file_event('archived') call."""
+    files = [_make_raw_csv(tmp_path, f"raw_{i}.csv", rows=3) for i in range(2)]
+    mock_db_writer.write_rawdata.return_value = 6
+
+    process_rawdata_files_batch(files, mock_db_writer, mock_file_manager)
+
+    logged = [c for c in mock_db_writer.log_file_event.call_args_list]
+    assert len(logged) == 2
+    for c in logged:
+        assert c.args[1] == "archived"
+        assert c.kwargs.get("rows_written") == 3
+
+
+def test_batch_logs_quarantined_files(tmp_path, mock_db_writer, mock_file_manager):
+    """Files that fail to parse each get a log_file_event('quarantined') call."""
+    files = [_make_raw_csv(tmp_path, f"raw_{i}.csv") for i in range(3)]
+
+    with patch("parser.service_logic.parse_rawdata_csv", return_value=None):
+        process_rawdata_files_batch(files, mock_db_writer, mock_file_manager)
+
+    assert mock_db_writer.log_file_event.call_count == 3
+    for c in mock_db_writer.log_file_event.call_args_list:
+        assert c.args[1] == "quarantined"
+
+
+# ---------------------------------------------------------------------------
+# process_cml_file — metadata path
+# ---------------------------------------------------------------------------
+
+
+def _make_metadata_csv(tmp_path, name="cml_metadata.csv"):
+    lines = [
+        "cml_id,sublink_id,site_0_lon,site_0_lat,site_1_lon,site_1_lat,frequency,polarization,length",
+        "CML_1,A,13.4,52.5,13.5,52.6,38.0,H,1200.0",
+    ]
+    p = tmp_path / name
+    p.write_text("\n".join(lines) + "\n")
+    return p
+
+
+def test_process_cml_file_metadata_archived(tmp_path, mock_db_writer, mock_file_manager):
+    """Metadata files are written, archived, and logged as archived."""
+    f = _make_metadata_csv(tmp_path)
+    mock_db_writer.write_metadata.return_value = 1
+
+    with patch("parser.service_logic.parse_metadata_csv", return_value=pd.DataFrame({"x": [1]})):
+        result = process_cml_file(f, mock_db_writer, mock_file_manager)
+
+    assert result == "metadata"
+    mock_file_manager.archive_file.assert_called_once_with(f)
+    mock_db_writer.log_file_event.assert_called_once_with(
+        f.name, "archived", rows_written=1
+    )
+
+
+# ---------------------------------------------------------------------------
+# process_cml_file — rawdata path
+# ---------------------------------------------------------------------------
+
+
+def test_process_cml_file_rawdata_archived(tmp_path, mock_db_writer, mock_file_manager):
+    """Rawdata files are written, archived, and logged as archived."""
+    f = _make_raw_csv(tmp_path, "cml_data.csv", rows=5)
+    mock_db_writer.write_rawdata.return_value = 5
+    mock_db_writer.validate_rawdata_references.return_value = (True, [])
+
+    result = process_cml_file(f, mock_db_writer, mock_file_manager)
+
+    assert result == "rawdata"
+    mock_file_manager.archive_file.assert_called_once_with(f)
+    mock_db_writer.log_file_event.assert_called_once_with(
+        f.name, "archived", rows_written=5
+    )
+
+
+def test_process_cml_file_unsupported_quarantined(tmp_path, mock_db_writer, mock_file_manager):
+    """Files with unrecognised names are quarantined and logged."""
+    f = tmp_path / "unknown_file.xyz"
+    f.write_text("anything")
+
+    result = process_cml_file(f, mock_db_writer, mock_file_manager)
+
+    assert result == "unsupported"
+    mock_file_manager.quarantine_file.assert_called_once()
+    mock_db_writer.log_file_event.assert_called_once()
+    assert mock_db_writer.log_file_event.call_args.args[1] == "quarantined"
+
+
+def test_process_cml_file_db_connect_failure_quarantines(tmp_path, mock_db_writer, mock_file_manager):
+    """If DB connect fails, file is quarantined, logged, and exception re-raised."""
+    f = _make_raw_csv(tmp_path, "cml_data.csv")
+    mock_db_writer.connect.side_effect = Exception("no db")
+
+    with pytest.raises(Exception, match="no db"):
+        process_cml_file(f, mock_db_writer, mock_file_manager)
+
+    mock_file_manager.quarantine_file.assert_called_once()
+    mock_db_writer.log_file_event.assert_called_once()
+    assert mock_db_writer.log_file_event.call_args.args[1] == "quarantined"
+
+
+def test_process_cml_file_write_failure_quarantines(tmp_path, mock_db_writer, mock_file_manager):
+    """If the DB write raises, file is quarantined, logged, and exception re-raised."""
+    f = _make_raw_csv(tmp_path, "cml_data.csv", rows=2)
+    mock_db_writer.write_rawdata.side_effect = Exception("write error")
+    mock_db_writer.validate_rawdata_references.return_value = (True, [])
+
+    with pytest.raises(Exception, match="write error"):
+        process_cml_file(f, mock_db_writer, mock_file_manager)
+
+    mock_file_manager.quarantine_file.assert_called_once()
+    assert mock_db_writer.log_file_event.call_args.args[1] == "quarantined"
+    assert "write error" in mock_db_writer.log_file_event.call_args.kwargs.get("error_message", "")
