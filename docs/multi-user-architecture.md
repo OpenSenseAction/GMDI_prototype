@@ -15,7 +15,7 @@ work: `feat/web-api-upload` and `feat/user-onboarding` (see PR6 / PR7 below).
 | 4 | `feat/sftp-multi-user` | merged | Per-user SFTP dirs, volumes, parser instances |
 | 5 | `feat/webserver-auth` | merged | Login, session, DB role switching — go-live milestone |
 | 6 | `feat/web-api-upload` | not started | HTTP API upload + drag-and-drop |
-| 7 | `feat/user-onboarding` | not started | `add_user.sh`, docs |
+| 7 | `feat/user-onboarding` | not started | `users.yml` single source of truth, `generate_config.py`, multi-source SFTP subdirs |
 | 8 | `feat/grafana-auth-proxy` | merged | Per-user Grafana datasources + auth proxy header |
 
 ### Recent merged GitHub PRs
@@ -510,29 +510,99 @@ API keys are stored outside the repo (env vars or Docker secrets), not in `users
 
 ## PR7 — `feat/user-onboarding`
 
-**Goal:** `scripts/add_user.sh` automates all steps for adding a new user.
+**Goal:** Introduce `users.yml` as the single source of truth for all user configuration.
+A generator script `scripts/generate_config.py` reads it and (re)generates every derived
+artifact. Multi-source support (multiple independent CML subnetworks per user, each with its
+own parser) is baked into the schema from the start.
 
-### What the script does
+### Problem: user config is currently scattered across 5 files
 
-1. Generate ED25519 SSH key pair → `ssh_keys/<name>/`
-2. `CREATE ROLE <name> LOGIN PASSWORD '<generated>';`
-3. `GRANT <name> TO webserver_role;` — enables `SET ROLE` from webserver
-4. Grant `SELECT, INSERT, UPDATE` on `cml_metadata`, `cml_stats` to new role
-5. Grant `INSERT, UPDATE` on `cml_data_secure` (parser writes) and `SELECT` on `cml_data_secure`, `cml_data_1h_secure` (reads) to new role — no direct grants on raw `cml_data`
-6. Add user entry to `configs/users.json` (hashed password via `scripts/hash_password.py`)
-7. Print docker-compose snippet for sftp_receiver + parser service + volumes
+Adding a user today requires manually editing all of the following:
 
-### Onboarding SQL template
+| File | What changes |
+|---|---|
+| `docker-compose.yml` | New parser service(s), SFTP volumes, SSH key mounts, `sftp_receiver` command line |
+| `sftp_receiver/entrypoint.sh` | `chown` line per user |
+| `webserver/configs/users.json` | Password hash, display name, `grafana_org_id` |
+| `database/init.sql` + a new migration | `CREATE ROLE`, `GRANT` statements |
+| `grafana/init_grafana.py` | Org list and user list (hardcoded Python lists) |
+
+### `users.yml` — schema
+
+```yaml
+users:
+  - id: demo_openmrg          # = PostgreSQL role name = user_id in data rows = SFTP username
+    uid: 1001                  # Linux UID inside the SFTP container
+    display_name: OpenMRG Demo
+    grafana_org_id: 1
+    sources:
+      - id: main               # subdir: /home/demo_openmrg/uploads/main/
+        parser: openmrg        # selects which parser Docker image / config to use
+
+  - id: demo_orange_cameroun
+    uid: 1002
+    display_name: Orange Cameroun Demo
+    grafana_org_id: 2
+    sources:
+      - id: douala             # subdir: /home/demo_orange_cameroun/uploads/douala/
+        parser: orange_cameroun
+      - id: yaounde            # second subnetwork — separate parser, same user_id
+        parser: orange_cameroun
+```
+
+**Key design decisions:**
+- `id` is simultaneously the SFTP username, PostgreSQL role name, and `user_id` value in every
+  data row. This lets the generic `current_user` RLS policy cover all users automatically.
+- `sources` maps each independent CML subnetwork to a dedicated SFTP upload subdir and parser
+  instance. All sources of one user share the same `user_id`, so Grafana sees their data unified.
+- A user with a single source still uses a subdir (`uploads/main/`) for consistency — no
+  special-case logic in the generator.
+
+### Multi-source SFTP directory layout
+
+```
+/home/demo_openmrg/uploads/
+    main/           ← parser_demo_openmrg_main watches this volume, writes user_id=demo_openmrg
+
+/home/demo_orange_cameroun/uploads/
+    douala/         ← parser_demo_orange_cameroun_douala watches, writes user_id=demo_orange_cameroun
+    yaounde/        ← parser_demo_orange_cameroun_yaounde watches, writes user_id=demo_orange_cameroun
+```
+
+Each subdir is a separate named Docker volume, mounted read-write into the matching parser and
+read-only into the SFTP receiver. The MNO simulator uses `SFTP_REMOTE_PATH=/uploads/<source_id>`
+— one path change per source, no new SFTP credentials needed.
+
+### `scripts/generate_config.py` — what it generates
+
+The script is **run-and-commit**: outputs are regenerated from `users.yml`, then committed to
+git. The deployed system never runs the generator; it only reads the generated artifacts.
+
+| Output | How generated |
+|---|---|
+| `docker-compose.override.yml` | One parser service + named volume per source; SFTP volumes and key mounts per user |
+| `sftp_receiver/entrypoint.sh` | `mkdir`/`chown` block per user and source subdir |
+| `webserver/configs/users.json` | Preserves existing password hashes; adds skeleton entry for new users (password set separately via `scripts/set_password.py`) |
+| `database/migrations/NNN_add_<user>.sql` | `CREATE ROLE`, all `GRANT` statements (see template below) |
+| `grafana/provisioning/datasources/postgres.yml` | One datasource per user, connecting as the PG role |
+| `grafana/init_grafana.py` `ORGS`/`USERS` lists | Replaced with dynamic read from `users.yml` at Grafana init time |
+| `ssh_keys/<user_id>/` | ED25519 key pair generated if directory does not already exist |
+
+`docker-compose.override.yml` is the mechanism for adding services without modifying the base
+`docker-compose.yml`. Docker Compose merges them automatically on `docker compose up`.
+
+### Onboarding SQL template (generated per user)
 
 ```sql
-CREATE ROLE :user LOGIN PASSWORD :'password';
-GRANT :user TO webserver_role;
-GRANT SELECT, INSERT, UPDATE ON cml_metadata, cml_stats TO :user;
+-- migrations/NNN_add_<user_id>.sql
+CREATE ROLE :"user_id" LOGIN PASSWORD :'password';
+GRANT :"user_id" TO webserver_role;
+GRANT SELECT, INSERT, UPDATE ON cml_metadata, cml_stats TO :"user_id";
 -- All cml_data access goes through the security-barrier view, never the raw table.
 -- cml_data has no RLS (compressed hypertable), so any direct grant — SELECT, INSERT,
 -- or UPDATE — bypasses the WITH CHECK OPTION isolation boundary on cml_data_secure.
-GRANT SELECT, INSERT, UPDATE ON cml_data_secure TO :user;
-GRANT SELECT ON cml_data_1h_secure TO :user;
+GRANT SELECT, INSERT, UPDATE ON cml_data_secure TO :"user_id";
+GRANT SELECT ON cml_data_1h_secure TO :"user_id";
 ```
 
 Note: no per-user RLS policy is needed. The generic `current_user` policy already installed on
@@ -541,6 +611,31 @@ Note: no per-user RLS policy is needed. The generic `current_user` policy alread
 WITH CHECK OPTION`; `cml_data_1h_secure` handles the aggregate. Any direct grant on raw
 `cml_data` — including `INSERT` or `UPDATE` — would allow a tenant to write rows with an
 arbitrary `user_id`, overwriting or injecting another tenant's data.
+
+### Workflow for adding a new user
+
+```bash
+# 1. Add the user entry to users.yml (edit by hand)
+# 2. Run the generator — regenerates all derived artifacts
+python scripts/generate_config.py
+
+# 3. Set the webserver login password
+python scripts/set_password.py <user_id>
+
+# 4. Apply the new SQL migration
+docker exec -i gmdi_prototype-database-1 psql -U myuser -d mydatabase \
+  < database/migrations/NNN_add_<user_id>.sql
+
+# 5. Commit everything (users.yml, generated files, migration)
+git add users.yml docker-compose.override.yml sftp_receiver/entrypoint.sh \
+    webserver/configs/users.json database/migrations/ \
+    grafana/provisioning/datasources/postgres.yml grafana/init_grafana.py \
+    ssh_keys/<user_id>/
+git commit -m "onboard user <user_id>"
+
+# 6. Re-deploy affected services
+docker compose up -d --no-deps sftp_receiver parser_<user_id>_<source_id> grafana
+```
 
 ---
 
