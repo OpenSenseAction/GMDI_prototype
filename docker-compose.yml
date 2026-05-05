@@ -217,7 +217,7 @@ services:
     entrypoint: ["/custom-entrypoint.sh"]
     command: ["demo_openmrg::1001:1001:uploads", "demo_orange_cameroun::1002:1002:uploads"]
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "22"]
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/22"]
       interval: 5s
       timeout: 3s
       retries: 5
