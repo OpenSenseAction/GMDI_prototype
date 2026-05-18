@@ -103,7 +103,7 @@ def test_overview_reads_total_records_from_cml_stats(monkeypatch, auth_client):
     # Stub render_template so the test doesn't depend on template rendering.
     monkeypatch.setattr(wm, "render_template", lambda *a, **kw: "")
 
-    resp = client.get("/overview")
+    resp = client.get("/")
     assert resp.status_code == 200
 
     executed_sql = [c.args[0] for c in cursor.execute.call_args_list]
