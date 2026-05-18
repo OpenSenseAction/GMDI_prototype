@@ -109,7 +109,7 @@ def main():
     def stats_loop():
         # Use a separate DBWriter connection so stats queries don't contend
         # with the insert connection.
-        stats_db = DBWriter(Config.DATABASE_URL)
+        stats_db = DBWriter(Config.DATABASE_URL, user_id=Config.USER_ID)
 
         # Keep retrying until the DB is reachable (e.g. if it starts slowly).
         while not stop_event.is_set():

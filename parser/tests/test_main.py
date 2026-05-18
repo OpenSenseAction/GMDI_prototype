@@ -1,11 +1,12 @@
-"""Tests for process_existing_files in parser/main.py."""
+"""Tests for process_existing_files and main() wiring in parser/main.py."""
 
+import threading
 import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch, call
 
 
-from ..main import process_existing_files
+from ..main import process_existing_files, main
 
 
 @pytest.fixture
@@ -118,3 +119,53 @@ def test_metadata_exception_is_swallowed(
     mock_single.assert_called_once()
     # Batch processing of data files still happens
     mock_batch.assert_called_once()
+
+
+def test_stats_loop_creates_dbwriter_with_config_user_id(tmp_path):
+    """stats_loop must pass user_id=Config.USER_ID to DBWriter.
+
+    Regression test for the bug where DBWriter was instantiated without
+    user_id in the stats background thread, causing it to silently default
+    to 'demo_openmrg' and never compute stats for any other user.
+    """
+    captured = {}
+
+    class CapturingThread(threading.Thread):
+        """Intercepts Thread creation to capture the stats-refresh target."""
+        def __init__(self, *args, target=None, name=None, **kwargs):
+            super().__init__(*args, target=target, name=name, **kwargs)
+            if name == "stats-refresh":
+                captured["stats_loop"] = target
+
+        def start(self):
+            pass  # don't spawn real threads in unit tests
+
+    with patch("parser.main.threading.Thread", CapturingThread), \
+         patch("parser.main.FileManager"), \
+         patch("parser.main.FileWatcher"), \
+         patch("parser.main.DBWriter") as MockDBWriter, \
+         patch("parser.main.Config.PARSER_ENABLED", True), \
+         patch("parser.main.Config.PROCESS_EXISTING_ON_STARTUP", False), \
+         patch("parser.main.Config.DATABASE_URL", "postgresql://test"), \
+         patch("parser.main.Config.USER_ID", "ctu_cz_tmobile"), \
+         patch("parser.main.Config.INCOMING_DIR", tmp_path), \
+         patch("parser.main.Config.ARCHIVED_DIR", tmp_path), \
+         patch("parser.main.Config.QUARANTINE_DIR", tmp_path), \
+         patch("parser.main.time.sleep", side_effect=KeyboardInterrupt):
+        try:
+            main()
+        except (KeyboardInterrupt, SystemExit):
+            pass
+
+    assert "stats_loop" in captured, "stats-refresh Thread was never created"
+
+    # After main() exits its finally block sets stop_event, so calling
+    # stats_loop() directly will create DBWriter then return immediately
+    # (stop_event already set → while-loop body skipped).
+    captured["stats_loop"]()
+
+    for c in MockDBWriter.call_args_list:
+        user_id = c.kwargs.get("user_id") or (c.args[1] if len(c.args) > 1 else None)
+        assert user_id == "ctu_cz_tmobile", (
+            f"DBWriter called without user_id=Config.USER_ID: {c}"
+        )
