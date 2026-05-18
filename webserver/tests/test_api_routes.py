@@ -85,3 +85,32 @@ def test_api_data_time_range_no_data(auth_client):
     data = resp.get_json()
     assert data["earliest"] is None
     assert data["latest"] is None
+
+
+def test_overview_reads_total_records_from_cml_stats(monkeypatch, auth_client):
+    """overview() must query cml_stats for total_records, not scan cml_data_secure.
+
+    Regression test for the fix that replaced:
+        SELECT COUNT(*) FROM cml_data_secure
+    with:
+        SELECT COALESCE(SUM(total_records), 0) FROM cml_stats
+
+    The old query caused a full hypertable scan on every page load.
+    """
+    client, cursor = auth_client
+    # overview() calls fetchone three times: total_cmls, total_records, date range.
+    cursor.fetchone.side_effect = [(7,), (42000,), (None,)]
+    # Stub render_template so the test doesn't depend on template rendering.
+    monkeypatch.setattr(wm, "render_template", lambda *a, **kw: "")
+
+    resp = client.get("/")
+    assert resp.status_code == 200
+
+    executed_sql = [c.args[0] for c in cursor.execute.call_args_list]
+    assert any("cml_stats" in sql for sql in executed_sql), (
+        "expected a query against cml_stats for total_records"
+    )
+    assert not any("FROM cml_data_secure" in sql for sql in executed_sql), (
+        "cml_data_secure must not be scanned for total_records "
+        "(full hypertable scan regression)"
+    )
