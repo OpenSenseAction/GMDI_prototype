@@ -272,11 +272,14 @@ GRANT USAGE ON SCHEMA public TO {user_id};
 -- current_user policy already installed on those tables.
 GRANT SELECT, INSERT, UPDATE ON cml_metadata, cml_stats TO {user_id};
 
--- cml_data has no RLS (compressed TimescaleDB hypertable).  All user access
--- goes through the security-barrier views.  Any direct grant on cml_data —
--- including SELECT — bypasses the WITH CHECK OPTION isolation boundary.
-GRANT SELECT, INSERT, UPDATE ON cml_data_secure TO {user_id};
+-- cml_data has no RLS (compressed TimescaleDB hypertable).
+-- Parser writes (write_rawdata) and stats updates (update_cml_stats) go
+-- directly to cml_data.  Read isolation for webserver/Grafana is provided
+-- by the security-barrier views cml_data_secure / cml_data_1h_secure.
+GRANT SELECT, INSERT, UPDATE ON cml_data TO {user_id};
+GRANT SELECT ON cml_data_secure TO {user_id};
 GRANT SELECT ON cml_data_1h_secure TO {user_id};
+GRANT EXECUTE ON FUNCTION update_cml_stats(TEXT, TEXT) TO {user_id};
 
 -- file_processing_log: parser INSERTs a row for every processed file;
 -- webserver_role only needs SELECT.
