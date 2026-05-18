@@ -190,8 +190,8 @@ def overview():
             cur.execute("SELECT COUNT(DISTINCT cml_id) FROM cml_metadata")
             stats["total_cmls"] = cur.fetchone()[0]
 
-            # Approximate count via secure view
-            cur.execute("SELECT COUNT(*) FROM cml_data_secure")
+            # Use precomputed stats to avoid a full hypertable scan
+            cur.execute("SELECT COALESCE(SUM(total_records), 0) FROM cml_stats")
             stats["total_records"] = cur.fetchone()[0]
 
             # Get data date range (from 1h secure view)
