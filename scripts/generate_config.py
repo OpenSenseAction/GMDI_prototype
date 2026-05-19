@@ -280,6 +280,7 @@ GRANT SELECT, INSERT, UPDATE ON cml_data TO {user_id};
 GRANT SELECT ON cml_data_secure TO {user_id};
 GRANT SELECT ON cml_data_1h_secure TO {user_id};
 GRANT EXECUTE ON FUNCTION update_cml_stats(TEXT, TEXT) TO {user_id};
+GRANT EXECUTE ON FUNCTION update_cml_stats_windowed(TEXT, TEXT) TO {user_id};
 
 -- file_processing_log: parser INSERTs a row for every processed file;
 -- webserver_role only needs SELECT.

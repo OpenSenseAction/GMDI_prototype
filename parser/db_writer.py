@@ -304,12 +304,16 @@ class DBWriter:
             )
         )
 
-        # Commit immediately after insert; stats are updated separately
+        # Update lifetime stats for CMLs in this batch (same transaction as the insert)
+        cml_ids = df_subset["cml_id"].unique().tolist()
+        self._update_stats_for_cmls(cml_ids)
+
+        # Single commit covers both the data insert and the stats update
         try:
             if self.conn:
                 self.conn.commit()
         except Exception:
-            logger.exception("Failed to commit raw data")
+            logger.exception("Failed to commit raw data and stats")
             raise
 
         return rows_written
@@ -380,6 +384,28 @@ class DBWriter:
             except Exception:
                 pass
             logger.exception("Failed to refresh cml_stats")
+        finally:
+            if cur and not cur.closed:
+                cur.close()
+
+    def refresh_windowed_stats(self) -> None:
+        """Recalculate windowed (6h/1h) cml_stats for all known CMLs.
+        Cheap: only touches the most-recent uncompressed TimescaleDB chunk."""
+        cur = self.conn.cursor()
+        try:
+            cur.execute(
+                "SELECT update_cml_stats_windowed(cml_id::text, %s) "
+                "FROM (SELECT DISTINCT cml_id FROM cml_metadata WHERE user_id = %s) t",
+                (self.user_id, self.user_id),
+            )
+            self.conn.commit()
+            logger.info("Refreshed windowed cml_stats for all CMLs")
+        except Exception:
+            try:
+                self.conn.rollback()
+            except Exception:
+                pass
+            logger.exception("Failed to refresh windowed cml_stats")
         finally:
             if cur and not cur.closed:
                 cur.close()

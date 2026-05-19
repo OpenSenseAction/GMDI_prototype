@@ -528,45 +528,33 @@ def api_cml_stats():
             cur.execute(
                 """
                 SELECT
-                    cs.cml_id::text,
-                    cs.total_records,
-                    cs.valid_records,
-                    cs.null_records,
-                    cs.completeness_percent,
-                    cs.min_rsl,
-                    cs.max_rsl,
-                    cs.mean_rsl,
-                    cs.stddev_rsl,
-                    cs.last_rsl,
-                    ROUND(STDDEV(cd.rsl)::numeric, 2) as stddev_last_60min
-                FROM cml_stats cs
-                LEFT JOIN (
-                    SELECT cml_id, rsl
-                    FROM cml_data_secure
-                    WHERE time >= (SELECT MAX(bucket) FROM cml_data_1h_secure) - INTERVAL '60 minutes'
-                ) cd ON cs.cml_id = cd.cml_id
-                GROUP BY cs.cml_id, cs.total_records, cs.valid_records, cs.null_records,
-                         cs.completeness_percent, cs.min_rsl, cs.max_rsl, cs.mean_rsl,
-                         cs.stddev_rsl, cs.last_rsl
-                ORDER BY cs.cml_id
-            """
+                    cml_id::text,
+                    completeness_percent_6h,
+                    total_records_6h,
+                    valid_records_6h,
+                    mean_rsl_6h,
+                    stddev_rsl_6h,
+                    completeness_percent_1h,
+                    stddev_rsl_1h,
+                    last_rsl
+                FROM cml_stats
+                ORDER BY cml_id
+                """
             )
             data = cur.fetchall()
             cur.close()
 
         stats = [
             {
-                "cml_id": str(row[0]),
-                "total_records": int(row[1]),
-                "valid_records": int(row[2]),
-                "null_records": int(row[3]),
-                "completeness_percent": safe_float(row[4]),
-                "min_rsl": safe_float(row[5]),
-                "max_rsl": safe_float(row[6]),
-                "mean_rsl": safe_float(row[7]),
-                "stddev_rsl": safe_float(row[8]),
-                "last_rsl": safe_float(row[9]),
-                "stddev_last_60min": safe_float(row[10]),
+                "cml_id":                   str(row[0]),
+                "completeness_percent":     safe_float(row[1]),   # 6h window
+                "total_records":            int(row[2] or 0),
+                "valid_records":            int(row[3] or 0),
+                "mean_rsl":                 safe_float(row[4]),
+                "stddev_rsl":               safe_float(row[5]),
+                "completeness_percent_1h":  safe_float(row[6]),
+                "stddev_last_60min":        safe_float(row[7]),   # pre-computed 1h stddev
+                "last_rsl":                 safe_float(row[8]),
             }
             for row in data
         ]
@@ -613,8 +601,8 @@ def get_archive_statistics(user_id: str):
         with user_db_scope(user_id) as conn:
             cur = conn.cursor()
 
-            # Row count via secure view
-            cur.execute("SELECT COUNT(*) FROM cml_data_secure")
+            # Row count from precomputed cml_stats (RLS enforced via user_db_scope)
+            cur.execute("SELECT COALESCE(SUM(total_records), 0) FROM cml_stats")
             stats["total_records"] = cur.fetchone()[0]
 
             # CML count (RLS enforced)

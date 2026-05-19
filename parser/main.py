@@ -125,14 +125,14 @@ def main():
         # Run immediately on startup so Grafana has fresh stats without
         # waiting a full interval after the backlog is processed.
         try:
-            stats_db.refresh_stats()
+            stats_db.refresh_windowed_stats()
         except Exception:
-            logger.exception("Stats thread: initial refresh_stats failed")
+            logger.exception("Stats thread: initial refresh_windowed_stats failed")
         while not stop_event.wait(Config.STATS_REFRESH_INTERVAL):
             try:
-                stats_db.refresh_stats()
+                stats_db.refresh_windowed_stats()
             except Exception:
-                logger.exception("Stats thread: refresh_stats failed")
+                logger.exception("Stats thread: refresh_windowed_stats failed")
         stats_db.close()
 
     stats_thread = threading.Thread(target=stats_loop, daemon=True, name="stats-refresh")

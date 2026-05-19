@@ -121,6 +121,91 @@ def test_metadata_exception_is_swallowed(
     mock_batch.assert_called_once()
 
 
+def _run_stats_loop(tmp_path, mock_event, *, configure_db=None):
+    """Run main(), then invoke the captured stats_loop closure under the same patches.
+
+    Calling stats_loop() inside the with-block is critical: if called after
+    the block exits, DBWriter and Config are unpatched, connect() fails against
+    a real DB, and the retry loop hangs forever.
+
+    Returns the MagicMock instance used as every DBWriter in the test.
+    """
+    captured = {}
+
+    class CapturingThread(threading.Thread):
+        def __init__(self, *args, target=None, name=None, **kwargs):
+            super().__init__(*args, target=target, name=name, **kwargs)
+            if name == "stats-refresh":
+                captured["stats_loop"] = target
+
+        def start(self):
+            pass  # don't spawn real threads in unit tests
+
+    mock_db = MagicMock()
+
+    with patch("parser.main.threading.Thread", CapturingThread), \
+         patch("parser.main.threading.Event", return_value=mock_event), \
+         patch("parser.main.FileManager"), \
+         patch("parser.main.FileWatcher"), \
+         patch("parser.main.DBWriter", return_value=mock_db), \
+         patch("parser.main.Config.PARSER_ENABLED", True), \
+         patch("parser.main.Config.PROCESS_EXISTING_ON_STARTUP", False), \
+         patch("parser.main.Config.DATABASE_URL", "postgresql://test"), \
+         patch("parser.main.Config.USER_ID", "test_user"), \
+         patch("parser.main.Config.STATS_REFRESH_INTERVAL", 60), \
+         patch("parser.main.Config.INCOMING_DIR", tmp_path), \
+         patch("parser.main.Config.ARCHIVED_DIR", tmp_path), \
+         patch("parser.main.Config.QUARANTINE_DIR", tmp_path), \
+         patch("parser.main.time.sleep", side_effect=KeyboardInterrupt):
+        try:
+            main()
+        except (KeyboardInterrupt, SystemExit):
+            pass
+        if configure_db is not None:
+            configure_db(mock_db)
+        if "stats_loop" in captured:
+            captured["stats_loop"]()
+
+    return mock_db
+
+
+def test_stats_loop_calls_refresh_windowed_stats_on_startup(tmp_path):
+    """stats_loop calls refresh_windowed_stats once before entering the timer loop."""
+    mock_event = MagicMock()
+    mock_event.is_set.return_value = False  # connect loop: enter → connect succeeds → break
+    mock_event.wait.return_value = True     # timer wait → loop exits immediately
+
+    mock_db = _run_stats_loop(tmp_path, mock_event)
+
+    mock_db.refresh_windowed_stats.assert_called_once()
+    mock_db.close.assert_called()  # called by stats_loop (possibly also by main cleanup)
+
+
+def test_stats_loop_initial_refresh_error_is_swallowed(tmp_path):
+    """stats_loop swallows exceptions raised by the startup refresh_windowed_stats call."""
+    mock_event = MagicMock()
+    mock_event.is_set.return_value = False
+    mock_event.wait.return_value = True
+
+    def configure(db):
+        db.refresh_windowed_stats.side_effect = Exception("stats error")
+
+    _run_stats_loop(tmp_path, mock_event, configure_db=configure)  # must not raise
+
+
+def test_stats_loop_calls_refresh_windowed_stats_in_timer_loop(tmp_path):
+    """stats_loop calls refresh_windowed_stats again on each timer tick."""
+    mock_event = MagicMock()
+    mock_event.is_set.return_value = False
+    # First timer wait → False (enter loop body), second → True (exit)
+    mock_event.wait.side_effect = [False, True]
+
+    mock_db = _run_stats_loop(tmp_path, mock_event)
+
+    # startup call + 1 timer-loop call = 2 total
+    assert mock_db.refresh_windowed_stats.call_count == 2
+
+
 def test_stats_loop_creates_dbwriter_with_config_user_id(tmp_path):
     """stats_loop must pass user_id=Config.USER_ID to DBWriter.
 
