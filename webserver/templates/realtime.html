@@ -168,13 +168,13 @@
     function buildPopupText(cmlId, stats) {
         var popupText = '<strong>CML ' + cmlId + '</strong><br>';
         if (stats) {
-            popupText += 'Completeness: ' + stats.completeness_percent + '%<br>';
-            popupText += 'Valid records: ' + stats.valid_records + '/' + stats.total_records + '<br>';
+            popupText += 'Completeness (6h): ' + stats.completeness_percent + '%<br>';
+            popupText += 'Valid records (6h): ' + stats.valid_records + '/' + stats.total_records + '<br>';
             if (stats.last_rsl !== null) {
                 popupText += 'Last RSL: ' + stats.last_rsl + ' dBm<br>';
             }
             if (stats.stddev_last_60min !== null) {
-                popupText += 'Std Dev (60min): ' + stats.stddev_last_60min + '<br>';
+                popupText += 'Std Dev (1h): ' + stats.stddev_last_60min + '<br>';
             }
         }
         return popupText;
@@ -226,9 +226,9 @@
                     var select = L.DomUtil.create('select', '', container);
                     select.id = 'coloringOption';
                     select.innerHTML = `
-                        <option value="completeness" selected>Data Completeness</option>
+                        <option value="completeness" selected>Data Completeness (6h)</option>
                         <option value="last_rsl">Last RSL Value</option>
-                        <option value="std_dev">RSL Std Dev (60min)</option>
+                        <option value="std_dev">RSL Std Dev (1h)</option>
                     `;
 
                     // Prevent map interactions when using the select
