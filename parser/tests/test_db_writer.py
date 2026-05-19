@@ -319,6 +319,33 @@ def test__update_stats_for_cmls_rollback_on_error(mock_connection):
     mock_connection.rollback.assert_called()
 
 
+def test_refresh_windowed_stats_commits_on_success(mock_connection):
+    """refresh_windowed_stats calls update_cml_stats_windowed and commits."""
+    writer = DBWriter("postgresql://test", user_id="demo_openmrg")
+    writer.conn = mock_connection
+
+    writer.refresh_windowed_stats()
+
+    cur = mock_connection.cursor.return_value
+    cur.execute.assert_called_once()
+    sql = cur.execute.call_args.args[0]
+    assert "update_cml_stats_windowed" in sql
+    mock_connection.commit.assert_called_once()
+
+
+def test_refresh_windowed_stats_rollback_on_error(mock_connection):
+    """refresh_windowed_stats rolls back and swallows the exception on DB error."""
+    writer = DBWriter("postgresql://test", user_id="demo_openmrg")
+    writer.conn = mock_connection
+
+    mock_connection.cursor.return_value.execute.side_effect = Exception("DB error")
+
+    writer.refresh_windowed_stats()  # must not raise
+
+    mock_connection.rollback.assert_called_once()
+    mock_connection.commit.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # log_file_event
 # ---------------------------------------------------------------------------

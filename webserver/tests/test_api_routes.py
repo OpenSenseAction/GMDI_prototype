@@ -87,6 +87,32 @@ def test_api_data_time_range_no_data(auth_client):
     assert data["latest"] is None
 
 
+def test_get_archive_statistics_reads_total_records_from_cml_stats(auth_client):
+    """get_archive_statistics must use SUM(total_records) from cml_stats, not COUNT(*).
+
+    Regression guard for the query that replaced:
+        SELECT COUNT(*) FROM cml_data_secure
+    with:
+        SELECT COALESCE(SUM(total_records), 0) FROM cml_stats
+    """
+    client, cursor = auth_client
+    # fetchone called 3 times: total_records, cml_count, date_range
+    cursor.fetchone.side_effect = [(99000,), (12,), (None,)]
+
+    result = wm.get_archive_statistics("demo_openmrg")
+
+    assert result["total_records"] == 99000
+    assert result["cml_count"] == 12
+
+    executed_sql = [c.args[0] for c in cursor.execute.call_args_list]
+    assert any(
+        "SUM(total_records)" in sql and "cml_stats" in sql for sql in executed_sql
+    ), "expected COALESCE(SUM(total_records), 0) FROM cml_stats"
+    assert not any("COUNT(*)" in sql and "cml_data" in sql for sql in executed_sql), (
+        "COUNT(*) FROM cml_data must not be used (full hypertable scan regression)"
+    )
+
+
 def test_overview_reads_total_records_from_cml_stats(monkeypatch, auth_client):
     """overview() must query cml_stats for total_records, not scan cml_data_secure.
 
