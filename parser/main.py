@@ -3,6 +3,7 @@
 This module wires together the FileWatcher, DBWriter and FileManager to implement the parser service. It is intentionally lightweight and delegates parsing logic to function-based parsers in `parsers/demo_csv_data/`.
 """
 
+import json
 import os
 import time
 import logging
@@ -12,7 +13,7 @@ from pathlib import Path
 from .file_watcher import FileWatcher
 from .file_manager import FileManager
 from .db_writer import DBWriter
-from .service_logic import process_cml_file, process_rawdata_files_batch
+from .service_logic import load_parser, process_cml_file, process_rawdata_files_batch
 
 
 class Config:
@@ -20,6 +21,8 @@ class Config:
         "DATABASE_URL", "postgresql://myuser:mypassword@database:5432/mydatabase"
     )
     USER_ID = os.getenv("USER_ID", "demo_openmrg")
+    PARSER_TYPE = os.getenv("PARSER_TYPE", "demo_csv_data")
+    PARSER_CSV_CONFIG: dict = json.loads(os.getenv("PARSER_CSV_CONFIG", "{}"))
     INCOMING_DIR = Path(os.getenv("PARSER_INCOMING_DIR", "data/incoming"))
     ARCHIVED_DIR = Path(os.getenv("PARSER_ARCHIVED_DIR", "data/archived"))
     QUARANTINE_DIR = Path(os.getenv("PARSER_QUARANTINE_DIR", "data/quarantine"))
@@ -39,27 +42,30 @@ def setup_logging():
     )
 
 
-def process_existing_files(db_writer, file_manager, logger):
+def process_existing_files(db_writer, file_manager, logger, parser=None):
     incoming = sorted(
         f for f in Config.INCOMING_DIR.glob("*.csv") if f.is_file()
     )
     if not incoming:
         return
 
-    metadata_files = [f for f in incoming if "meta" in f.name.lower()]
-    data_files = [f for f in incoming if f not in set(metadata_files)]
+    from .service_logic import _make_default_bundle
+    _parser = parser if parser is not None else _make_default_bundle()
+
+    metadata_files = [f for f in incoming if _parser.is_metadata_file(f.name.lower())]
+    data_files = [f for f in incoming if not _parser.is_metadata_file(f.name.lower())]
 
     # Metadata files: process individually (typically just one)
     for f in metadata_files:
         try:
-            process_cml_file(f, db_writer, file_manager, logger)
+            process_cml_file(f, db_writer, file_manager, logger, parser=_parser)
         except Exception:
             pass
 
     # Data files: batch-process for efficiency
     if data_files:
         logger.info("Found %d data file(s) to process", len(data_files))
-        process_rawdata_files_batch(data_files, db_writer, file_manager, logger)
+        process_rawdata_files_batch(data_files, db_writer, file_manager, logger, parser=_parser)
 
 
 def main():
@@ -72,7 +78,9 @@ def main():
     )
     db_writer = DBWriter(Config.DATABASE_URL, user_id=Config.USER_ID)
 
-    logger.info("Starting parser service")
+    parser_bundle = load_parser(Config.PARSER_TYPE, Config.PARSER_CSV_CONFIG)
+
+    logger.info("Starting parser service (parser_type=%s)", Config.PARSER_TYPE)
     Config.INCOMING_DIR.mkdir(parents=True, exist_ok=True)
     Config.ARCHIVED_DIR.mkdir(parents=True, exist_ok=True)
     Config.QUARANTINE_DIR.mkdir(parents=True, exist_ok=True)
@@ -87,11 +95,11 @@ def main():
         logger.exception("Unable to connect to DB at startup")
 
     if Config.PROCESS_EXISTING_ON_STARTUP:
-        process_existing_files(db_writer, file_manager, logger)
+        process_existing_files(db_writer, file_manager, logger, parser=parser_bundle)
 
     def on_new_file(filepath):
         try:
-            process_cml_file(filepath, db_writer, file_manager, logger)
+            process_cml_file(filepath, db_writer, file_manager, logger, parser=parser_bundle)
         except Exception:
             pass
 

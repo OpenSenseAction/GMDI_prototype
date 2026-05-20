@@ -21,8 +21,28 @@
 #   grafana_org_id — Grafana organisation number (1-based; 1 = default org).
 #   sources       — List of independent CML subnetworks for this user.
 #     id          — Subdirectory name: /home/<user_id>/uploads/<source_id>/
-#     parser      — Selects which parser Docker image / config to use.
-#                   Supported: openmrg, orange_cameroun
+#     parser      — Selects the parser implementation for this source.
+#                   "demo_csv_data" — built-in parser, no extra config needed.
+#                   "csv_generic"   — configurable parser; requires csv_config.
+#     csv_config  — (only for parser: csv_generic) Format configuration:
+#       read_csv_kwargs          — dict of kwargs forwarded to pd.read_csv
+#                                  (e.g. sep, encoding, decimal, skiprows).
+#       rawdata_columns          — {source_col: canonical_col} rename map for
+#                                  rawdata files.  Canonical names: time,
+#                                  cml_id, sublink_id, tsl, rsl.
+#       metadata_columns         — same for metadata files.  Canonical names:
+#                                  cml_id, sublink_id, site_0_lon, site_0_lat,
+#                                  site_1_lon, site_1_lat, frequency,
+#                                  polarization, length.
+#       timezone                 — IANA timezone (e.g. "Africa/Douala").
+#                                  Naive timestamps are localised to this zone
+#                                  then converted to UTC.  Omit to leave
+#                                  timestamps unchanged.
+#       metadata_filename_keyword — substring in filename that identifies
+#                                  metadata files (default: "meta").
+#       rawdata_filename_keyword  — substring that identifies rawdata files
+#                                  (default: anything not matching the metadata
+#                                  keyword).
 #
 # All sources of one user share the same user_id, so Grafana sees their
 # data unified.  Each source gets its own named Docker volume and parser
@@ -35,7 +55,7 @@ users:
     grafana_org_id: 1
     sources:
       - id: main
-        parser: openmrg
+        parser: demo_csv_data
 
   - id: demo_orange_cameroun
     uid: 1002
@@ -43,4 +63,38 @@ users:
     grafana_org_id: 2
     sources:
       - id: douala
-        parser: orange_cameroun
+        parser: demo_csv_data
+
+# Example: a user with a custom CSV format using csv_generic.
+# Uncomment and adapt when adding such a user.
+#
+#  - id: example_operator
+#    uid: 1003
+#    display_name: Example Operator
+#    grafana_org_id: 3
+#    sources:
+#      - id: network1
+#        parser: csv_generic
+#        csv_config:
+#          read_csv_kwargs:
+#            sep: ";"
+#            encoding: utf-8
+#          timezone: "Africa/Douala"
+#          metadata_filename_keyword: "metadata"
+#          rawdata_columns:
+#            timestamp:  time
+#            link_id:    cml_id
+#            sublink_id: sublink_id
+#            tx_level:   tsl
+#            rx_level:   rsl
+#          metadata_columns:
+#            link_id:   cml_id
+#            sublink:   sublink_id
+#            lon_a:     site_0_lon
+#            lat_a:     site_0_lat
+#            lon_b:     site_1_lon
+#            lat_b:     site_1_lat
+#            freq:      frequency
+#            pol:       polarization
+#            length_km: length
+
