@@ -1,0 +1,63 @@
+# ── api_fetcher/config.yml ────────────────────────────────────────────────────
+# Example configuration pointing at the local mock server.
+#
+# Secrets (username/password) are never stored here.
+# Fields ending in _env hold the NAME of an environment variable that the
+# fetcher reads at start-up.
+# ─────────────────────────────────────────────────────────────────────────────
+
+log_level: INFO
+
+# Where the parser picks up incoming files (shared Docker volume).
+incoming_dir: /app/data/incoming
+
+# State persisted across container restarts.
+state_path: /app/data/state/api_fetcher_state.json
+
+# How often to run the fetch loop (seconds).
+poll_interval_seconds: 60
+
+sources:
+  - name: mock_operator
+    mode: continuous          # or "backfill"
+    # backfill_start: "2026-01-01"
+    # backfill_end:   "2026-02-01"
+
+    # ------------------------------------------------------------------
+    # Time-window settings
+    # ------------------------------------------------------------------
+    window_format: date        # "date" → YYYY-MM-DD,  "datetime" → ISO 8601 UTC
+    chunk_hours: 24            # size of each fetch window
+    overlap_seconds: 86400     # look back 1 day to avoid missing records at midnight
+
+    # ------------------------------------------------------------------
+    # Authentication
+    # ------------------------------------------------------------------
+    auth:
+      type: jwt
+      login_url:   http://mock_server:5001/login/
+      refresh_url: http://mock_server:5001/refresh/
+      username_env: API_USERNAME   # read from environment at runtime
+      password_env: API_PASSWORD
+
+    # ------------------------------------------------------------------
+    # Query endpoint and parameters
+    # ------------------------------------------------------------------
+    endpoint: http://mock_server:5001/cml/
+    date_from_key: date_from
+    date_to_key:   date_to
+    page_key:      page
+    page_size_key: page_size
+    page_size:     100
+    results_key:   results     # key inside the paginated response object
+
+    # Base params sent with every request (no variant-specific params here).
+    base_params: {}
+
+    # Each variant produces a separate JSON file.  The "suffix" key is used
+    # only for the filename; all other keys are passed as query params.
+    param_variants:
+      - suffix: rsl
+        performance_event: RSL
+      - suffix: tsl
+        performance_event: TSL
