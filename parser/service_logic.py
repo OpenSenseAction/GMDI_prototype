@@ -9,6 +9,7 @@ from typing import Dict, List
 import pandas as pd
 from .parsers.demo_csv_data.parse_raw import parse_rawdata_csv
 from .parsers.demo_csv_data.parse_metadata import parse_metadata_csv
+from .parsers.api_json.parse_raw import parse_api_json_raw
 
 
 def process_rawdata_files_batch(
@@ -145,6 +146,13 @@ def process_cml_file(filepath: Path, db_writer, file_manager, logger=None):
                     len(missing),
                     sample,
                 )
+            logger.info(f"Wrote {rows} data rows from {filepath.name}")
+            file_manager.archive_file(filepath)
+            db_writer.log_file_event(filepath.name, "archived", rows_written=rows)
+            return "rawdata"
+        elif filepath.suffix.lower() == ".json":
+            df = parse_api_json_raw(filepath)
+            rows = db_writer.write_rawdata(df)
             logger.info(f"Wrote {rows} data rows from {filepath.name}")
             file_manager.archive_file(filepath)
             db_writer.log_file_event(filepath.name, "archived", rows_written=rows)

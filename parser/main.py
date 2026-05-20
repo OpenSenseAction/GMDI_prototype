@@ -61,6 +61,16 @@ def process_existing_files(db_writer, file_manager, logger):
         logger.info("Found %d data file(s) to process", len(data_files))
         process_rawdata_files_batch(data_files, db_writer, file_manager, logger)
 
+    # JSON files (from api_fetcher): process individually
+    json_files = sorted(
+        f for f in Config.INCOMING_DIR.glob("*.json") if f.is_file()
+    )
+    for f in json_files:
+        try:
+            process_cml_file(f, db_writer, file_manager, logger)
+        except Exception:
+            pass
+
 
 def main():
     setup_logging()
@@ -98,7 +108,7 @@ def main():
     watcher = FileWatcher(
         str(Config.INCOMING_DIR),
         on_new_file,
-        {".csv"},
+        {".csv", ".json"},
     )
     watcher.start()
 
