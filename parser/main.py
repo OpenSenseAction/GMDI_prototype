@@ -43,23 +43,22 @@ def process_existing_files(db_writer, file_manager, logger):
     incoming = sorted(
         f for f in Config.INCOMING_DIR.glob("*.csv") if f.is_file()
     )
-    if not incoming:
-        return
 
-    metadata_files = [f for f in incoming if "meta" in f.name.lower()]
-    data_files = [f for f in incoming if f not in set(metadata_files)]
+    if incoming:
+        metadata_files = [f for f in incoming if "meta" in f.name.lower()]
+        data_files = [f for f in incoming if f not in set(metadata_files)]
 
-    # Metadata files: process individually (typically just one)
-    for f in metadata_files:
-        try:
-            process_cml_file(f, db_writer, file_manager, logger)
-        except Exception:
-            pass
+        # Metadata files: process individually (typically just one)
+        for f in metadata_files:
+            try:
+                process_cml_file(f, db_writer, file_manager, logger)
+            except Exception:
+                pass
 
-    # Data files: batch-process for efficiency
-    if data_files:
-        logger.info("Found %d data file(s) to process", len(data_files))
-        process_rawdata_files_batch(data_files, db_writer, file_manager, logger)
+        # Data files: batch-process for efficiency
+        if data_files:
+            logger.info("Found %d data file(s) to process", len(data_files))
+            process_rawdata_files_batch(data_files, db_writer, file_manager, logger)
 
     # JSON files (from api_fetcher): process individually
     json_files = sorted(

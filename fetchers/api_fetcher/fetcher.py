@@ -114,11 +114,15 @@ class APIFetcher:
         # continuous mode
         cursor = self.state.get_cursor(self.name)
         if cursor:
-            start = self._parse(cursor) - timedelta(seconds=self._overlap_seconds)
+            cursor_dt = self._parse(cursor)
+            # Shift the left edge back by overlap to catch late-arriving records,
+            # but always advance the right edge beyond the cursor.
+            start = cursor_dt - timedelta(seconds=self._overlap_seconds)
+            end = min(cursor_dt + timedelta(hours=self._chunk_hours), now)
         else:
             start = now - timedelta(hours=self._chunk_hours)
+            end = now
 
-        end = min(start + timedelta(hours=self._chunk_hours), now)
         if end <= start:
             return None
 

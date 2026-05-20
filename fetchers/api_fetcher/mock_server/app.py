@@ -51,6 +51,11 @@ def _require_bearer() -> tuple[bool, str]:
 # ── Auth endpoints ────────────────────────────────────────────────────────────
 
 
+@app.get("/health")
+def health():
+    return jsonify({"status": "ok"})
+
+
 @app.post("/login/")
 def login():
     body = request.get_json(silent=True) or {}
