@@ -125,7 +125,14 @@ def process_cml_file(filepath: Path, db_writer, file_manager, logger=None):
         raise
 
     try:
-        if "meta" in name:
+        if filepath.suffix.lower() == ".json":
+            df = parse_api_json_raw(filepath)
+            rows = db_writer.write_rawdata(df)
+            logger.info(f"Wrote {rows} data rows from {filepath.name}")
+            file_manager.archive_file(filepath)
+            db_writer.log_file_event(filepath.name, "archived", rows_written=rows)
+            return "rawdata"
+        elif "meta" in name:
             df = parse_metadata_csv(filepath)
             rows = db_writer.write_metadata(df)
             logger.info(f"Wrote {rows} metadata rows from {filepath.name}")
@@ -146,13 +153,6 @@ def process_cml_file(filepath: Path, db_writer, file_manager, logger=None):
                     len(missing),
                     sample,
                 )
-            logger.info(f"Wrote {rows} data rows from {filepath.name}")
-            file_manager.archive_file(filepath)
-            db_writer.log_file_event(filepath.name, "archived", rows_written=rows)
-            return "rawdata"
-        elif filepath.suffix.lower() == ".json":
-            df = parse_api_json_raw(filepath)
-            rows = db_writer.write_rawdata(df)
             logger.info(f"Wrote {rows} data rows from {filepath.name}")
             file_manager.archive_file(filepath)
             db_writer.log_file_event(filepath.name, "archived", rows_written=rows)
