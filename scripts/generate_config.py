@@ -70,7 +70,13 @@ def _validate(users: list[dict]) -> None:
                 raise ValueError(
                     f"Source {src['id']!r} missing 'parser' for user {uid!r}"
                 )
-            valid_parsers = {"demo_csv_data", "csv_generic"}
+            # Valid parsers include legacy aliases that map to demo_csv_data
+            valid_parsers = {
+                "demo_csv_data",
+                "csv_generic",
+                "openmrg",
+                "orange_cameroun",
+            }
             if parser not in valid_parsers:
                 raise ValueError(
                     f"Source {src['id']!r} for user {uid!r} has unknown parser "
