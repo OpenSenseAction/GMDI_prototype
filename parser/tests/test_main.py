@@ -59,9 +59,13 @@ def test_data_files_only_use_batch_processing(
     """Data files are forwarded to process_rawdata_files_batch."""
     files = [_write_csv(tmp_path, f"raw_data_{i}.csv") for i in range(3)]
 
-    with patch("parser.entrypoints.sftp_push.process_rawdata_files_batch") as mock_batch, patch(
+    with patch(
+        "parser.entrypoints.sftp_push.process_rawdata_files_batch"
+    ) as mock_batch, patch(
         "parser.entrypoints.sftp_push.process_cml_file"
-    ) as mock_single, patch("parser.entrypoints.sftp_push.Config.INCOMING_DIR", tmp_path):
+    ) as mock_single, patch(
+        "parser.entrypoints.sftp_push.Config.INCOMING_DIR", tmp_path
+    ):
         process_existing_files(mock_db_writer, mock_file_manager, logger)
 
     mock_single.assert_not_called()
@@ -77,9 +81,13 @@ def test_metadata_files_only_use_individual_processing(
     meta1 = _write_csv(tmp_path, "metadata_links.csv")
     meta2 = _write_csv(tmp_path, "meta_extra.csv")
 
-    with patch("parser.entrypoints.sftp_push.process_rawdata_files_batch") as mock_batch, patch(
+    with patch(
+        "parser.entrypoints.sftp_push.process_rawdata_files_batch"
+    ) as mock_batch, patch(
         "parser.entrypoints.sftp_push.process_cml_file"
-    ) as mock_single, patch("parser.entrypoints.sftp_push.Config.INCOMING_DIR", tmp_path):
+    ) as mock_single, patch(
+        "parser.entrypoints.sftp_push.Config.INCOMING_DIR", tmp_path
+    ):
         process_existing_files(mock_db_writer, mock_file_manager, logger)
 
     assert mock_single.call_count == 2
@@ -94,9 +102,13 @@ def test_mixed_files_routes_to_correct_handlers(
     data1 = _write_csv(tmp_path, "raw_data_001.csv")
     data2 = _write_csv(tmp_path, "raw_data_002.csv")
 
-    with patch("parser.entrypoints.sftp_push.process_rawdata_files_batch") as mock_batch, patch(
+    with patch(
+        "parser.entrypoints.sftp_push.process_rawdata_files_batch"
+    ) as mock_batch, patch(
         "parser.entrypoints.sftp_push.process_cml_file"
-    ) as mock_single, patch("parser.entrypoints.sftp_push.Config.INCOMING_DIR", tmp_path):
+    ) as mock_single, patch(
+        "parser.entrypoints.sftp_push.Config.INCOMING_DIR", tmp_path
+    ):
         process_existing_files(mock_db_writer, mock_file_manager, logger)
 
     # Check positional args; the branch now also passes parser= as a kwarg
@@ -115,7 +127,8 @@ def test_metadata_exception_is_swallowed(
     data = _write_csv(tmp_path, "raw_data_001.csv")
 
     with patch(
-        "parser.entrypoints.sftp_push.process_cml_file", side_effect=Exception("DB down")
+        "parser.entrypoints.sftp_push.process_cml_file",
+        side_effect=Exception("DB down"),
     ) as mock_single, patch(
         "parser.entrypoints.sftp_push.process_rawdata_files_batch"
     ) as mock_batch, patch(
@@ -152,20 +165,31 @@ def _run_stats_loop(tmp_path, mock_event, *, configure_db=None):
 
     mock_db = MagicMock()
 
-    with patch("parser.entrypoints.sftp_push.threading.Thread", CapturingThread), \
-         patch("parser.entrypoints.sftp_push.threading.Event", return_value=mock_event), \
-         patch("parser.entrypoints.sftp_push.FileManager"), \
-         patch("parser.entrypoints.sftp_push.FileWatcher"), \
-         patch("parser.entrypoints.sftp_push.DBWriter", return_value=mock_db), \
-         patch("parser.entrypoints.sftp_push.Config.PARSER_ENABLED", True), \
-         patch("parser.entrypoints.sftp_push.Config.PROCESS_EXISTING_ON_STARTUP", False), \
-         patch("parser.entrypoints.sftp_push.Config.DATABASE_URL", "postgresql://test"), \
-         patch("parser.entrypoints.sftp_push.Config.USER_ID", "test_user"), \
-         patch("parser.entrypoints.sftp_push.Config.STATS_REFRESH_INTERVAL", 60), \
-         patch("parser.entrypoints.sftp_push.Config.INCOMING_DIR", tmp_path), \
-         patch("parser.entrypoints.sftp_push.Config.ARCHIVED_DIR", tmp_path), \
-         patch("parser.entrypoints.sftp_push.Config.QUARANTINE_DIR", tmp_path), \
-         patch("parser.entrypoints.sftp_push.time.sleep", side_effect=KeyboardInterrupt):
+    with patch("parser.entrypoints.sftp_push.threading.Thread", CapturingThread), patch(
+        "parser.entrypoints.sftp_push.threading.Event", return_value=mock_event
+    ), patch("parser.entrypoints.sftp_push.FileManager"), patch(
+        "parser.entrypoints.sftp_push.FileWatcher"
+    ), patch(
+        "parser.entrypoints.sftp_push.DBWriter", return_value=mock_db
+    ), patch(
+        "parser.entrypoints.sftp_push.Config.PARSER_ENABLED", True
+    ), patch(
+        "parser.entrypoints.sftp_push.Config.PROCESS_EXISTING_ON_STARTUP", False
+    ), patch(
+        "parser.entrypoints.sftp_push.Config.DATABASE_URL", "postgresql://test"
+    ), patch(
+        "parser.entrypoints.sftp_push.Config.USER_ID", "test_user"
+    ), patch(
+        "parser.entrypoints.sftp_push.Config.STATS_REFRESH_INTERVAL", 60
+    ), patch(
+        "parser.entrypoints.sftp_push.Config.INCOMING_DIR", tmp_path
+    ), patch(
+        "parser.entrypoints.sftp_push.Config.ARCHIVED_DIR", tmp_path
+    ), patch(
+        "parser.entrypoints.sftp_push.Config.QUARANTINE_DIR", tmp_path
+    ), patch(
+        "parser.entrypoints.sftp_push.time.sleep", side_effect=KeyboardInterrupt
+    ):
         try:
             main()
         except (KeyboardInterrupt, SystemExit):
@@ -181,8 +205,10 @@ def _run_stats_loop(tmp_path, mock_event, *, configure_db=None):
 def test_stats_loop_calls_refresh_windowed_stats_on_startup(tmp_path):
     """stats_loop calls refresh_windowed_stats once before entering the timer loop."""
     mock_event = MagicMock()
-    mock_event.is_set.return_value = False  # connect loop: enter → connect succeeds → break
-    mock_event.wait.return_value = True     # timer wait → loop exits immediately
+    mock_event.is_set.return_value = (
+        False  # connect loop: enter → connect succeeds → break
+    )
+    mock_event.wait.return_value = True  # timer wait → loop exits immediately
 
     mock_db = _run_stats_loop(tmp_path, mock_event)
 
@@ -226,6 +252,7 @@ def test_stats_loop_creates_dbwriter_with_config_user_id(tmp_path):
 
     class CapturingThread(threading.Thread):
         """Intercepts Thread creation to capture the stats-refresh target."""
+
         def __init__(self, *args, target=None, name=None, **kwargs):
             super().__init__(*args, target=target, name=name, **kwargs)
             if name == "stats-refresh":
@@ -234,18 +261,27 @@ def test_stats_loop_creates_dbwriter_with_config_user_id(tmp_path):
         def start(self):
             pass  # don't spawn real threads in unit tests
 
-    with patch("parser.entrypoints.sftp_push.threading.Thread", CapturingThread), \
-         patch("parser.entrypoints.sftp_push.FileManager"), \
-         patch("parser.entrypoints.sftp_push.FileWatcher"), \
-         patch("parser.entrypoints.sftp_push.DBWriter") as MockDBWriter, \
-         patch("parser.entrypoints.sftp_push.Config.PARSER_ENABLED", True), \
-         patch("parser.entrypoints.sftp_push.Config.PROCESS_EXISTING_ON_STARTUP", False), \
-         patch("parser.entrypoints.sftp_push.Config.DATABASE_URL", "postgresql://test"), \
-         patch("parser.entrypoints.sftp_push.Config.USER_ID", "ctu_cz_tmobile"), \
-         patch("parser.entrypoints.sftp_push.Config.INCOMING_DIR", tmp_path), \
-         patch("parser.entrypoints.sftp_push.Config.ARCHIVED_DIR", tmp_path), \
-         patch("parser.entrypoints.sftp_push.Config.QUARANTINE_DIR", tmp_path), \
-         patch("parser.entrypoints.sftp_push.time.sleep", side_effect=KeyboardInterrupt):
+    with patch("parser.entrypoints.sftp_push.threading.Thread", CapturingThread), patch(
+        "parser.entrypoints.sftp_push.FileManager"
+    ), patch("parser.entrypoints.sftp_push.FileWatcher"), patch(
+        "parser.entrypoints.sftp_push.DBWriter"
+    ) as MockDBWriter, patch(
+        "parser.entrypoints.sftp_push.Config.PARSER_ENABLED", True
+    ), patch(
+        "parser.entrypoints.sftp_push.Config.PROCESS_EXISTING_ON_STARTUP", False
+    ), patch(
+        "parser.entrypoints.sftp_push.Config.DATABASE_URL", "postgresql://test"
+    ), patch(
+        "parser.entrypoints.sftp_push.Config.USER_ID", "ctu_cz_tmobile"
+    ), patch(
+        "parser.entrypoints.sftp_push.Config.INCOMING_DIR", tmp_path
+    ), patch(
+        "parser.entrypoints.sftp_push.Config.ARCHIVED_DIR", tmp_path
+    ), patch(
+        "parser.entrypoints.sftp_push.Config.QUARANTINE_DIR", tmp_path
+    ), patch(
+        "parser.entrypoints.sftp_push.time.sleep", side_effect=KeyboardInterrupt
+    ):
         try:
             main()
         except (KeyboardInterrupt, SystemExit):
@@ -260,6 +296,6 @@ def test_stats_loop_creates_dbwriter_with_config_user_id(tmp_path):
 
     for c in MockDBWriter.call_args_list:
         user_id = c.kwargs.get("user_id") or (c.args[1] if len(c.args) > 1 else None)
-        assert user_id == "ctu_cz_tmobile", (
-            f"DBWriter called without user_id=Config.USER_ID: {c}"
-        )
+        assert (
+            user_id == "ctu_cz_tmobile"
+        ), f"DBWriter called without user_id=Config.USER_ID: {c}"

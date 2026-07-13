@@ -15,7 +15,6 @@ from ..file_manager import FileManager
 from ..db_writer import DBWriter
 from ..service_logic import (
     load_parser,
-    load_api_json_bundle,
     process_cml_file,
     process_rawdata_files_batch,
     _make_default_bundle,
