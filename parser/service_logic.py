@@ -41,8 +41,11 @@ def load_parser(parser_type: str, csv_config: Optional[dict] = None) -> ParserBu
     """Return a :class:`ParserBundle` for the requested *parser_type*.
 
     Args:
-        parser_type: ``"demo_csv_data"`` (the built-in parser) or
-            ``"csv_generic"`` (the config-driven parser).
+        parser_type: One of:
+            ``"demo_csv_data"`` — built-in parser (no config).
+            ``"other_mno_csv"`` — OtherMNO format (semicolon, different columns).
+            ``"csv_generic"`` — configurable parser; requires csv_config.
+            Legacy aliases: ``"openmrg"``, ``"orange_cameroun"`` map to demo_csv_data.
         csv_config: Config dict used only when *parser_type* is
             ``"csv_generic"``.  Keys:
 
@@ -56,9 +59,20 @@ def load_parser(parser_type: str, csv_config: Optional[dict] = None) -> ParserBu
             * ``rawdata_filename_keyword`` — substring that identifies rawdata
               files (default: anything that is not a metadata file)
     """
-    if parser_type in ("demo_csv_data", "openmrg", "orange_cameroun"):
+    if parser_type == "demo_csv_data" or parser_type in ("openmrg", "orange_cameroun"):
         # Legacy aliases kept for backward compatibility
         return _make_default_bundle()
+
+    if parser_type == "other_mno_csv":
+        from .parsers.other_mno_csv.parse_raw import parse_rawdata_csv as _parse_raw
+        from .parsers.other_mno_csv.parse_metadata import parse_metadata_csv as _parse_meta
+
+        return ParserBundle(
+            parse_rawdata=_parse_raw,
+            parse_metadata=_parse_meta,
+            is_metadata_file=lambda name: "meta" in name,
+            is_rawdata_file=lambda name: "raw" in name or "data" in name,
+        )
 
     if parser_type == "csv_generic":
         config = csv_config or {}

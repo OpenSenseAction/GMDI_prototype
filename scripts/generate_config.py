@@ -76,6 +76,7 @@ def _validate(users: list[dict]) -> None:
                 "csv_generic",
                 "openmrg",
                 "orange_cameroun",
+                "other_mno_csv",
             }
             if parser not in valid_parsers:
                 raise ValueError(

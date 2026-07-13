@@ -22,8 +22,17 @@
 #   sources       — List of independent CML subnetworks for this user.
 #     id          — Subdirectory name: /home/<user_id>/uploads/<source_id>/
 #     parser      — Selects the parser implementation for this source.
-#                   "demo_csv_data" — built-in parser, no extra config needed.
-#                   "csv_generic"   — configurable parser; requires csv_config.
+#                   Available parsers:
+#                   "demo_csv_data"   — built-in parser, no extra config needed.
+#                   "other_mno_csv"   — OtherMNO format (semicolon, different columns).
+#                   "csv_generic"     — configurable parser for simple CSV variants;
+#                                       requires csv_config block.
+#                   Legacy aliases: "openmrg", "orange_cameroun" map to demo_csv_data.
+#
+#                   For anything not covered above, create a new parser module in
+#                   parser/parsers/<name>/ and add it to load_parser() in
+#                   parser/service_logic.py. This is the recommended approach for
+#                   non-trivial format differences or non-CSV formats (JSON, etc.).
 #     csv_config  — (only for parser: csv_generic) Format configuration:
 #       read_csv_kwargs          — dict of kwargs forwarded to pd.read_csv
 #                                  (e.g. sep, encoding, decimal, skiprows).
@@ -97,4 +106,15 @@ users:
 #            freq:      frequency
 #            pol:       polarization
 #            length_km: length
+#
+# Example: a user with OtherMNO format (code-based parser).
+# The parser lives in parser/parsers/other_mno_csv/ — no config needed.
+#
+#  - id: other_operator
+#    uid: 1004
+#    display_name: Other Operator
+#    grafana_org_id: 4
+#    sources:
+#      - id: network1
+#        parser: other_mno_csv
 
