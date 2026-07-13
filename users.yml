@@ -33,6 +33,10 @@
 #                   parser/parsers/<name>/ and add it to load_parser() in
 #                   parser/service_logic.py. This is the recommended approach for
 #                   non-trivial format differences or non-CSV formats (JSON, etc.).
+#     entrypoint  — Which ingestion loop to run for this source (default: "sftp_push").
+#                   "sftp_push" — watch a local directory fed by SFTP.
+#                   "sftp_pull" — poll a remote SFTP server (not yet implemented).
+#                   "api_pull"  — poll an HTTP/JSON API (not yet implemented).
 #     csv_config  — (only for parser: csv_generic) Format configuration:
 #       read_csv_kwargs          — dict of kwargs forwarded to pd.read_csv
 #                                  (e.g. sep, encoding, decimal, skiprows).

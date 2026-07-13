@@ -89,6 +89,14 @@ def _validate(users: list[dict]) -> None:
                     f"Source {src['id']!r} for user {uid!r} uses parser "
                     f"'csv_generic' but has no 'csv_config' block"
                 )
+            # Validate entrypoint if specified
+            entrypoint = src.get("entrypoint", "sftp_push")
+            valid_entrypoints = {"sftp_push", "sftp_pull", "api_pull"}
+            if entrypoint not in valid_entrypoints:
+                raise ValueError(
+                    f"Source {src['id']!r} for user {uid!r} has unknown entrypoint "
+                    f"{entrypoint!r}. Valid values: {sorted(valid_entrypoints)}"
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +134,7 @@ def _parser_service(user: dict, src: dict) -> str:
     db_url = (
         f"postgresql://{user['id']}:{user['id']}_password" "@database:5432/mydatabase"
     )
+    entrypoint = src.get("entrypoint", "sftp_push")
     env_lines = [
         f"      - DATABASE_URL={db_url}",
         f"      - USER_ID={user['id']}",
@@ -156,6 +165,7 @@ def _parser_service(user: dict, src: dict) -> str:
             f"      - {arch_vol}:/app/data/archived",
             f"      - {quar_vol}:/app/data/quarantine",
             f"    restart: unless-stopped",
+            f"    command: python -m parser.entrypoints.{entrypoint}",
             "",
         ]
     )
