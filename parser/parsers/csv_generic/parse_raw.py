@@ -36,12 +36,17 @@ def parse_rawdata_csv(filepath: Path, config: dict) -> Optional[pd.DataFrame]:
     tz = config.get("timezone")
     if tz:
         if df["time"].dt.tz is None:
-            df["time"] = df["time"].dt.tz_localize(tz).dt.tz_convert("UTC")
+            df["time"] = (
+                df["time"]
+                .dt.tz_localize(tz, ambiguous="infer", nonexistent="shift_forward")
+                .dt.tz_convert("UTC")
+            )
         else:
             df["time"] = df["time"].dt.tz_convert("UTC")
 
     df["cml_id"] = df["cml_id"].fillna("nan").astype(str)
     df["sublink_id"] = df["sublink_id"].astype(str)
-    df["tsl"] = pd.to_numeric(df["tsl"], errors="coerce")
-    df["rsl"] = pd.to_numeric(df["rsl"], errors="coerce")
+    # Use .get() so a misconfigured rename map produces NaN rather than KeyError
+    df["tsl"] = pd.to_numeric(df.get("tsl"), errors="coerce")
+    df["rsl"] = pd.to_numeric(df.get("rsl"), errors="coerce")
     return df

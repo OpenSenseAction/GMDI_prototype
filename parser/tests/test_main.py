@@ -97,7 +97,9 @@ def test_mixed_files_routes_to_correct_handlers(
          patch("parser.main.Config.INCOMING_DIR", tmp_path):
         process_existing_files(mock_db_writer, mock_file_manager, logger)
 
-    mock_single.assert_called_once_with(meta, mock_db_writer, mock_file_manager, logger)
+    # Check positional args; the branch now also passes parser= as a kwarg
+    call_args = mock_single.call_args
+    assert call_args[0] == (meta, mock_db_writer, mock_file_manager, logger)
     mock_batch.assert_called_once()
     passed_files = mock_batch.call_args[0][0]
     assert set(passed_files) == {data1, data2}
