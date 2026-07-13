@@ -1,0 +1,45 @@
+# docker-compose.dev.yml
+# Development overlay — adds the mock server and api_fetcher service.
+#
+# Usage:
+#   docker compose -f docker-compose.yml \
+#                  -f docker-compose.override.yml \
+#                  -f docker-compose.dev.yml \
+#                  up
+#
+# The api_fetcher is wired to use the same shared data volume as the parsers
+# so files written to data/incoming/ are picked up automatically.
+
+services:
+
+  mock_server:
+    build:
+      context: ./fetchers/api_fetcher/mock_server
+    ports:
+      - "5001:5001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api_fetcher:
+    build:
+      context: ./fetchers
+      dockerfile: api_fetcher/Dockerfile
+    depends_on:
+      mock_server:
+        condition: service_healthy
+    environment:
+      - CONFIG_PATH=/app/api_fetcher/config.yml
+      - API_USERNAME=testuser
+      - API_PASSWORD=testpass
+      - INCOMING_DIR=/app/data/incoming
+      - STATE_PATH=/app/data/state/api_fetcher_state.json
+      - LOG_LEVEL=INFO
+      - FIELD_MAP_PATH=/app/config/field_map.yml
+    volumes:
+      # Shared data volume (same as parsers)
+      - ./data:/app/data
+      # Field map: use the example map for local dev
+      - ./parser/parsers/api_json/example_field_map.yml:/app/config/field_map.yml:ro

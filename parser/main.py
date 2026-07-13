@@ -13,7 +13,7 @@ from pathlib import Path
 from .file_watcher import FileWatcher
 from .file_manager import FileManager
 from .db_writer import DBWriter
-from .service_logic import load_parser, process_cml_file, process_rawdata_files_batch
+from .service_logic import load_parser, load_api_json_bundle, process_cml_file, process_rawdata_files_batch, _make_default_bundle
 
 
 class Config:
@@ -46,10 +46,7 @@ def process_existing_files(db_writer, file_manager, logger, parser=None):
     incoming = sorted(
         f for f in Config.INCOMING_DIR.glob("*.csv") if f.is_file()
     )
-    if not incoming:
-        return
 
-    from .service_logic import _make_default_bundle
     _parser = parser if parser is not None else _make_default_bundle()
 
     metadata_files = [f for f in incoming if _parser.is_metadata_file(f.name.lower())]
@@ -67,6 +64,15 @@ def process_existing_files(db_writer, file_manager, logger, parser=None):
         logger.info("Found %d data file(s) to process", len(data_files))
         process_rawdata_files_batch(data_files, db_writer, file_manager, logger, parser=_parser)
 
+    # JSON files (from api_fetcher): process individually
+    json_files = sorted(
+        f for f in Config.INCOMING_DIR.glob("*.json") if f.is_file()
+    )
+    for f in json_files:
+        try:
+            process_cml_file(f, db_writer, file_manager, logger, parser=_parser)
+        except Exception:
+            pass
 
 def main():
     setup_logging()
@@ -78,7 +84,12 @@ def main():
     )
     db_writer = DBWriter(Config.DATABASE_URL, user_id=Config.USER_ID)
 
-    parser_bundle = load_parser(Config.PARSER_TYPE, Config.PARSER_CSV_CONFIG)
+    # Select parser bundle based on PARSER_TYPE
+    if Config.PARSER_TYPE == "api_json":
+        from .service_logic import load_api_json_bundle
+        parser_bundle = load_api_json_bundle()
+    else:
+        parser_bundle = load_parser(Config.PARSER_TYPE, Config.PARSER_CSV_CONFIG)
 
     logger.info("Starting parser service (parser_type=%s)", Config.PARSER_TYPE)
     Config.INCOMING_DIR.mkdir(parents=True, exist_ok=True)
@@ -106,7 +117,7 @@ def main():
     watcher = FileWatcher(
         str(Config.INCOMING_DIR),
         on_new_file,
-        {".csv"},
+        {".csv", ".json"},
     )
     watcher.start()
 

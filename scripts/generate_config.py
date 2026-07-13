@@ -78,6 +78,7 @@ def _validate(users: list[dict]) -> None:
                 "openmrg",
                 "orange_cameroun",
                 "other_mno_csv",
+                "api_json",
             }
             if parser not in valid_parsers:
                 raise ValueError(

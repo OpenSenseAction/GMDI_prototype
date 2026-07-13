@@ -1,0 +1,28 @@
+# example_field_map.yml
+#
+# Maps file-name prefixes to column routing rules for the JSON parser.
+#
+# Keys are longest-prefix matched against the filename stem of each incoming
+# JSON file.  Values map *internal column names* (time, cml_id, sublink_id,
+# rsl, tsl) to the *source field names* found in the JSON records.
+#
+# Columns omitted from a mapping are filled with NaN, which is correct when
+# RSL and TSL arrive in separate files.
+#
+# Mount this file (or a deployment-specific replacement) at
+# /app/config/field_map.yml inside the parser container and set
+# FIELD_MAP_PATH=/app/config/field_map.yml.
+
+# Matches files like: mock_operator_20260101_20260102_rsl_data.json
+mock_operator_rsl:
+  time:       timestamp
+  cml_id:     link_id
+  sublink_id: sublink_id
+  rsl:        value
+
+# Matches files like: mock_operator_20260101_20260102_tsl_data.json
+mock_operator_tsl:
+  time:       timestamp
+  cml_id:     link_id
+  sublink_id: sublink_id
+  tsl:        value

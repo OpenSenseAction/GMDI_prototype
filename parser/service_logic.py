@@ -10,6 +10,7 @@ from typing import Callable, Dict, List, Optional
 import pandas as pd
 from .parsers.demo_csv_data.parse_raw import parse_rawdata_csv
 from .parsers.demo_csv_data.parse_metadata import parse_metadata_csv
+from .parsers.api_json.parse_raw import parse_api_json_raw
 
 
 @dataclass
@@ -104,6 +105,22 @@ def load_parser(parser_type: str, csv_config: Optional[dict] = None) -> ParserBu
         )
 
     raise ValueError(f"Unknown parser_type: {parser_type!r}")
+
+
+def load_api_json_bundle() -> ParserBundle:
+    """Return a ParserBundle for the api_json parser.
+
+    The JSON parser handles both metadata and rawdata in a single file,
+    so we route everything through parse_rawdata and mark all files as rawdata.
+    """
+    from .parsers.api_json.parse_raw import parse_api_json_raw
+
+    return ParserBundle(
+        parse_rawdata=parse_api_json_raw,
+        parse_metadata=lambda fp: None,  # JSON doesn't have separate metadata files
+        is_metadata_file=lambda name: False,
+        is_rawdata_file=lambda name: name.endswith(".json"),
+    )
 
 
 def process_rawdata_files_batch(
@@ -232,7 +249,14 @@ def process_cml_file(
         raise
 
     try:
-        if parser.is_metadata_file(name):
+        if filepath.suffix.lower() == ".json":
+            df = parse_api_json_raw(filepath)
+            rows = db_writer.write_rawdata(df)
+            logger.info(f"Wrote {rows} data rows from {filepath.name}")
+            file_manager.archive_file(filepath)
+            db_writer.log_file_event(filepath.name, "archived", rows_written=rows)
+            return "rawdata"
+        elif parser.is_metadata_file(name):
             df = parser.parse_metadata(filepath)
             rows = db_writer.write_metadata(df)
             logger.info(f"Wrote {rows} metadata rows from {filepath.name}")

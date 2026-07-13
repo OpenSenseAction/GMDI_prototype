@@ -246,6 +246,27 @@ def test_process_cml_file_rawdata_archived(tmp_path, mock_db_writer, mock_file_m
     )
 
 
+def test_process_cml_file_json_archived(tmp_path, mock_db_writer, mock_file_manager):
+    """JSON files are parsed via parse_api_json_raw, written, and archived."""
+    f = tmp_path / "mock_operator_rsl_20260101_data.json"
+    f.write_text('[{"timestamp":"2026-01-01T00:00:00Z","link_id":"10001","sublink_id":"1","value":-45.2}]')
+    mock_db_writer.write_rawdata.return_value = 1
+
+    fake_df = pd.DataFrame(
+        {"time": ["2026-01-01T00:00:00Z"], "cml_id": ["10001"],
+         "sublink_id": ["1"], "rsl": [-45.2], "tsl": [float("nan")]}
+    )
+    with patch("parser.service_logic.parse_api_json_raw", return_value=fake_df):
+        result = process_cml_file(f, mock_db_writer, mock_file_manager)
+
+    assert result == "rawdata"
+    mock_db_writer.write_rawdata.assert_called_once_with(fake_df)
+    mock_file_manager.archive_file.assert_called_once_with(f)
+    mock_db_writer.log_file_event.assert_called_once_with(
+        f.name, "archived", rows_written=1
+    )
+
+
 def test_process_cml_file_unsupported_quarantined(
     tmp_path, mock_db_writer, mock_file_manager
 ):
