@@ -50,8 +50,7 @@ def test_rawdata_column_rename(tmp_path):
     csv = _write_csv(
         tmp_path,
         "raw.csv",
-        "timestamp,link_id,sub,tx,rx\n"
-        "2026-01-22 10:00:00,CML1,A,1.0,-46.0\n",
+        "timestamp,link_id,sub,tx,rx\n" "2026-01-22 10:00:00,CML1,A,1.0,-46.0\n",
     )
     config = {
         "rawdata_columns": {
@@ -79,8 +78,7 @@ def test_rawdata_semicolon_separator(tmp_path):
     csv = _write_csv(
         tmp_path,
         "raw.csv",
-        "time;cml_id;sublink_id;tsl;rsl\n"
-        "2026-01-22 10:00:00;CML1;A;1.0;-46.0\n",
+        "time;cml_id;sublink_id;tsl;rsl\n" "2026-01-22 10:00:00;CML1;A;1.0;-46.0\n",
     )
     df = parse_rawdata_csv(csv, {"read_csv_kwargs": {"sep": ";"}})
     assert validate_dataframe(df, "rawdata")
@@ -127,8 +125,7 @@ def test_rawdata_no_timezone_leaves_naive(tmp_path):
     csv = _write_csv(
         tmp_path,
         "raw.csv",
-        "time,cml_id,sublink_id,tsl,rsl\n"
-        "2026-01-22 10:00:00,CML1,A,1.0,-46.0\n",
+        "time,cml_id,sublink_id,tsl,rsl\n" "2026-01-22 10:00:00,CML1,A,1.0,-46.0\n",
     )
     df = parse_rawdata_csv(csv, {})
     # validate_dataframe only cares that the column exists and is not all-NaT
@@ -145,8 +142,7 @@ def test_rawdata_missing_rename_target_gives_nan(tmp_path):
     csv = _write_csv(
         tmp_path,
         "raw.csv",
-        "time,cml_id,sublink_id,tsl,rsl\n"
-        "2026-01-22 10:00:00,CML1,A,1.0,-46.0\n",
+        "time,cml_id,sublink_id,tsl,rsl\n" "2026-01-22 10:00:00,CML1,A,1.0,-46.0\n",
     )
     # Map tsl/rsl to wrong names — canonical tsl/rsl will be missing after rename
     config = {"rawdata_columns": {"tsl": "tx_power", "rsl": "rx_power"}}
@@ -238,8 +234,7 @@ def test_load_parser_csv_generic(tmp_path):
     csv = _write_csv(
         tmp_path,
         "raw.csv",
-        "ts,id,sub,tx,rx\n"
-        "2026-01-22 10:00:00,CML1,A,1.0,-46.0\n",
+        "ts,id,sub,tx,rx\n" "2026-01-22 10:00:00,CML1,A,1.0,-46.0\n",
     )
     config = {
         "rawdata_columns": {
