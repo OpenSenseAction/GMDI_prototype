@@ -2,7 +2,7 @@ This monorepo contains the following components:
 1. **Data Parser** - Parses CML data and metadata CSV files from SFTP uploads into the database
 2. **Database** - TimescaleDB for storing time series data and metadata
 3. **Data Processor** - **(Stub implementation)** Placeholder for future data analysis and processing logic
-4. **Webserver** - Main user-facing web application with interactive visualizations
+4. **Webserver** - Main user-facing web application with interactive visualizations (runs on gunicorn WSGI server)
 5. **Grafana** - Real-time dashboards for CML data visualization
 6. **MNO Data Source Simulator** - Simulates real-time CML data from MNO sources via SFTP
 7. **SFTP Receiver** - Receives uploaded CML data files
@@ -43,12 +43,20 @@ The webserver provides an intuitive interface with four main pages:
      sh -c 'pip install pyyaml -q && python /repo/scripts/generate_config.py --repo-root /repo'
    ```
 
-4. Build and run the containers:
+4. **(Optional) Configure production database credentials**:  
+   For production deployments, override the default database superuser credentials via environment variables. Create a `.env` file:
+   ```sh
+   DB_SUPERUSER=myuser
+   DB_SUPERUSER_PASSWORD=your-secure-password-here
+   ```
+   **Important**: The defaults (`myuser:mypassword`) are for local development only and must be changed in production.
+
+5. Build and run the containers:
    ```sh
    docker compose up -d
    ```
 
-5. Access the services:
+6. Access the services:
    
    - **Webserver (Main UI)**: http://localhost:5000
    - **Grafana Dashboards**: http://localhost:3000
