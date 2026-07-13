@@ -7,15 +7,15 @@ This directory contains SSH keys for the SFTP server used to receive CML data fr
 ```
 ssh_keys/
 ├── README.md                  # This file
-├── id_rsa                     # Private key for MNO simulator (client)
-├── id_rsa.pub                 # Public key for MNO simulator
-├── authorized_keys            # Public keys authorized to connect
-├── sftp_host_ed25519_key      # SFTP server host key (Ed25519)
-├── sftp_host_ed25519_key.pub  # SFTP server public host key
-├── sftp_host_rsa_key          # SFTP server host key (RSA)
-├── sftp_host_rsa_key.pub      # SFTP server public host key
-└── known_hosts                # Known hosts file for MNO simulator
+├── generate_ssh_keys.sh       # Script to generate keys locally
+├── known_hosts                # Known hosts file for MNO simulator
+├── demo_openmrg/
+│   └── authorized_keys        # Public keys for demo_openmrg user
+└── demo_orange_cameroun/
+    └── authorized_keys        # Public keys for demo_orange_cameroun user
 ```
+
+**Note**: Private keys (`id_rsa`, `id_rsa_demo_*`, `sftp_host_*_key`) and public key files (`.pub`) are **gitignored** and must be generated locally. They will not appear in version control.
 
 ## Generating Keys
 

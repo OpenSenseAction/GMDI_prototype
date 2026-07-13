@@ -2,6 +2,16 @@
 
 Flask application serving the GMDI data portal.
 
+## Production Deployment
+
+The webserver runs on **gunicorn** (not Flask's development server) when deployed via Docker. The Dockerfile uses:
+
+```dockerfile
+CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:5000", "main:app"]
+```
+
+This ensures proper WSGI server behavior for production environments. For local development, you can still run `python main.py` directly, but gunicorn is recommended even for testing.
+
 ## User Management
 
 Users are stored in `configs/users.json`. Each entry maps a **user ID** (which must match the corresponding PostgreSQL role name) to a display name and a hashed password.

@@ -66,9 +66,29 @@ def _validate(users: list[dict]) -> None:
         for src in u.get("sources", []):
             if not src.get("id"):
                 raise ValueError(f"Source missing 'id' for user {uid!r}")
-            if not src.get("parser"):
+            parser = src.get("parser")
+            if not parser:
                 raise ValueError(
                     f"Source {src['id']!r} missing 'parser' for user {uid!r}"
+                )
+            # Valid parsers include legacy aliases that map to demo_csv_data
+            valid_parsers = {
+                "demo_csv_data",
+                "csv_generic",
+                "openmrg",
+                "orange_cameroun",
+                "other_mno_csv",
+                "api_json",
+            }
+            if parser not in valid_parsers:
+                raise ValueError(
+                    f"Source {src['id']!r} for user {uid!r} has unknown parser "
+                    f"{parser!r}. Valid values: {sorted(valid_parsers)}"
+                )
+            if parser == "csv_generic" and not src.get("csv_config"):
+                raise ValueError(
+                    f"Source {src['id']!r} for user {uid!r} uses parser "
+                    f"'csv_generic' but has no 'csv_config' block"
                 )
 
 
@@ -107,6 +127,20 @@ def _parser_service(user: dict, src: dict) -> str:
     db_url = (
         f"postgresql://{user['id']}:{user['id']}_password" "@database:5432/mydatabase"
     )
+    env_lines = [
+        f"      - DATABASE_URL={db_url}",
+        f"      - USER_ID={user['id']}",
+        f"      - PARSER_TYPE={src['parser']}",
+        f"      - PARSER_INCOMING_DIR=/app/data/incoming",
+        f"      - PARSER_ARCHIVED_DIR=/app/data/archived",
+        f"      - PARSER_QUARANTINE_DIR=/app/data/quarantine",
+        f"      - PARSER_ENABLED=true",
+        f"      - PROCESS_EXISTING_ON_STARTUP=true",
+        f"      - LOG_LEVEL=INFO",
+    ]
+    if src.get("csv_config"):
+        csv_config_json = json.dumps(src["csv_config"], separators=(",", ":"))
+        env_lines.append(f"      - PARSER_CSV_CONFIG={csv_config_json}")
     return "\n".join(
         [
             f"  {svc}:",
@@ -115,14 +149,9 @@ def _parser_service(user: dict, src: dict) -> str:
             f"      database:",
             f"        condition: service_healthy",
             f"    environment:",
-            f"      - DATABASE_URL={db_url}",
-            f"      - USER_ID={user['id']}",
-            f"      - PARSER_INCOMING_DIR=/app/data/incoming",
-            f"      - PARSER_ARCHIVED_DIR=/app/data/archived",
-            f"      - PARSER_QUARANTINE_DIR=/app/data/quarantine",
-            f"      - PARSER_ENABLED=true",
-            f"      - PROCESS_EXISTING_ON_STARTUP=true",
-            f"      - LOG_LEVEL=INFO",
+        ]
+        + env_lines
+        + [
             f"    volumes:",
             f"      - {sftp_vol}:/app/data/incoming",
             f"      - {arch_vol}:/app/data/archived",

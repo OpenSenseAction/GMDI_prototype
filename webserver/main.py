@@ -881,4 +881,5 @@ if __name__ == "__main__":
     ensure_data_directories()
     # Wait for database to be ready
     time.sleep(10)
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    # Note: For production, use gunicorn instead of Flask's dev server
+    app.run(host="0.0.0.0", port=5000, debug=False)
