@@ -91,7 +91,7 @@ def _validate(users: list[dict]) -> None:
                 )
             # Validate entrypoint if specified
             entrypoint = src.get("entrypoint", "sftp_push")
-            valid_entrypoints = {"sftp_push", "sftp_pull", "api_pull"}
+            valid_entrypoints = {"sftp_push", "sftp_pull"}
             if entrypoint not in valid_entrypoints:
                 raise ValueError(
                     f"Source {src['id']!r} for user {uid!r} has unknown entrypoint "
