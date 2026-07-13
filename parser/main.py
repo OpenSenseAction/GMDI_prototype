@@ -13,7 +13,13 @@ from pathlib import Path
 from .file_watcher import FileWatcher
 from .file_manager import FileManager
 from .db_writer import DBWriter
-from .service_logic import load_parser, load_api_json_bundle, process_cml_file, process_rawdata_files_batch, _make_default_bundle
+from .service_logic import (
+    load_parser,
+    load_api_json_bundle,
+    process_cml_file,
+    process_rawdata_files_batch,
+    _make_default_bundle,
+)
 
 
 class Config:
@@ -43,9 +49,7 @@ def setup_logging():
 
 
 def process_existing_files(db_writer, file_manager, logger, parser=None):
-    incoming = sorted(
-        f for f in Config.INCOMING_DIR.glob("*.csv") if f.is_file()
-    )
+    incoming = sorted(f for f in Config.INCOMING_DIR.glob("*.csv") if f.is_file())
 
     _parser = parser if parser is not None else _make_default_bundle()
 
@@ -62,17 +66,18 @@ def process_existing_files(db_writer, file_manager, logger, parser=None):
     # Data files: batch-process for efficiency
     if data_files:
         logger.info("Found %d data file(s) to process", len(data_files))
-        process_rawdata_files_batch(data_files, db_writer, file_manager, logger, parser=_parser)
+        process_rawdata_files_batch(
+            data_files, db_writer, file_manager, logger, parser=_parser
+        )
 
     # JSON files (from api_fetcher): process individually
-    json_files = sorted(
-        f for f in Config.INCOMING_DIR.glob("*.json") if f.is_file()
-    )
+    json_files = sorted(f for f in Config.INCOMING_DIR.glob("*.json") if f.is_file())
     for f in json_files:
         try:
             process_cml_file(f, db_writer, file_manager, logger, parser=_parser)
         except Exception:
             pass
+
 
 def main():
     setup_logging()
@@ -87,6 +92,7 @@ def main():
     # Select parser bundle based on PARSER_TYPE
     if Config.PARSER_TYPE == "api_json":
         from .service_logic import load_api_json_bundle
+
         parser_bundle = load_api_json_bundle()
     else:
         parser_bundle = load_parser(Config.PARSER_TYPE, Config.PARSER_CSV_CONFIG)
@@ -110,7 +116,9 @@ def main():
 
     def on_new_file(filepath):
         try:
-            process_cml_file(filepath, db_writer, file_manager, logger, parser=parser_bundle)
+            process_cml_file(
+                filepath, db_writer, file_manager, logger, parser=parser_bundle
+            )
         except Exception:
             pass
 
@@ -154,7 +162,9 @@ def main():
                 logger.exception("Stats thread: refresh_windowed_stats failed")
         stats_db.close()
 
-    stats_thread = threading.Thread(target=stats_loop, daemon=True, name="stats-refresh")
+    stats_thread = threading.Thread(
+        target=stats_loop, daemon=True, name="stats-refresh"
+    )
     stats_thread.start()
 
     try:
