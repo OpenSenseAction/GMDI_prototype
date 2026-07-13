@@ -77,7 +77,14 @@ def parse_metadata_csv(filepath: Path) -> Optional[pd.DataFrame]:
 
     # Ensure canonical types
     df["cml_id"] = df["cml_id"].astype(str)
-    for col in ["site_0_lon", "site_0_lat", "site_1_lon", "site_1_lat", "frequency", "length"]:
+    for col in [
+        "site_0_lon",
+        "site_0_lat",
+        "site_1_lon",
+        "site_1_lat",
+        "frequency",
+        "length",
+    ]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 

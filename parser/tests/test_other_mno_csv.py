@@ -47,8 +47,7 @@ def test_rawdata_missing_columns_give_nan(tmp_path):
     csv = _write_csv(
         tmp_path,
         "raw.csv",
-        "timestamp;link_id;sublink\n"
-        "2026-01-22 10:00:00+01:00;CML1;A\n",
+        "timestamp;link_id;sublink\n" "2026-01-22 10:00:00+01:00;CML1;A\n",
     )
     df = parse_rawdata_csv(csv)
     assert "tsl" in df.columns
@@ -94,8 +93,7 @@ def test_metadata_missing_optional_columns(tmp_path):
     csv = _write_csv(
         tmp_path,
         "meta.csv",
-        "link_id;sublink;freq_mhz;pol;length_km\n"
-        "CML1;A;18.0;H;2.1\n",
+        "link_id;sublink;freq_mhz;pol;length_km\n" "CML1;A;18.0;H;2.1\n",
     )
     df = parse_metadata_csv(csv)
     # Should not crash; just missing those columns

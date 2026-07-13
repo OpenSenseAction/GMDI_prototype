@@ -65,7 +65,9 @@ def load_parser(parser_type: str, csv_config: Optional[dict] = None) -> ParserBu
 
     if parser_type == "other_mno_csv":
         from .parsers.other_mno_csv.parse_raw import parse_rawdata_csv as _parse_raw
-        from .parsers.other_mno_csv.parse_metadata import parse_metadata_csv as _parse_meta
+        from .parsers.other_mno_csv.parse_metadata import (
+            parse_metadata_csv as _parse_meta,
+        )
 
         return ParserBundle(
             parse_rawdata=_parse_raw,
