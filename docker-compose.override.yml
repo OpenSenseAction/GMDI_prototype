@@ -22,6 +22,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://demo_openmrg:demo_openmrg_password@database:5432/mydatabase
       - USER_ID=demo_openmrg
+      - PARSER_TYPE=demo_csv_data
       - PARSER_INCOMING_DIR=/app/data/incoming
       - PARSER_ARCHIVED_DIR=/app/data/archived
       - PARSER_QUARANTINE_DIR=/app/data/quarantine
@@ -33,6 +34,7 @@ services:
       - parser_demo_openmrg_main_archived:/app/data/archived
       - parser_demo_openmrg_main_quarantine:/app/data/quarantine
     restart: unless-stopped
+    command: python -m parser.entrypoints.sftp_push
 
   parser_demo_orange_cameroun_douala:
     build: ./parser
@@ -42,6 +44,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://demo_orange_cameroun:demo_orange_cameroun_password@database:5432/mydatabase
       - USER_ID=demo_orange_cameroun
+      - PARSER_TYPE=demo_csv_data
       - PARSER_INCOMING_DIR=/app/data/incoming
       - PARSER_ARCHIVED_DIR=/app/data/archived
       - PARSER_QUARANTINE_DIR=/app/data/quarantine
@@ -53,6 +56,7 @@ services:
       - parser_demo_orange_cameroun_douala_archived:/app/data/archived
       - parser_demo_orange_cameroun_douala_quarantine:/app/data/quarantine
     restart: unless-stopped
+    command: python -m parser.entrypoints.sftp_push
 
 volumes:
   sftp_demo_openmrg_main:
