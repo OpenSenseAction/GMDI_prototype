@@ -404,6 +404,23 @@ def realtime():
     )
 
 
+@app.route("/rain-rates")
+@login_required
+def rain_rates():
+    """Rain rates page"""
+    map_html = generate_cml_map(current_user.id)
+    cmls = get_available_cmls(current_user.id)
+    default_cml = cmls[0] if cmls else None
+
+    return render_template(
+        "rain_rates.html",
+        map_html=map_html,
+        cmls=cmls,
+        selected_cml=default_cml,
+        grafana_org_id=current_user.grafana_org_id,
+    )
+
+
 @app.route("/grafana")
 @login_required
 def grafana_root_redirect():
@@ -546,21 +563,135 @@ def api_cml_stats():
 
         stats = [
             {
-                "cml_id":                   str(row[0]),
-                "completeness_percent":     safe_float(row[1]),   # 6h window
-                "total_records":            int(row[2] or 0),
-                "valid_records":            int(row[3] or 0),
-                "mean_rsl":                 safe_float(row[4]),
-                "stddev_rsl":               safe_float(row[5]),
-                "completeness_percent_1h":  safe_float(row[6]),
-                "stddev_last_60min":        safe_float(row[7]),   # pre-computed 1h stddev
-                "last_rsl":                 safe_float(row[8]),
+                "cml_id": str(row[0]),
+                "completeness_percent": safe_float(row[1]),  # 6h window
+                "total_records": int(row[2] or 0),
+                "valid_records": int(row[3] or 0),
+                "mean_rsl": safe_float(row[4]),
+                "stddev_rsl": safe_float(row[5]),
+                "completeness_percent_1h": safe_float(row[6]),
+                "stddev_last_60min": safe_float(row[7]),  # pre-computed 1h stddev
+                "last_rsl": safe_float(row[8]),
             }
             for row in data
         ]
         return jsonify(stats)
     except Exception as e:
         print(f"Error fetching CML stats: {e}")
+        return jsonify([])
+
+
+@app.route("/api/rain-stats")
+@login_required
+def api_rain_stats():
+    """API endpoint for fetching per-CML rain rate statistics for rain rates visualization"""
+    try:
+        # Get optional time offset token.
+        # Supported values:
+        #   "0"   -> latest single measurement
+        #   "-1h" -> mean over NOW-1h .. NOW
+        #   "-2h" -> mean over NOW-2h .. NOW-1h
+        #   "-1d" -> mean over NOW-24h .. NOW
+        #   "-2d" -> mean over NOW-48h .. NOW-24h
+        offset = request.args.get("offset", default="0", type=str)
+
+        with user_db_scope(current_user.id) as conn:
+            cur = conn.cursor()
+
+            if offset == "0":
+                # Fetch latest available rain data for each CML
+                cur.execute(
+                    """
+                    SELECT DISTINCT ON (cml_id)
+                        cml_id::text,
+                        r AS last_rain_rate
+                    FROM cml_rain_data_secure
+                    ORDER BY cml_id, time DESC
+                    """
+                )
+            else:
+                start_expr = None
+                end_expr = None
+                use_hourly_accumulation = False
+
+                if offset.endswith("h"):
+                    hours_offset = int(offset[:-1])
+                    if hours_offset >= 0:
+                        raise ValueError("Hour offset must be negative (e.g. -1h)")
+                    # -1h means now-1h..now, -2h means now-2h..now-1h, etc.
+                    start_expr = f"NOW() + ({hours_offset} || ' hours')::INTERVAL"
+                    end_expr = (
+                        "NOW()"
+                        if hours_offset == -1
+                        else f"NOW() + ({hours_offset + 1} || ' hours')::INTERVAL"
+                    )
+                elif offset == "-1d":
+                    start_expr = "NOW() - INTERVAL '1 day'"
+                    end_expr = "NOW()"
+                    use_hourly_accumulation = True
+                elif offset == "-2d":
+                    start_expr = "NOW() - INTERVAL '2 day'"
+                    end_expr = "NOW() - INTERVAL '1 day'"
+                    use_hourly_accumulation = True
+                else:
+                    raise ValueError(f"Unsupported offset: {offset}")
+
+                if use_hourly_accumulation:
+                    # Daily windows: accumulate hourly means
+                    # 1) mean(r) per CML per hour, 2) sum those hourly means
+                    cur.execute(
+                        f"""
+                        WITH hourly_means AS (
+                            SELECT
+                                cml_id,
+                                time_bucket('1 hour', time) AS hour_bucket,
+                                AVG(r) AS hour_mean_r
+                            FROM cml_rain_data_secure
+                            WHERE time >= {start_expr}
+                              AND time < {end_expr}
+                            GROUP BY cml_id, hour_bucket
+                        )
+                        SELECT
+                            cml_id::text,
+                            SUM(hour_mean_r) AS last_rain_rate
+                        FROM hourly_means
+                        GROUP BY cml_id
+                        ORDER BY cml_id
+                        """
+                    )
+                else:
+                    cur.execute(
+                        f"""
+                        SELECT
+                            cml_id::text,
+                            AVG(r) as last_rain_rate
+                        FROM cml_rain_data_secure
+                        WHERE time >= {start_expr}
+                          AND time < {end_expr}
+                        GROUP BY cml_id
+                        ORDER BY cml_id
+                        """
+                    )
+
+            data = cur.fetchall()
+            cur.close()
+
+        stats = [
+            {
+                "cml_id": str(row[0]),
+                "total_records": 0,
+                "valid_records": 0,
+                "last_rain_rate": safe_float(row[1]),
+                "mean_rain_rate_60min": None,
+            }
+            for row in data
+        ]
+        return jsonify(stats)
+    except Exception as e:
+        print(f"Error fetching rain stats: {e}")
+        import traceback
+
+        traceback.print_exc()
         return jsonify([])
 
 

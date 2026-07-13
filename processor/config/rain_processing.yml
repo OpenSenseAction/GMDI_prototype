@@ -1,0 +1,27 @@
+# Global settings for the rain processing service
+global:
+  # How often to reload this YAML file (seconds)
+  config_reload_interval_seconds: 60
+  
+  # Default poll interval if not specified per user (seconds)
+  default_poll_interval_seconds: 300  # 5 minutes
+  
+  # Default data window if not specified per user (minutes)
+  default_data_window_minutes: 120
+
+# Per-user configuration
+users:
+  demo_openmrg:
+    enabled: true                          # Enable/disable processing for this user
+    processing_variant: openmrg_basic      # Which workflow to use (maps to processor/workflows/<variant>.py)
+    poll_interval_seconds: 300             # Process every 5 minutes
+    data_window_minutes: 120               # Fetch 120 minutes of data for context
+  
+  demo_orange_cameroun:
+    enabled: false                         # Disabled by default
+    processing_variant: openmrg_basic
+    poll_interval_seconds: 60              # Process every 1 minute
+    data_window_minutes: 120               # Fetch 120 minutes of data
+
+# To add a new user, simply add an entry under 'users'
+# The processor will automatically pick it up on next config reload
