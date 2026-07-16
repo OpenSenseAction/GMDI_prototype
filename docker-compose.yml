@@ -265,6 +265,16 @@ services:
     profiles:
       - testing
 
+  # SFTP fetcher unit tests (run with: docker compose run --rm sftp_fetcher_tests)
+  sftp_fetcher_tests:
+    build:
+      context: .
+      dockerfile: fetchers/sftp_fetcher/Dockerfile.test
+    volumes:
+      - ./fetchers:/workspace/fetchers:ro
+    profiles:
+      - testing
+
 volumes:
   archive_data_openmrg:
   archive_data_orange_cameroun:

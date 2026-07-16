@@ -1,0 +1,19 @@
+FROM python:3.11-slim
+
+WORKDIR /workspace
+
+# Install dependencies
+COPY fetchers/sftp_fetcher/requirements.txt /workspace/fetchers/sftp_fetcher/requirements.txt
+COPY fetchers/sftp_fetcher/requirements-test.txt /workspace/fetchers/sftp_fetcher/requirements-test.txt
+RUN pip install --no-cache-dir \
+    -r /workspace/fetchers/sftp_fetcher/requirements.txt \
+    -r /workspace/fetchers/sftp_fetcher/requirements-test.txt
+
+# Copy fetcher code
+COPY fetchers/ /workspace/fetchers/
+
+# Set Python path
+ENV PYTHONPATH=/workspace
+
+# Run tests
+CMD ["pytest", "fetchers/sftp_fetcher/tests/", "-v", "--tb=short"]
