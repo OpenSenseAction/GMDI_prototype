@@ -327,21 +327,32 @@ services:
   sftp_fetcher:
     build: ./fetchers/sftp_fetcher
     volumes:
-      - ./data:/app/data
-      - ./fetchers/shared:/app/shared  # or baked into image
-    env_file: .env
+      - ./fetchers/sftp_fetcher/config.yml:/app/config.yml:ro
+      - ./ssh_keys:/app/ssh_keys:ro
+      - sftp_fetcher_state:/app/state
+      - shared_incoming:/app/incoming
+    environment:
+      - MNO_NAME_SSH_KEY=/app/ssh_keys/mno_key
+      - LOG_LEVEL=INFO
     restart: unless-stopped
 
   api_fetcher:
     build: ./fetchers/api_fetcher
     volumes:
-      - ./data:/app/data
-      - ./fetchers/shared:/app/shared
+      - ./fetchers/api_fetcher/config.yml:/app/config.yml:ro
+      - api_fetcher_state:/app/state
+      - shared_incoming:/app/incoming
     env_file: .env
     restart: unless-stopped
+
+volumes:
+  sftp_fetcher_state:
+  api_fetcher_state:
+  shared_incoming:
 ```
 
-No dependency on `parser` is needed — they just share the volume.
+Both services write to the shared `incoming/` volume, which is then watched by
+the appropriate parser service.
 
 ---
 
@@ -383,9 +394,9 @@ second format makes it worthwhile.
 5. Minimal JSON branch in `parser/service_logic.py` (single `elif` on `.json` extension)
 6. Integration test: mock server fixture, assert records land in DB
 
-**PR 2 — `feat/sftp-fetcher`** *(no parser changes; reuses `fetchers/shared/` from PR 1)*
-1. `fetchers/sftp_fetcher/` service
-2. Integration test: mock SFTP server, assert files land in `incoming/`
+**PR 2 — `feat/sftp-fetcher`** ✅ *IMPLEMENTED*
+1. `fetchers/sftp_fetcher/` service - **DONE**
+2. Integration test: mock SFTP server, assert files land in `incoming/` - *TODO*
 
 **PR 3 — `feat/parser-modular`** *(cleanup; defer until a second format arrives)*
 1. Extension-based registry replacing `"meta"/"data"` filename substring checks

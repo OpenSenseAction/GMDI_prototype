@@ -1,4 +1,5 @@
 import logging
+import signal
 import time
 from typing import Callable
 
@@ -22,13 +23,26 @@ def run_poll_loop(
     """
     if log is None:
         log = logger
+    
+    # Handle shutdown signals gracefully
+    shutdown_requested = False
+    
+    def signal_handler(signum, frame):
+        nonlocal shutdown_requested
+        log.info(f"Received signal {signum}, shutting down gracefully...")
+        shutdown_requested = True
+    
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    
     backoff = interval_s
-    while True:
+    while not shutdown_requested:
         try:
             poll_fn()
             backoff = interval_s  # reset on success
             time.sleep(interval_s)
         except Exception:
             log.exception("Poll failed, retrying in %.0fs", backoff)
-            time.sleep(backoff)
-            backoff = min(backoff * 2, _MAX_BACKOFF_S)
+            if not shutdown_requested:
+                time.sleep(backoff)
+                backoff = min(backoff * 2, _MAX_BACKOFF_S)

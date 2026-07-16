@@ -1,0 +1,31 @@
+# SFTP Fetcher Configuration
+# 
+# This file defines one or more external SFTP sources to poll.
+# Secrets (passwords, SSH key paths) must NEVER be stored here.
+# Use environment variable references (e.g., PRIVATE_KEY_ENV: MY_SSH_KEY)
+# and set the actual values via docker-compose environment variables.
+
+sources:
+  # Example configuration - replace with actual source details
+  # - name: example_source
+  #   host: sftp.example.com
+  #   port: 22
+  #   username: gmdi_pull
+  #   private_key_env: EXAMPLE_SSH_KEY  # Path to private key from env var
+  #   # password_env: EXAMPLE_PASSWORD  # Alternative: use password instead of key
+  #   remote_path: /outgoing/cml
+  #   poll_interval_seconds: 60
+  #   file_glob: "*.csv"
+  #   
+  #   # What to do after successful download:
+  #   # - "leave"   : Do nothing (default; safest, no write permission needed)
+  #   # - "delete"  : Delete file from remote server (requires write permission)
+  #   # - "move"    : Move to archive_subdir (requires write permission; recommended)
+  #   after_download: "leave"
+  #   
+  #   # Only used when after_download="move":
+  #   archive_subdir: "done"  # Subdirectory name for archived files
+  
+  # Recommended: If you have write permissions on the SFTP server, use
+  # after_download: "move" to keep the source directory clean and prevent
+  # performance degradation from accumulating files.
