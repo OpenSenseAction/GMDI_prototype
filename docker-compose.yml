@@ -122,6 +122,8 @@ services:
     # effective_cache_size: hints to the planner how much OS page cache is available.
     # work_mem: memory per sort/hash operation; speeds up ORDER BY on large result sets.
     # random_page_cost: tell the planner data is effectively cached, prefer index scans.
+    # shared_preload_libraries: load timescaledb and pg_stat_statements at startup.
+    # pg_stat_statements.track=all: capture stats for all statements including nested.
     command: >
       postgres
         -c shared_buffers=2GB
@@ -129,6 +131,8 @@ services:
         -c work_mem=64MB
         -c maintenance_work_mem=256MB
         -c random_page_cost=1.1
+        -c shared_preload_libraries=timescaledb,pg_stat_statements
+        -c pg_stat_statements.track=all
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_SUPERUSER:-myuser} -d mydatabase"]
       interval: 5s
