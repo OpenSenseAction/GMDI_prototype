@@ -32,6 +32,10 @@
                             href="/realtime">Real-Time Data</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/rain-rates' %}active{% endif %}"
+                            href="/rain-rates">Rain Rates</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link {% if request.path == '/archive' %}active{% endif %}"
                             href="/archive">Archive</a>
                     </li>

@@ -142,18 +142,39 @@ services:
 
   processor:
     build: ./processor
-    ports:
-      - "5002:5002"
+    restart: unless-stopped
     depends_on:
-      - database
+      database:
+        condition: service_healthy
+    volumes:
+      - ./processor/config:/app/config:ro
+      - processor_state:/app/data/state
     environment:
       # Note: Override DB_SUPERUSER and DB_SUPERUSER_PASSWORD in production via .env file
       - DATABASE_URL=postgresql://${DB_SUPERUSER:-myuser}:${DB_SUPERUSER_PASSWORD:-mypassword}@database:5432/mydatabase
 
+  # Jupyter notebook for rain processing development and validation
+  processor_notebook:
+    build:
+      context: ./processor
+      dockerfile: Dockerfile.jupyter
+    ports:
+      - "9888:8888"
+    depends_on:
+      database:
+        condition: service_healthy
+    volumes:
+      - ./processor:/app:ro
+      - processor_notebook_data:/app/data
+    environment:
+      - DATABASE_URL=postgresql://myuser:mypassword@database:5432/mydatabase
+    profiles:
+      - notebook
+
   webserver:
     build: ./webserver
     ports:
-      - "5000:5000"
+      - "5001:5000"
     depends_on:
       - database
       - sftp_receiver
@@ -289,4 +310,6 @@ volumes:
   grafana_data:
   mno_openmrg_data_to_upload:
   mno_orange_cameroun_data_to_upload:
+  processor_state:
+  processor_notebook_data:
   # minio_data:  # Uncomment if using MinIO

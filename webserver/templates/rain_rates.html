@@ -1,0 +1,497 @@
+{% extends "base.html" %}
+
+{% block title %}Rain Rates - GMDI Platform{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+    /* Full-screen layout below navbar */
+    html,
+    body {
+        height: 100vh;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+    }
+
+    main {
+        padding: 0 !important;
+        margin: 0 !important;
+        min-height: calc(100vh - 60px);
+        position: relative;
+    }
+
+    main .container {
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    footer {
+        display: none !important;
+    }
+
+    .realtime-wrapper {
+        width: 100%;
+        min-height: calc(100vh - 60px);
+        position: relative;
+    }
+
+    .map-container {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 1;
+    }
+
+    #cml-map {
+        width: 100%;
+        height: 100%;
+    }
+
+    .chart-container {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 400px;
+        min-height: 200px;
+        max-height: 80vh;
+        z-index: 100;
+        background: white;
+    }
+
+    .resizer {
+        position: absolute;
+        bottom: 400px;
+        left: 0;
+        right: 0;
+        height: 6px;
+        background: #ccc;
+        cursor: ns-resize;
+        z-index: 200;
+        transition: background-color 0.2s ease;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
+    .resizer:hover {
+        background: #aaa;
+    }
+
+    .resizer.active {
+        background: #888;
+    }
+
+    .grafana-container {
+        position: relative;
+        border: none;
+        width: 100%;
+        height: 100%;
+        display: block;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="realtime-wrapper">
+    <div class="map-container">
+        <div id="cml-map"></div>
+    </div>
+    <div class="resizer" id="resizer"></div>
+    <div class="chart-container">
+        <iframe class="grafana-container" id="grafana-panel"
+            src="/grafana/d/cml-rain-rates/cml-rain-rates?orgId={{ grafana_org_id }}&var-cml_id=10001&refresh=10s&theme=light&viewPanel=2&kiosk"
+            allowfullscreen></iframe>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+    let map;
+    let cmlLayers = {};
+    let cmlStats = {};
+    let selectedCmlId = '10001';
+    let currentTimeOffset = 0; // hours from now
+
+    // Color functions for rain rate
+    const colorFunctions = {
+        rain_rate: function (stat) {
+            if (!stat) return '#808080'; // gray for missing data
+            const rainRate = stat.last_rain_rate;
+            if (rainRate === null || rainRate === undefined) return '#808080'; // gray for missing data
+            if (rainRate === 0) return '#22c55e'; // green (no rain)
+            if (rainRate < 2) return '#eab308'; // yellow (light rain)
+            if (rainRate < 5) return '#f97316'; // orange (moderate rain)
+            return '#ef4444'; // red (heavy rain)
+        }
+    };
+
+    function getColor(stat) {
+        return colorFunctions.rain_rate(stat);
+    }
+
+    function getMapViewportPadding() {
+        var chartContainer = document.querySelector('.chart-container');
+        var chartHeight = chartContainer ? chartContainer.offsetHeight : 0;
+
+        return {
+            topLeft: [60, 40],
+            bottomRight: [60, Math.max(60, chartHeight + 40)],
+            upwardPanPixels: Math.max(0, Math.round(chartHeight * 0.35))
+        };
+    }
+
+    function buildPopupText(cmlId, stats) {
+        var popupText = '<strong>CML ' + cmlId + '</strong><br>';
+        if (stats) {
+            popupText += 'Valid records: ' + stats.valid_records + '/' + stats.total_records + '<br>';
+            if (stats.last_rain_rate !== null && stats.last_rain_rate !== undefined) {
+                popupText += 'Rain Rate: ' + stats.last_rain_rate.toFixed(2) + ' mm/h<br>';
+            }
+            if (stats.mean_rain_rate_60min !== null && stats.mean_rain_rate_60min !== undefined) {
+                popupText += 'Mean Rain Rate (1h): ' + stats.mean_rain_rate_60min.toFixed(2) + ' mm/h<br>';
+            }
+        }
+        return popupText;
+    }
+
+    function applyStatsToLine(cmlId, stats) {
+        var polyline = cmlLayers[cmlId];
+        if (!polyline) return;
+
+        polyline._stats = stats;
+        var color = getColor(stats);
+        polyline.setStyle({ color: color });
+
+        if (polyline.getPopup()) {
+            polyline.setPopupContent(buildPopupText(cmlId, stats));
+        } else {
+            polyline.bindPopup(buildPopupText(cmlId, stats));
+        }
+    }
+
+    // Initialize map
+    function initializeMap() {
+        console.log('Initializing map...');
+        try {
+            map = L.map('cml-map').setView([57.705, 11.97], 11);
+            // Use Carto Positron - clean, minimal light basemap
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+                maxZoom: 19,
+                subdomains: 'abcd'
+            }).addTo(map);
+            console.log('Map created');
+
+            // Add custom control for time selection
+            var TimeControl = L.Control.extend({
+                options: {
+                    position: 'topright'
+                },
+                onAdd: function (map) {
+                    var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-custom');
+                    container.style.backgroundColor = 'white';
+                    container.style.padding = '10px';
+                    container.style.fontSize = '14px';
+
+                    var label = L.DomUtil.create('div', '', container);
+                    label.innerHTML = '<strong>Time:</strong>';
+                    label.style.marginBottom = '5px';
+
+                    var select = L.DomUtil.create('select', '', container);
+                    select.id = 'timeOffset';
+                    select.innerHTML = `
+                        <option value="0" selected>Current (latest available)</option>
+                        <option value="-1h">Last 1h (mean)</option>
+                        <option value="-2h">-2h to -1h (mean)</option>
+                        <option value="-3h">-3h to -2h (mean)</option>
+                        <option value="-4h">-4h to -3h (mean)</option>
+                        <option value="-1d">Last 1d (mean)</option>
+                        <option value="-2d">-2d to -1d (mean)</option>
+                    `;
+
+                    // Prevent map interactions when using the select
+                    L.DomEvent.disableClickPropagation(container);
+                    L.DomEvent.disableScrollPropagation(container);
+
+                    return container;
+                }
+            });
+            map.addControl(new TimeControl());
+
+            // Start map rendering immediately
+            loadCmlData();
+
+            // Fetch latest by default
+            console.log('Fetching CML rain stats...');
+            try {
+                fetchRainStats('0');
+            } catch (e) {
+                console.error('Exception when fetching stats:', e);
+                var errEl = document.getElementById('debugError');
+                if (errEl) errEl.textContent = 'lastError=stats-ex:' + String(e);
+            }
+        } catch (e) {
+            console.error('Error in initializeMap:', e);
+        }
+
+        // Add event listener for time offset change
+        var timeSelect = document.getElementById('timeOffset');
+        if (timeSelect) {
+            timeSelect.addEventListener('change', function (e) {
+                console.log('Time offset changed to: ' + e.target.value);
+                currentTimeOffset = e.target.value;
+                fetchRainStats(currentTimeOffset);
+            });
+        }
+    }
+
+    // Fetch rain stats from API with optional time offset
+    function fetchRainStats(timeOffset) {
+        var url = '/api/rain-stats';
+        if (timeOffset !== undefined) {
+            url += '?offset=' + encodeURIComponent(timeOffset);
+        }
+
+        console.log('Fetching rain stats for time offset: ' + timeOffset);
+        fetch(url)
+            .then(function (response) {
+                console.log('Stats response received:', response.status);
+                return response.json();
+            })
+            .then(function (stats) {
+                console.log('Received stats for ' + stats.length + ' CMLs');
+
+                // Clear all lines first so switching to a no-data window
+                // does not keep stale colors from the previous selection.
+                Object.keys(cmlLayers).forEach(function (cmlId) {
+                    applyStatsToLine(cmlId, null);
+                });
+
+                cmlStats = {};
+                stats.forEach(function (stat) {
+                    cmlStats[stat.cml_id] = stat;
+                    applyStatsToLine(stat.cml_id, stat);
+                });
+                console.log('Map colors updated for ' + Object.keys(cmlStats).length + ' CMLs');
+            })
+            .catch(function (error) {
+                console.error('Error loading stats:', error);
+                var errEl = document.getElementById('debugError');
+                if (errEl) errEl.textContent = 'lastError=stats:' + (error && error.message ? error.message : String(error));
+            });
+    }
+
+    // Load and draw CML data
+    function loadCmlData() {
+        console.log('Loading CML map data...');
+        try {
+            fetch('/api/cml-map')
+                .then(function (response) {
+                    console.log('Map response received:', response.status);
+                    var el = document.getElementById('debugMap');
+                    if (el) el.textContent = 'mapData=status:' + response.status;
+                    return response.json();
+                })
+                .then(function (cmls) {
+                    console.log('Drawing ' + cmls.length + ' CMLs');
+                    var el2 = document.getElementById('debugMap');
+                    if (el2) el2.textContent = 'mapData=ok:' + cmls.length;
+
+                    // Build a LatLngBounds covering all CML endpoints
+                    try {
+                        var bounds = L.latLngBounds();
+                        cmls.forEach(function (cml) {
+                            // Ensure numeric values
+                            var s0lat = Number(cml.site_0.lat);
+                            var s0lon = Number(cml.site_0.lon);
+                            var s1lat = Number(cml.site_1.lat);
+                            var s1lon = Number(cml.site_1.lon);
+
+                            // Extend bounds before drawing so fit uses full extent
+                            if (!isNaN(s0lat) && !isNaN(s0lon)) bounds.extend([s0lat, s0lon]);
+                            if (!isNaN(s1lat) && !isNaN(s1lon)) bounds.extend([s1lat, s1lon]);
+
+                            drawCmlLine(cml);
+                        });
+
+                        // If no CMLs are available, keep the default view
+                        var viewportPadding = getMapViewportPadding();
+
+                        if (cmls.length === 0 || !bounds.isValid()) {
+                            console.log('No CMLs to center on; keeping default view');
+                            // keep existing setView
+                        } else if (cmls.length === 1) {
+                            // For a single CML, center on the midpoint with a reasonable zoom
+                            var c = cmls[0];
+                            var midLat = (Number(c.site_0.lat) + Number(c.site_1.lat)) / 2;
+                            var midLon = (Number(c.site_0.lon) + Number(c.site_1.lon)) / 2;
+                            if (!isNaN(midLat) && !isNaN(midLon)) {
+                                map.setView([midLat, midLon], 12);
+                                if (viewportPadding.upwardPanPixels > 0) {
+                                    map.panBy([0, -viewportPadding.upwardPanPixels], { animate: false });
+                                }
+                            }
+                        } else {
+                            // Bias the fitted view upward because the bottom of the map is covered.
+                            map.fitBounds(bounds, {
+                                paddingTopLeft: viewportPadding.topLeft,
+                                paddingBottomRight: viewportPadding.bottomRight,
+                                maxZoom: 15
+                            });
+                        }
+                    } catch (e) {
+                        console.error('Error computing map bounds:', e);
+                    }
+
+                    console.log('Done drawing');
+                })
+                .catch(function (error) {
+                    console.error('Error loading map data:', error);
+                    var errEl = document.getElementById('debugError');
+                    if (errEl) errEl.textContent = 'lastError=map:' + (error && error.message ? error.message : String(error));
+                    var el3 = document.getElementById('debugMap');
+                    if (el3) el3.textContent = 'mapData=error';
+                });
+        } catch (e) {
+            console.error('Exception when loading map data:', e);
+            var errEl = document.getElementById('debugError');
+            if (errEl) errEl.textContent = 'lastError=map-ex:' + String(e);
+        }
+    }
+
+    // Draw CML line on map with initial color
+    function drawCmlLine(cml) {
+        var cmlId = cml.cml_id;
+        var stats = cmlStats[cmlId];
+        var color = getColor(stats);
+
+        var latlngs = [
+            [cml.site_0.lat, cml.site_0.lon],
+            [cml.site_1.lat, cml.site_1.lon]
+        ];
+
+        var polyline = L.polyline(latlngs, {
+            color: color,
+            weight: 2,
+            opacity: 0.7
+        });
+        polyline.addTo(map);
+
+        // Store the stats for updating
+        polyline._cmlId = cmlId;
+        polyline._stats = stats;
+
+        // Create popup with stats (or placeholder until stats arrive)
+        polyline.bindPopup(buildPopupText(cmlId, stats));
+
+        // Add click handler
+        polyline.on('click', function () {
+            selectCml(cmlId);
+        });
+
+        // Add hover effects
+        polyline.on('mouseover', function () {
+            this.setStyle({ weight: 4, opacity: 1 });
+        });
+        polyline.on('mouseout', function () {
+            this.setStyle({ weight: 2, opacity: 0.7 });
+        });
+
+        cmlLayers[cmlId] = polyline;
+    }
+
+    // Update all map line colors based on current stats
+    function updateMapColors() {
+        console.log('Updating colors for ' + Object.keys(cmlLayers).length + ' CMLs');
+        for (var cmlId in cmlLayers) {
+            if (cmlLayers.hasOwnProperty(cmlId)) {
+                var polyline = cmlLayers[cmlId];
+                var stats = polyline._stats;
+                var color = getColor(stats);
+                polyline.setStyle({ color: color });
+            }
+        }
+    }
+
+    // Select CML and update Grafana dashboard
+    function selectCml(cmlId) {
+        selectedCmlId = cmlId;
+
+        var grafanaPanel = document.getElementById('grafana-panel');
+        var iframeWindow = grafanaPanel.contentWindow;
+        var currentUrl = new URL(iframeWindow.location.href);
+        currentUrl.searchParams.set('var-cml_id', cmlId);
+
+        iframeWindow.history.pushState(null, '', currentUrl.toString());
+        iframeWindow.dispatchEvent(new PopStateEvent('popstate', { state: null }));
+    }
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', function () {
+        initializeMap();
+        initializeResizer();
+    });
+
+    // Initialize resizer for adjustable dashboard height
+    function initializeResizer() {
+        const resizer = document.getElementById('resizer');
+        const chartContainer = document.querySelector('.chart-container');
+        let isResizing = false;
+        let startY, startHeight;
+
+        function startResize(e) {
+            isResizing = true;
+            startY = e.clientY;
+            startHeight = chartContainer.offsetHeight;
+            resizer.classList.add('active');
+            document.body.style.cursor = 'ns-resize';
+            document.body.style.userSelect = 'none';
+
+            // Prevent iframe from capturing mouse events
+            const iframe = document.querySelector('.grafana-container');
+            if (iframe) {
+                iframe.style.pointerEvents = 'none';
+            }
+
+            e.preventDefault();
+        }
+
+        function doResize(e) {
+            if (!isResizing) return;
+            e.preventDefault();
+
+            const deltaY = startY - e.clientY;
+            const newHeight = startHeight + deltaY;
+            const minHeight = 200;
+            const maxHeight = window.innerHeight * 0.8;
+            const constrainedHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
+
+            chartContainer.style.height = constrainedHeight + 'px';
+            resizer.style.bottom = constrainedHeight + 'px';
+        }
+
+        function stopResize() {
+            if (!isResizing) return;
+            isResizing = false;
+            resizer.classList.remove('active');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+
+            // Re-enable iframe interactions
+            const iframe = document.querySelector('.grafana-container');
+            if (iframe) {
+                iframe.style.pointerEvents = 'auto';
+            }
+        }
+
+        resizer.addEventListener('mousedown', startResize);
+        document.addEventListener('mousemove', doResize);
+        document.addEventListener('mouseup', stopResize);
+    }
+</script>
+{% endblock %}

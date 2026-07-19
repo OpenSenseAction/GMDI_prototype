@@ -1,0 +1,278 @@
+{
+    "annotations": {
+        "list": [
+            {
+                "builtIn": 1,
+                "datasource": {
+                    "type": "grafana",
+                    "uid": "-- Grafana --"
+                },
+                "enable": true,
+                "hide": true,
+                "iconColor": "rgba(0, 211, 255, 1)",
+                "name": "Annotations & Alerts",
+                "type": "dashboard"
+            }
+        ]
+    },
+    "editable": false,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 0,
+    "id": null,
+    "links": [],
+    "liveNow": false,
+    "panels": [
+        {
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "${datasource}"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {
+                        "hideFrom": {
+                            "tooltip": false,
+                            "viz": false,
+                            "legend": false
+                        }
+                    }
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 1,
+                "w": 24,
+                "x": 0,
+                "y": 0
+            },
+            "id": 4,
+            "options": {
+                "text": "Select a CML ID using the dropdown below to view its rain rate data"
+            },
+            "pluginVersion": "9.0.0",
+            "targets": [],
+            "type": "text"
+        },
+        {
+            "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "${datasource}"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "Rain Rate (mm/h)",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "drawStyle": "line",
+                        "fillOpacity": 0,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "tooltip": false,
+                            "viz": false,
+                            "legend": false
+                        },
+                        "lineInterpolation": "linear",
+                        "lineWidth": 2,
+                        "pointSize": 4,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "never",
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            }
+                        ]
+                    },
+                    "unit": "mm/h"
+                },
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "sublink_1"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "blue",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "sublink_2"
+                        },
+                        "properties": [
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "semi-dark-orange",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    }
+                ]
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 24,
+                "x": 0,
+                "y": 1
+            },
+            "id": 2,
+            "options": {
+                "legend": {
+                    "calcs": [],
+                    "displayMode": "list",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "mode": "multi",
+                    "sort": "none"
+                }
+            },
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "grafana-postgresql-datasource",
+                        "uid": "${datasource}"
+                    },
+                    "format": "time_series",
+                    "rawQuery": true,
+                    "rawSql": "SELECT\n  time_bucket('$__interval', time) AS \"time\",\n  sublink_id AS metric,\n  AVG(r) AS value\nFROM cml_rain_data_secure\nWHERE cml_id = '${cml_id}'\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nGROUP BY 1, 2\nORDER BY 1 ASC",
+                    "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "grafana-postgresql-datasource",
+                        "uid": "${datasource}"
+                    },
+                    "format": "time_series",
+                    "rawQuery": true,
+                    "rawSql": "SELECT\n  time AS \"time\",\n  sublink_id AS metric,\n  r AS value\nFROM cml_rain_data_secure\nWHERE cml_id = '${cml_id}'\n  AND '${interval}' = 'raw'\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+                    "refId": "B"
+                }
+            ],
+            "title": "CML Time Series - Rain Rate",
+            "type": "timeseries"
+        }
+    ],
+    "refresh": "10s",
+    "schemaVersion": 38,
+    "style": "dark",
+    "tags": [
+        "cml",
+        "rain",
+        "realtime"
+    ],
+    "templating": {
+        "list": [
+            {
+                "current": {},
+                "hide": 2,
+                "includeAll": false,
+                "multi": false,
+                "name": "datasource",
+                "options": [],
+                "query": "grafana-postgresql-datasource",
+                "refresh": 1,
+                "type": "datasource",
+                "label": "Datasource"
+            },
+            {
+                "current": {
+                    "selected": false,
+                    "text": "10001",
+                    "value": "10001"
+                },
+                "datasource": {
+                    "type": "grafana-postgresql-datasource",
+                    "uid": "${datasource}"
+                },
+                "definition": "SELECT DISTINCT cml_id::text FROM cml_metadata ORDER BY cml_id",
+                "description": null,
+                "error": null,
+                "hide": 0,
+                "includeAll": false,
+                "label": "CML ID",
+                "multi": false,
+                "name": "cml_id",
+                "options": [],
+                "query": "SELECT DISTINCT cml_id::text FROM cml_metadata ORDER BY cml_id",
+                "refresh": 1,
+                "regex": "",
+                "skipUrlSync": false,
+                "sort": 0,
+                "tagValuesQuery": "",
+                "tagsQuery": "",
+                "type": "query",
+                "useTags": false
+            },
+            {
+                "current": {
+                    "selected": true,
+                    "text": "Auto",
+                    "value": "auto"
+                },
+                "description": "Time aggregation interval for downsampling data",
+                "hide": 0,
+                "includeAll": false,
+                "label": "Interval",
+                "multi": false,
+                "name": "interval",
+                "options": [
+                    {
+                        "selected": true,
+                        "text": "Auto",
+                        "value": "auto"
+                    },
+                    {
+                        "selected": false,
+                        "text": "Raw",
+                        "value": "raw"
+                    }
+                ],
+                "query": "Auto : auto,Raw : raw",
+                "queryValue": "",
+                "skipUrlSync": true,
+                "type": "custom"
+            }
+        ]
+    },
+    "time": {
+        "from": "now-24h",
+        "to": "now"
+    },
+    "timepicker": {},
+    "timezone": "browser",
+    "title": "CML Rain Rates",
+    "uid": "cml-rain-rates",
+    "version": 1,
+    "weekStart": ""
+}
