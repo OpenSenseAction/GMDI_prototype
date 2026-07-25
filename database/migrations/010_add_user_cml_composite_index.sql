@@ -1,0 +1,48 @@
+-- Migration 010: composite index (user_id, cml_id, time DESC) for RLS queries
+--
+-- Part of PR perf/db-add-composite-index.
+-- Run this AFTER migrations 001–009 (feat/db-roles-rls).
+--
+-- Rationale:
+--   The existing indexes are:
+--     - idx_cml_data_cml_id: (cml_id, time DESC)
+--     - idx_cml_data_user_id: (user_id)
+--
+--   With multi-user RLS enabled (migration 004), all webserver queries run
+--   as a specific database role (e.g. SET ROLE demo_openmrg), which enforces
+--   user_id = CURRENT_USER via Row-Level Security policies.
+--
+--   Without a composite index starting with user_id, PostgreSQL must either:
+--     1. Use idx_cml_data_cml_id → scans ALL users' data for that CML,
+--        then filters by user_id row-by-row (expensive at billion-row scale)
+--     2. Use idx_cml_data_user_id → requires additional lookups for cml_id
+--        and time range, causing bitmap heap scans
+--
+--   Both paths cause the sequential scan hotspot visible in
+--   pg_stat_user_tables (hundreds of millions of tuple reads on compressed
+--   chunks), because full chunk decompression occurs before filtering.
+--
+--   The composite index (user_id, cml_id, time DESC) matches the exact
+--   query pattern enforced by RLS:
+--     WHERE user_id = CURRENT_USER AND cml_id = ? AND time >= ?
+--   allowing a single index scan that skips all other users' data immediately.
+--
+-- Performance impact (measured on 1.1B rows, 17 chunks):
+--   BEFORE: 2-day CML query = 189 ms execution, 107 ms planning
+--   AFTER:  same query      = ~50 ms execution, ~20 ms planning (estimated)
+--
+-- NOTE: CREATE INDEX CONCURRENTLY is not supported on TimescaleDB hypertables.
+-- Instead, use timescaledb.transaction_per_chunk, which locks only one chunk at
+-- a time. Other chunks remain fully readable and writable throughout the build.
+-- This is the recommended alternative to CONCURRENTLY for hypertables.
+-- If the command fails mid-way, the root index is marked invalid but still works
+-- on completed chunks. Run: SELECT * FROM pg_index WHERE indisvalid IS FALSE;
+-- to detect this, then DROP and recreate if needed.
+--
+-- Apply with:
+--   docker compose exec -T database psql -U myuser -d mydatabase \
+--     < database/migrations/010_add_user_cml_composite_index.sql
+
+CREATE INDEX IF NOT EXISTS idx_cml_data_user_cml_time
+    ON cml_data (user_id, cml_id, time DESC)
+    WITH (timescaledb.transaction_per_chunk);
