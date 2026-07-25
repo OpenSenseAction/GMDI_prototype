@@ -60,7 +60,7 @@ Key properties:
 
 ### 1a. New migration: `cml_stats_history` + helper functions
 
-File: `database/migrations/017_add_cml_stats_history.sql`
+File: `database/migrations/010_add_cml_stats_history.sql`
 
 #### Table
 
@@ -399,7 +399,7 @@ Run once after the migration is applied.
 
 ## PR 2 — Webserver + Frontend: time slider and Grafana sync
 
-Depends on PR 1 being merged (migration 017 applied).
+Depends on PR 1 being merged (migration 010 applied).
 
 ### 2a. Webserver: optional `?at=` parameter on `/api/cml-stats`
 
