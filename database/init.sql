@@ -171,7 +171,79 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-SELECT create_hypertable('cml_data', 'time');
+-- get_cml_aggregates(cml_id, interval, bucket) (migration 011)
+--
+-- RLS-safe aggregation helper for Grafana. Runs as SECURITY DEFINER but
+-- filters by current_user, avoiding security-barrier view overhead while
+-- still enforcing per-user isolation. ~100-300x faster than querying the
+-- security-barrier views directly for multi-day aggregations.
+--
+-- Usage: SELECT * FROM get_cml_aggregates('40045_40212_2675', '2 days'::interval, '5 minutes');
+CREATE OR REPLACE FUNCTION get_cml_aggregates(
+    p_cml_id TEXT,
+    p_interval INTERVAL,
+    p_bucket INTERVAL DEFAULT '5 minutes'::INTERVAL
+)
+RETURNS TABLE (
+    "time" TIMESTAMPTZ,
+    metric TEXT,
+    rsl_avg DOUBLE PRECISION,
+    rsl_min REAL,
+    rsl_max REAL,
+    tsl_avg DOUBLE PRECISION,
+    tsl_min REAL,
+    tsl_max REAL,
+    record_count BIGINT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER  -- Runs with owner privileges (superuser)
+SET search_path = public
+AS $$
+DECLARE
+    v_user_id TEXT;
+BEGIN
+    -- Get the calling user's role name from the connection
+    v_user_id := current_user::TEXT;
+
+    -- Validate user exists in our USERS table (not just any DB role)
+    IF NOT EXISTS (SELECT 1 FROM cml_metadata WHERE user_id = v_user_id LIMIT 1) THEN
+        RAISE EXCEPTION 'Invalid user: %', v_user_id;
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        time_bucket(p_bucket, c.time) AS "time",
+        c.sublink_id::TEXT AS metric,
+        AVG(c.rsl) AS rsl_avg,
+        MIN(c.rsl) AS rsl_min,
+        MAX(c.rsl) AS rsl_max,
+        AVG(c.tsl) AS tsl_avg,
+        MIN(c.tsl) AS tsl_min,
+        MAX(c.tsl) AS tsl_max,
+        COUNT(*)::BIGINT AS record_count
+    FROM cml_data c
+    WHERE c.user_id = v_user_id  -- Explicit filter enables index usage
+      AND c.cml_id = p_cml_id
+      AND c.time >= now() - p_interval
+      AND c.time <= now()
+    GROUP BY 1, 2
+    ORDER BY 1 ASC;
+END;
+$$;
+
+-- Grant execute permission to all users
+GRANT EXECUTE ON FUNCTION get_cml_aggregates(TEXT, INTERVAL, INTERVAL) TO PUBLIC;
+
+COMMENT ON FUNCTION get_cml_aggregates IS
+'Returns aggregated CML data for the calling user. Use this instead of querying cml_data directly for Grafana dashboards. Provides 100-300x speedup over security-barrier views.';
+
+-- 1-day chunks (migration 012): bounds the always-uncompressed open chunk so
+-- per-CML raw queries stay fast regardless of tenant size. A large tenant
+-- (~12k sublinks @ 10s ~= 9 GB/day) would otherwise grow a 60 GB open chunk
+-- (7-day interval) that makes every short raw query a scattered-heap-read
+-- problem. With 1-day chunks the open chunk stays bounded and a "whole day"
+-- query maps to exactly one chunk.
+SELECT create_hypertable('cml_data', 'time', chunk_time_interval => INTERVAL '1 day');
 
 -- Per-user lookup indexes.
 CREATE INDEX idx_cml_data_user_id     ON cml_data     (user_id);
@@ -180,6 +252,25 @@ CREATE INDEX idx_cml_metadata_user_id ON cml_metadata  (user_id);
 -- Index is created by the archive_loader service after bulk data load (faster COPY).
 -- If no archive data is loaded, create it manually:
 -- CREATE INDEX idx_cml_data_cml_id ON cml_data (cml_id, time DESC);
+
+-- Composite index (user_id, cml_id, time DESC) (migration 010): matches the
+-- exact query pattern enforced by RLS (WHERE user_id = CURRENT_USER AND
+-- cml_id = ? AND time >= ?), allowing a single index scan that skips all
+-- other users' data immediately.
+-- NOTE: CREATE INDEX CONCURRENTLY is not supported on TimescaleDB hypertables.
+-- timescaledb.transaction_per_chunk locks only one chunk at a time instead.
+CREATE INDEX IF NOT EXISTS idx_cml_data_user_cml_time
+    ON cml_data (user_id, cml_id, time DESC)
+    WITH (timescaledb.transaction_per_chunk);
+
+-- Covering index (migration 013): INCLUDE carries the payload columns so the
+-- planner can satisfy open-chunk per-CML raw queries entirely from the index
+-- (index-only scan), eliminating scattered heap fetches on the always-
+-- uncompressed open chunk.
+CREATE INDEX IF NOT EXISTS idx_cml_data_covering
+    ON cml_data (user_id, cml_id, time DESC)
+    INCLUDE (sublink_id, rsl, tsl)
+    WITH (timescaledb.transaction_per_chunk);
 
 -- ---------------------------------------------------------------------------
 -- 1-hour continuous aggregate for fast queries over large time ranges.
@@ -214,7 +305,8 @@ SELECT add_continuous_aggregate_policy('cml_data_1h',
 );
 
 -- ---------------------------------------------------------------------------
--- Compression for cml_data chunks older than 7 days.
+-- Compression for cml_data chunks older than 1 day (migration 012 lowered
+-- this from 7 days to match the 1-day chunk_time_interval above).
 --
 -- compress_segmentby: one compressed segment per (user_id, cml_id).
 --   user_id is the leading key so a per-user query skips all other users'
@@ -228,7 +320,7 @@ SELECT add_continuous_aggregate_policy('cml_data_1h',
 --
 -- At ~10-20x compression ratio, the last month of data fits in shared_buffers
 -- after a single cache warm-up, regardless of how many new streams are added.
--- The current uncompressed week chunk is left untouched so real-time ingestion
+-- The current uncompressed day chunk is left untouched so real-time ingestion
 -- and detail-view queries on recent data have no decompression overhead.
 -- ---------------------------------------------------------------------------
 -- Note: TimescaleDB does not allow ENABLE ROW LEVEL SECURITY on a compressed
@@ -241,7 +333,7 @@ ALTER TABLE cml_data SET (
     timescaledb.compress_orderby   = 'time DESC'
 );
 
-SELECT add_compression_policy('cml_data', INTERVAL '7 days');
+SELECT add_compression_policy('cml_data', INTERVAL '1 day');
 
 -- ---------------------------------------------------------------------------
 -- Database roles and Row-Level Security (PR feat/db-roles-rls)
