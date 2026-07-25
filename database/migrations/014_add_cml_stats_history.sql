@@ -1,4 +1,4 @@
--- Migration 017: Add cml_stats_history hypertable for historical time slider
+-- Migration 014: Add cml_stats_history hypertable for historical time slider
 --
 -- This migration adds a new hypertable to store snapshots of CML stats at hourly intervals.
 -- Enables the historical time slider feature on the realtime map.
@@ -11,7 +11,7 @@
 --
 -- Apply with:
 --   docker compose exec -T database psql -U myuser -d mydatabase \
---     < database/migrations/017_add_cml_stats_history.sql
+--     < database/migrations/014_add_cml_stats_history.sql
 
 -- Create the cml_stats_history table
 CREATE TABLE IF NOT EXISTS cml_stats_history (

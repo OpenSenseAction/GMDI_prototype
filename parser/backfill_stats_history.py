@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Backfill cml_stats_history from existing cml_data_1h data.
 
-Run once after applying migration 010 to populate historical snapshots.
+Run once after applying migration 014 to populate historical snapshots.
 
 Usage:
     docker compose exec parser python -m parser.backfill_stats_history
