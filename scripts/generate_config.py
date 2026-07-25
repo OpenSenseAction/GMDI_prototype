@@ -311,6 +311,7 @@ GRANT USAGE ON SCHEMA public TO {user_id};
 -- RLS on cml_metadata and cml_stats is enforced via the generic
 -- current_user policy already installed on those tables.
 GRANT SELECT, INSERT, UPDATE ON cml_metadata, cml_stats TO {user_id};
+GRANT SELECT, INSERT, UPDATE ON cml_stats_history TO {user_id};
 
 -- cml_data has no RLS (compressed TimescaleDB hypertable).
 -- Parser writes (write_rawdata) and stats updates (update_cml_stats) go
@@ -321,6 +322,7 @@ GRANT SELECT ON cml_data_secure TO {user_id};
 GRANT SELECT ON cml_data_1h_secure TO {user_id};
 GRANT EXECUTE ON FUNCTION update_cml_stats(TEXT, TEXT) TO {user_id};
 GRANT EXECUTE ON FUNCTION update_cml_stats_windowed(TEXT, TEXT) TO {user_id};
+GRANT EXECUTE ON FUNCTION materialize_cml_stats_snapshot(TIMESTAMPTZ, TEXT) TO {user_id};
 
 -- file_processing_log: parser INSERTs a row for every processed file;
 -- webserver_role only needs SELECT.

@@ -27,7 +27,7 @@ from flask_login import (
 )
 from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from contextlib import contextmanager
 import uuid
@@ -522,39 +522,52 @@ def api_cml_map():
 @login_required
 def api_cml_stats():
     """API endpoint for fetching per-CML statistics for data quality visualization"""
+    at_param = request.args.get("at")   # ISO 8601 string or absent
+    
     try:
         with user_db_scope(current_user.id) as conn:
             cur = conn.cursor()
-            cur.execute(
-                """
-                SELECT
-                    cml_id::text,
-                    completeness_percent_6h,
-                    total_records_6h,
-                    valid_records_6h,
-                    mean_rsl_6h,
-                    stddev_rsl_6h,
-                    completeness_percent_1h,
-                    stddev_rsl_1h,
-                    last_rsl
-                FROM cml_stats
-                ORDER BY cml_id
-                """
-            )
+
+            if at_param:
+                # Historical: parse the timestamp and query cml_stats_history
+                try:
+                    at_ts = datetime.fromisoformat(at_param.replace("Z", "+00:00"))
+                except ValueError:
+                    return jsonify({"error": "invalid 'at' parameter"}), 400
+
+                cur.execute(
+                    "SELECT * FROM get_cml_stats_at(%s::timestamptz, %s)",
+                    (at_ts, current_user.id),
+                )
+            else:
+                # Live: existing query from cml_stats (windowed, pre-computed)
+                cur.execute(
+                    """
+                    SELECT cml_id::text,
+                           completeness_percent_6h, total_records_6h, valid_records_6h,
+                           mean_rsl_6h, stddev_rsl_6h,
+                           completeness_percent_1h, stddev_rsl_1h, last_rsl
+                    FROM cml_stats
+                    ORDER BY cml_id
+                    """
+                )
+
             data = cur.fetchall()
             cur.close()
 
+        # Response shape is identical in both branches; is_provisional only present for ?at= path
         stats = [
             {
                 "cml_id":                   str(row[0]),
-                "completeness_percent":     safe_float(row[1]),   # 6h window
+                "completeness_percent":     safe_float(row[1]),
                 "total_records":            int(row[2] or 0),
                 "valid_records":            int(row[3] or 0),
                 "mean_rsl":                 safe_float(row[4]),
                 "stddev_rsl":               safe_float(row[5]),
                 "completeness_percent_1h":  safe_float(row[6]),
-                "stddev_last_60min":        safe_float(row[7]),   # pre-computed 1h stddev
+                "stddev_last_60min":        safe_float(row[7]),
                 "last_rsl":                 safe_float(row[8]),
+                "is_provisional":           bool(row[9]) if at_param and len(row) > 9 else False,
             }
             for row in data
         ]
@@ -562,6 +575,28 @@ def api_cml_stats():
     except Exception as e:
         print(f"Error fetching CML stats: {e}")
         return jsonify([])
+
+
+@app.route("/api/cml-stats-time-range")
+@login_required
+def api_cml_stats_time_range():
+    """API endpoint for fetching the time range available in cml_stats_history."""
+    now = datetime.now(tz=timezone.utc)
+    current_hour = now.replace(minute=0, second=0, microsecond=0)
+    try:
+        with user_db_scope(current_user.id) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT MIN(snapshot_time) FROM cml_stats_history WHERE user_id = %s",
+                (current_user.id,),
+            )
+            row = cur.fetchone()
+            cur.close()
+        min_ts = row[0].isoformat() if row and row[0] else None
+        return jsonify({"min": min_ts, "max": current_hour.isoformat()})
+    except Exception as e:
+        print(f"Error fetching stats time range: {e}")
+        return jsonify({"min": None, "max": current_hour.isoformat()})
 
 
 @app.route("/api/data-time-range")
