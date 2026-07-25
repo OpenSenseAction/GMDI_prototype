@@ -1,4 +1,4 @@
--- Migration 014: Add cml_stats_history hypertable for historical time slider
+-- Migration 015: Add cml_stats_history hypertable for historical time slider
 --
 -- This migration adds a new hypertable to store snapshots of CML stats at hourly intervals.
 -- Enables the historical time slider feature on the realtime map.
@@ -9,9 +9,12 @@
 -- - Compression policy for old data (>7 days)
 -- - Functions for materialization and querying
 --
+-- Depends on migration 014_add_record_count_to_cml_data_1h.sql, which adds
+-- the record_count column that materialize_cml_stats_snapshot() reads below.
+--
 -- Apply with:
 --   docker compose exec -T database psql -U myuser -d mydatabase \
---     < database/migrations/014_add_cml_stats_history.sql
+--     < database/migrations/015_add_cml_stats_history.sql
 
 -- Create the cml_stats_history table
 CREATE TABLE IF NOT EXISTS cml_stats_history (
@@ -74,14 +77,16 @@ BEGIN
         m.cml_id,
         p_user_id,
         -- 6-hour window: sum the 6 hourly buckets ending at p_at_time
+        -- (h6 already aggregates across those buckets internally, so no
+        -- further SUM/AVG or GROUP BY is needed at this level)
         ROUND(
-            100.0 * SUM(h6.rsl_count)::numeric
-                  / NULLIF(SUM(h6.record_count), 0),
+            100.0 * h6.rsl_count::numeric
+                  / NULLIF(h6.record_count, 0),
             2) AS completeness_percent_6h,
-        SUM(h6.record_count)                     AS total_records_6h,
-        SUM(h6.rsl_count)                        AS valid_records_6h,
-        ROUND(AVG(h6.rsl_avg)::numeric, 2)       AS mean_rsl_6h,
-        ROUND(AVG(h6.rsl_stddev)::numeric, 2)    AS stddev_rsl_6h,
+        h6.record_count                          AS total_records_6h,
+        h6.rsl_count                              AS valid_records_6h,
+        ROUND(h6.rsl_avg::numeric, 2)            AS mean_rsl_6h,
+        ROUND(h6.rsl_stddev::numeric, 2)         AS stddev_rsl_6h,
         -- 1-hour window: the single bucket containing p_at_time
         ROUND(
             100.0 * h1.rsl_count::numeric
@@ -108,6 +113,7 @@ BEGIN
     -- 1h subquery: the bucket immediately before p_at_time
     LEFT JOIN LATERAL (
         SELECT record_count, rsl_avg, rsl_max, rsl_min,
+               CASE WHEN rsl_max IS NOT NULL THEN record_count ELSE 0 END AS rsl_count,
                (rsl_max - rsl_min) AS rsl_stddev
         FROM cml_data_1h
         WHERE user_id = p_user_id
