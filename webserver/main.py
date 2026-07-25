@@ -523,18 +523,22 @@ def api_cml_map():
 def api_cml_stats():
     """API endpoint for fetching per-CML statistics for data quality visualization"""
     at_param = request.args.get("at")   # ISO 8601 string or absent
-    
+
+    at_ts = None
+    if at_param:
+        # Validate the timestamp before touching the DB, so a malformed
+        # 'at' parameter always yields 400 regardless of DB/user state.
+        try:
+            at_ts = datetime.fromisoformat(at_param.replace("Z", "+00:00"))
+        except ValueError:
+            return jsonify({"error": "invalid 'at' parameter"}), 400
+
     try:
         with user_db_scope(current_user.id) as conn:
             cur = conn.cursor()
 
             if at_param:
-                # Historical: parse the timestamp and query cml_stats_history
-                try:
-                    at_ts = datetime.fromisoformat(at_param.replace("Z", "+00:00"))
-                except ValueError:
-                    return jsonify({"error": "invalid 'at' parameter"}), 400
-
+                # Historical: query cml_stats_history via the validated timestamp
                 cur.execute(
                     "SELECT * FROM get_cml_stats_at(%s::timestamptz, %s)",
                     (at_ts, current_user.id),
