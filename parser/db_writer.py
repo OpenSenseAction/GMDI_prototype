@@ -9,6 +9,7 @@ exiting the process so the caller can decide how to handle failures.
 """
 
 from typing import List, Tuple, Optional, Set, Callable, TypeVar
+from datetime import datetime
 import time
 import functools
 import psycopg2
@@ -406,6 +407,100 @@ class DBWriter:
             except Exception:
                 pass
             logger.exception("Failed to refresh windowed cml_stats")
+        finally:
+            if cur and not cur.closed:
+                cur.close()
+
+    def write_stats_snapshot(self, at_time: datetime) -> int:
+        """Materialize a cml_stats_history snapshot for the given hour.
+
+        Calls materialize_cml_stats_snapshot(date_trunc('hour', at_time), user_id).
+        Returns the number of rows upserted.
+        """
+        from datetime import timezone
+        at_hour = at_time.replace(minute=0, second=0, microsecond=0)
+        # Ensure timezone-aware if naive
+        if at_hour.tzinfo is None:
+            at_hour = at_hour.replace(tzinfo=timezone.utc)
+        
+        cur = self.conn.cursor()
+        try:
+            cur.execute(
+                "SELECT materialize_cml_stats_snapshot(%s::timestamptz, %s)",
+                (at_hour, self.user_id),
+            )
+            rows = cur.fetchone()[0]
+            self.conn.commit()
+            logger.info("Materialized cml_stats_history snapshot at %s (%d rows)", at_hour, rows)
+            return rows
+        except Exception:
+            try:
+                self.conn.rollback()
+            except Exception:
+                pass
+            logger.exception("Failed to write stats snapshot at %s", at_hour)
+            raise
+        finally:
+            if cur and not cur.closed:
+                cur.close()
+
+    def write_provisional_snapshot(self) -> int:
+        """Copy live cml_stats rolling-window values into cml_stats_history for
+        the current (incomplete) calendar hour, marked is_provisional=TRUE.
+
+        Runs every 60 s alongside refresh_windowed_stats so the slider can always
+        reach the current hour with data that is at most 60 s stale.  The
+        ON CONFLICT DO UPDATE overwrites any previous provisional row for the same
+        hour.  When the hour turns, write_stats_snapshot() writes a definitive row
+        (is_provisional=FALSE) that permanently replaces this one.
+        """
+        from datetime import timezone
+        current_hour = datetime.now(tz=timezone.utc).replace(minute=0, second=0, microsecond=0)
+        cur = self.conn.cursor()
+        try:
+            cur.execute(
+                """
+                INSERT INTO cml_stats_history (
+                    snapshot_time, cml_id, user_id,
+                    completeness_percent_6h, total_records_6h, valid_records_6h,
+                    mean_rsl_6h, stddev_rsl_6h,
+                    completeness_percent_1h, mean_rsl_1h, stddev_rsl_1h,
+                    last_rsl, is_provisional
+                )
+                SELECT
+                    %s, cml_id, user_id,
+                    completeness_percent_6h, total_records_6h, valid_records_6h,
+                    mean_rsl_6h, stddev_rsl_6h,
+                    completeness_percent_1h, mean_rsl_1h, stddev_rsl_1h,
+                    last_rsl, TRUE
+                FROM cml_stats
+                WHERE user_id = %s
+                ON CONFLICT (snapshot_time, cml_id, user_id) DO UPDATE SET
+                    completeness_percent_6h = EXCLUDED.completeness_percent_6h,
+                    total_records_6h        = EXCLUDED.total_records_6h,
+                    valid_records_6h        = EXCLUDED.valid_records_6h,
+                    mean_rsl_6h             = EXCLUDED.mean_rsl_6h,
+                    stddev_rsl_6h           = EXCLUDED.stddev_rsl_6h,
+                    completeness_percent_1h = EXCLUDED.completeness_percent_1h,
+                    mean_rsl_1h             = EXCLUDED.mean_rsl_1h,
+                    stddev_rsl_1h           = EXCLUDED.stddev_rsl_1h,
+                    last_rsl                = EXCLUDED.last_rsl,
+                    is_provisional          = TRUE   -- keep provisional until definitive row arrives
+                WHERE cml_stats_history.is_provisional = TRUE  -- never overwrite a definitive row
+                """,
+                (current_hour, self.user_id),
+            )
+            rows = cur.rowcount
+            self.conn.commit()
+            logger.debug("Wrote provisional snapshot at %s (%d rows)", current_hour, rows)
+            return rows
+        except Exception:
+            try:
+                self.conn.rollback()
+            except Exception:
+                pass
+            logger.exception("Failed to write provisional stats snapshot")
+            raise
         finally:
             if cur and not cur.closed:
                 cur.close()
