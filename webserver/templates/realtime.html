@@ -116,6 +116,11 @@
     let cmlStats = {};
     let selectedCmlId = '10001';
     let currentColoringOption = 'completeness';
+    
+    // Time slider state
+    let selectedTime = null;      // null = live mode
+    let statsRefreshTimer = null; // auto-refresh handle
+    const LIVE_REFRESH_MS = 30000;
 
     // Color functions for each option
     const colorFunctions = {
@@ -231,7 +236,31 @@
                         <option value="std_dev">RSL Std Dev (1h)</option>
                     `;
 
-                    // Prevent map interactions when using the select
+                    // Time slider section
+                    var divider = L.DomUtil.create('hr', '', container);
+                    divider.style.margin = '8px 0';
+
+                    var timeLabel = L.DomUtil.create('div', '', container);
+                    timeLabel.innerHTML = '<strong>Time:</strong>';
+                    timeLabel.style.marginBottom = '4px';
+
+                    var liveBtn = L.DomUtil.create('button', '', container);
+                    liveBtn.id = 'timeLiveBtn';
+                    liveBtn.textContent = '● Live';
+                    liveBtn.style.cssText = 'width:100%;margin-bottom:4px;background:#22c55e;color:white;border:none;border-radius:4px;padding:3px 6px;cursor:pointer;';
+
+                    var timeSlider = L.DomUtil.create('input', '', container);
+                    timeSlider.type = 'range';
+                    timeSlider.id = 'timeSlider';
+                    timeSlider.style.cssText = 'width:100%;margin:4px 0;';
+                    timeSlider.disabled = true;   // enabled once time range is loaded
+
+                    var timeDisplay = L.DomUtil.create('div', '', container);
+                    timeDisplay.id = 'timeDisplay';
+                    timeDisplay.style.cssText = 'font-size:11px;text-align:center;color:#555;';
+                    timeDisplay.textContent = 'Loading range…';
+
+                    // Prevent map interactions when using the controls
                     L.DomEvent.disableClickPropagation(container);
                     L.DomEvent.disableScrollPropagation(container);
 
@@ -242,7 +271,7 @@
 
             // Start map rendering immediately
             loadCmlData();
-
+            
             // Fetch stats in parallel and update colors/popups when ready
             console.log('Fetching CML stats...');
             try {
@@ -274,6 +303,11 @@
                 var errEl = document.getElementById('debugError');
                 if (errEl) errEl.textContent = 'lastError=stats-ex:' + String(e);
             }
+            
+            // Initialize time slider and start live refresh
+            fetchAndApplyStats(null);
+            startLiveRefresh();
+            initTimeSlider();
         } catch (e) {
             console.error('Error in initializeMap:', e);
         }
@@ -285,6 +319,43 @@
                 console.log('Coloring option changed to: ' + e.target.value);
                 currentColoringOption = e.target.value;
                 updateMapColors();
+            });
+        }
+        
+        // Time slider event handlers
+        var liveBtn = document.getElementById('timeLiveBtn');
+        if (liveBtn) {
+            liveBtn.addEventListener('click', function () {
+                selectedTime = null;
+                document.getElementById('timeDisplay').textContent = 'Live';
+                this.style.background = '#22c55e';
+                clearTimeout(sliderDebounce);
+                fetchAndApplyStats(null);
+                startLiveRefresh();
+                syncGrafanaTime(null);
+            });
+        }
+        
+        var sliderDebounce;
+        var timeSlider = document.getElementById('timeSlider');
+        if (timeSlider) {
+            timeSlider.addEventListener('input', function () {
+                clearTimeout(sliderDebounce);
+                var epochSec = parseInt(this.value, 10);
+                var dt = new Date(epochSec * 1000);
+                // Check whether this is the current (partial) hour
+                var nowHour = new Date(); nowHour.setMinutes(0, 0, 0, 0);
+                var sliderHour = new Date(dt); sliderHour.setMinutes(0, 0, 0, 0);
+                var label = dt.toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+                if (sliderHour.getTime() >= nowHour.getTime()) label += ' (partial)';
+                document.getElementById('timeDisplay').textContent = label;
+                sliderDebounce = setTimeout(function () {
+                    selectedTime = dt.toISOString();
+                    stopLiveRefresh();
+                    document.getElementById('timeLiveBtn').style.background = '#aaa';
+                    fetchAndApplyStats(selectedTime);   // provisional snapshot handles current hour
+                    syncGrafanaTime(epochSec);
+                }, 300);
             });
         }
     }
@@ -421,6 +492,88 @@
         }
     }
 
+    // Fetch and apply CML stats with optional historical time
+    function fetchAndApplyStats(atIso) {
+        var url = '/api/cml-stats';
+        if (atIso) url += '?at=' + encodeURIComponent(atIso);
+        fetch(url)
+            .then(function(r) { return r.json(); })
+            .then(function(stats) {
+                // Surface provisional state in the time display label
+                var anyProvisional = stats.some(function(s) { return s.is_provisional; });
+                var disp = document.getElementById('timeDisplay');
+                if (atIso && anyProvisional && disp && !disp.textContent.includes('(partial)')) {
+                    disp.textContent += ' (partial)';
+                }
+                stats.forEach(function(stat) {
+                    cmlStats[stat.cml_id] = stat;
+                    applyStatsToLine(stat.cml_id, stat);
+                });
+            })
+            .catch(function(err) { console.error('Stats fetch error:', err); });
+    }
+
+    // Sync Grafana iframe time with selected time
+    function syncGrafanaTime(epochSec) {
+        var grafanaPanel = document.getElementById('grafana-panel');
+        var iframeWindow = grafanaPanel.contentWindow;
+        try {
+            var currentUrl = new URL(iframeWindow.location.href);
+            if (epochSec === null) {
+                // Live: restore relative time range
+                currentUrl.searchParams.set('from', 'now-1h');
+                currentUrl.searchParams.set('to',   'now');
+                currentUrl.searchParams.delete('var-marker_time');
+            } else {
+                // Historical: ±30 min window around selected second
+                var halfWindow = 30 * 60 * 1000;    // 30 min in ms
+                var epochMs = epochSec * 1000;
+                currentUrl.searchParams.set('from', String(epochMs - halfWindow));
+                currentUrl.searchParams.set('to',   String(epochMs + halfWindow));
+                currentUrl.searchParams.set('var-marker_time', String(epochMs));
+            }
+            iframeWindow.history.pushState(null, '', currentUrl.toString());
+            iframeWindow.dispatchEvent(new PopStateEvent('popstate', { state: null }));
+        } catch (e) {
+            console.warn('Grafana sync skipped (iframe not ready):', e);
+        }
+    }
+
+    // Initialize time slider
+    function initTimeSlider() {
+        fetch('/api/cml-stats-time-range')
+            .then(function(r) { return r.json(); })
+            .then(function(range) {
+                if (!range.min || !range.max) {
+                    document.getElementById('timeDisplay').textContent = 'No history';
+                    return;
+                }
+                var minEpoch = Math.floor(new Date(range.min).getTime() / 1000);
+                var maxEpoch = Math.floor(new Date(range.max).getTime() / 1000);
+                var slider   = document.getElementById('timeSlider');
+                slider.min   = minEpoch;
+                slider.max   = maxEpoch;
+                slider.step  = 3600;   // 1-hour steps
+                slider.value = maxEpoch;
+                slider.disabled = false;
+                document.getElementById('timeDisplay').textContent = 'Live';
+            })
+            .catch(function() {
+                document.getElementById('timeDisplay').textContent = 'Unavailable';
+            });
+    }
+
+    // Start live refresh timer
+    function startLiveRefresh() {
+        stopLiveRefresh();
+        statsRefreshTimer = setInterval(function () { fetchAndApplyStats(null); }, LIVE_REFRESH_MS);
+    }
+    
+    // Stop live refresh timer
+    function stopLiveRefresh() {
+        if (statsRefreshTimer) clearInterval(statsRefreshTimer);
+        statsRefreshTimer = null;
+    }
     // Select CML and update Grafana dashboard
     function selectCml(cmlId) {
         selectedCmlId = cmlId;
