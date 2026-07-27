@@ -8,6 +8,7 @@ import os
 import time
 import logging
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ..file_watcher import FileWatcher
@@ -148,17 +149,39 @@ def main():
         if stop_event.is_set():
             return
 
+        # Track last snapshot hour for hourly definitive snapshots
+        from datetime import timezone
+        last_snapshot_hour = None
+
         # Run immediately on startup so Grafana has fresh stats without
         # waiting a full interval after the backlog is processed.
         try:
             stats_db.refresh_windowed_stats()
+            # Also write initial provisional snapshot
+            stats_db.write_provisional_snapshot()
+            # Write definitive snapshot for current hour if needed
+            now = datetime.now(tz=timezone.utc)
+            current_hour = now.replace(minute=0, second=0, microsecond=0)
+            if current_hour != last_snapshot_hour:
+                stats_db.write_stats_snapshot(now)
+                last_snapshot_hour = current_hour
         except Exception:
-            logger.exception("Stats thread: initial refresh_windowed_stats failed")
+            logger.exception("Stats thread: initial refresh failed")
+        
         while not stop_event.wait(Config.STATS_REFRESH_INTERVAL):
             try:
                 stats_db.refresh_windowed_stats()
+                # Always: keep the current-hour provisional snapshot fresh (at most 60 s stale)
+                stats_db.write_provisional_snapshot()
+                
+                # Once per hour: materialise the just-completed hour from cml_data_1h
+                now = datetime.now(tz=timezone.utc)
+                current_hour = now.replace(minute=0, second=0, microsecond=0)
+                if current_hour != last_snapshot_hour:
+                    stats_db.write_stats_snapshot(now)
+                    last_snapshot_hour = current_hour
             except Exception:
-                logger.exception("Stats thread: refresh_windowed_stats failed")
+                logger.exception("Stats thread: refresh failed")
         stats_db.close()
 
     stats_thread = threading.Thread(

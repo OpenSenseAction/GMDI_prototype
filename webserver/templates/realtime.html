@@ -63,6 +63,8 @@
         background: white;
     }
 
+
+
     .resizer {
         position: absolute;
         bottom: 400px;
@@ -115,7 +117,19 @@
     let cmlLayers = {};
     let cmlStats = {};
     let selectedCmlId = '10001';
-    let currentColoringOption = 'completeness';
+    let currentColoringOption = 'std_dev';
+
+    // Time slider state
+    let selectedTime = null;      // null = live mode
+    let statsRefreshTimer = null; // auto-refresh handle
+    const LIVE_REFRESH_MS = 30000;
+    let sliderDebounce = null;    // debounce timer for slider input
+    let sliderFetchCtrl = null;   // AbortController for in-flight slider requests
+
+    // Grafana annotation state
+    var coloringAnnotationId = null;
+    var annotationAbortCtrl = null;
+    var annotationRefreshTimer = null;
 
     // Color functions for each option
     const colorFunctions = {
@@ -137,13 +151,15 @@
             return '#ef4444'; // red
         },
         std_dev: function (stat) {
-            if (!stat) return '#0066cc';
+            if (!stat) return '#94a3b8'; // slate gray for missing
             const stddev = stat.stddev_last_60min;
-            if (stddev === null) return '#808080'; // gray for missing data
-            if (stddev <= 1) return '#22c55e'; // green (very stable)
-            if (stddev <= 2) return '#eab308'; // yellow (moderate)
-            if (stddev <= 3) return '#f97316'; // orange (variable)
-            return '#ef4444'; // red (very unstable)
+            if (stddev === null) return '#94a3b8'; // gray for missing data
+            // Fixed 0-10+ dBm scale with colorblind-friendly progression
+            if (stddev <= 2) return '#3b82f6'; // blue (very stable)
+            if (stddev <= 4) return '#fbbf24'; // yellow/amber (stable)
+            if (stddev <= 6) return '#f97316'; // orange (moderate)
+            if (stddev <= 8) return '#ea580c'; // deep orange (variable)
+            return '#dc2626'; // red (unstable, 8+ dBm)
         }
     };
 
@@ -226,12 +242,36 @@
                     var select = L.DomUtil.create('select', '', container);
                     select.id = 'coloringOption';
                     select.innerHTML = `
-                        <option value="completeness" selected>Data Completeness (6h)</option>
+                        <option value="completeness">Data Completeness (6h)</option>
                         <option value="last_rsl">Last RSL Value</option>
-                        <option value="std_dev">RSL Std Dev (1h)</option>
+                        <option value="std_dev" selected>RSL Std Dev (1h)</option>
                     `;
 
-                    // Prevent map interactions when using the select
+                    // Time slider section
+                    var divider = L.DomUtil.create('hr', '', container);
+                    divider.style.margin = '8px 0';
+
+                    var timeLabel = L.DomUtil.create('div', '', container);
+                    timeLabel.innerHTML = '<strong>Time:</strong>';
+                    timeLabel.style.marginBottom = '4px';
+
+                    var liveBtn = L.DomUtil.create('button', '', container);
+                    liveBtn.id = 'timeLiveBtn';
+                    liveBtn.textContent = '● Live';
+                    liveBtn.style.cssText = 'width:100%;margin-bottom:4px;background:#22c55e;color:white;border:none;border-radius:4px;padding:3px 6px;cursor:pointer;';
+
+                    var timeSlider = L.DomUtil.create('input', '', container);
+                    timeSlider.type = 'range';
+                    timeSlider.id = 'timeSlider';
+                    timeSlider.style.cssText = 'width:100%;margin:4px 0;';
+                    timeSlider.disabled = true;   // enabled once time range is loaded
+
+                    var timeDisplay = L.DomUtil.create('div', '', container);
+                    timeDisplay.id = 'timeDisplay';
+                    timeDisplay.style.cssText = 'font-size:11px;text-align:center;color:#555;';
+                    timeDisplay.textContent = 'Loading range…';
+
+                    // Prevent map interactions when using the controls
                     L.DomEvent.disableClickPropagation(container);
                     L.DomEvent.disableScrollPropagation(container);
 
@@ -274,6 +314,11 @@
                 var errEl = document.getElementById('debugError');
                 if (errEl) errEl.textContent = 'lastError=stats-ex:' + String(e);
             }
+
+            // Initialize time slider and start live refresh
+            fetchAndApplyStats(null);
+            startLiveRefresh();
+            initTimeSlider();
         } catch (e) {
             console.error('Error in initializeMap:', e);
         }
@@ -285,6 +330,81 @@
                 console.log('Coloring option changed to: ' + e.target.value);
                 currentColoringOption = e.target.value;
                 updateMapColors();
+            });
+        }
+
+        // Time slider event handlers
+        var liveBtn = document.getElementById('timeLiveBtn');
+        if (liveBtn) {
+            liveBtn.addEventListener('click', function () {
+                selectedTime = null;
+
+                // Reset slider to rightmost position (max = most recent)
+                var slider = document.getElementById('timeSlider');
+                if (slider && slider.max) {
+                    slider.value = slider.max;
+                }
+
+                // Update display label to "Live"
+                document.getElementById('timeDisplay').textContent = 'Live';
+                this.style.background = '#22c55e';
+                clearTimeout(sliderDebounce);
+
+                // Cancel any in-flight slider requests
+                if (sliderFetchCtrl) {
+                    sliderFetchCtrl.abort();
+                    sliderFetchCtrl = null;
+                }
+
+                console.log('[LIVE] Fetching live stats...');
+                fetchAndApplyStats(null);
+                
+                console.log('[LIVE] Starting live refresh timer...');
+                startLiveRefresh();
+                
+                console.log('[LIVE] Resetting Grafana to live mode...');
+                syncGrafanaTime(null);
+                
+                console.log('[LIVE] Removing coloring annotation...');
+                updateColoringAnnotation(null);
+            });
+        }
+
+        var timeSlider = document.getElementById('timeSlider');
+        if (timeSlider) {
+            var sliderFetchController = null;
+
+            // input: update label, Grafana time range, and map colors while dragging
+            timeSlider.addEventListener('input', function () {
+                var epochSec = parseInt(this.value, 10);
+                var dt = new Date(epochSec * 1000);
+
+                var nowUtc = new Date();
+                var nowHour = Date.UTC(nowUtc.getUTCFullYear(), nowUtc.getUTCMonth(), nowUtc.getUTCDate(), nowUtc.getUTCHours(), 0, 0, 0);
+                var sliderHour = Math.floor(epochSec / 3600) * 3600;
+
+                var label = dt.toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+                if (sliderHour >= nowHour) label += ' (partial)';
+                document.getElementById('timeDisplay').textContent = label;
+
+                syncGrafanaTime(epochSec);
+                updateColoringAnnotation(epochSec);
+
+                // Cancel any in-flight request from a previous slider position
+                if (sliderFetchController) sliderFetchController.abort();
+                sliderFetchController = new AbortController();
+                var isoString = dt.toISOString();
+                var signal = sliderFetchController.signal;
+                fetchAndApplyStats(isoString, signal);
+            });
+
+            // change: fires on mouse-up — commit the selected time and stop live refresh
+            timeSlider.addEventListener('change', function () {
+                var epochSec = parseInt(this.value, 10);
+                var isoString = new Date(epochSec * 1000).toISOString();
+                selectedTime = isoString;
+                stopLiveRefresh();
+                document.getElementById('timeLiveBtn').style.background = '#aaa';
             });
         }
     }
@@ -421,6 +541,191 @@
         }
     }
 
+    // Fetch and apply CML stats with optional historical time
+    function fetchAndApplyStats(atIso, signal) {
+        var url = '/api/cml-stats';
+        if (atIso) url += '?at=' + encodeURIComponent(atIso);
+        var opts = signal ? { signal: signal } : {};
+        console.log('[fetchAndApplyStats] Calling', url, atIso === null ? '(LIVE)' : '(historical)');
+        fetch(url, opts)
+            .then(function (r) { 
+                console.log('[fetchAndApplyStats] Response status:', r.status);
+                return r.json(); 
+            })
+            .then(function (stats) {
+                console.log('[fetchAndApplyStats] Received', stats.length, 'CML stats');
+                // Surface provisional state in the time display label
+                var anyProvisional = stats.some(function (s) { return s.is_provisional; });
+                var disp = document.getElementById('timeDisplay');
+                if (atIso && anyProvisional && disp && !disp.textContent.includes('(partial)')) {
+                    disp.textContent += ' (partial)';
+                }
+                stats.forEach(function (stat) {
+                    cmlStats[stat.cml_id] = stat;
+                    applyStatsToLine(stat.cml_id, stat);
+                });
+                console.log('[fetchAndApplyStats] Applied stats to all lines');
+            })
+            .catch(function (err) {
+                if (err.name !== 'AbortError') console.error('[fetchAndApplyStats] Error:', err);
+            });
+    }
+
+    // Sync Grafana iframe time with selected time
+    function syncGrafanaTime(epochSec) {
+        var grafanaPanel = document.getElementById('grafana-panel');
+        var newUrl;
+        try {
+            // Read the actual live Grafana URL (same-origin via /grafana/ proxy)
+            // so we can preserve any zoom the user applied within Grafana.
+            var currentUrl;
+            try {
+                currentUrl = new URL(grafanaPanel.contentWindow.location.href);
+            } catch (e) {
+                currentUrl = new URL(grafanaPanel.src);
+            }
+
+            if (epochSec === null) {
+                // Live mode: reset Grafana to relative time with a full reload.
+                // replaceState+popstate does not reliably restart Grafana's
+                // relative-time evaluation and auto-refresh.
+                var baseUrl = new URL(grafanaPanel.src);
+                baseUrl.searchParams.set('from', 'now-1h');
+                baseUrl.searchParams.set('to', 'now');
+                baseUrl.searchParams.delete('var-marker_time');
+                newUrl = baseUrl.toString();
+                grafanaPanel.contentWindow.location.replace(newUrl);
+                return;
+            }
+
+            var epochMs = epochSec * 1000;
+
+            // Preserve the current zoom window (Grafana rewrites epoch-ms to ISO in URL)
+            var halfWindow = 3 * 60 * 60 * 1000;   // default ±3h (6h total)
+            var fromParam = currentUrl.searchParams.get('from');
+            var toParam = currentUrl.searchParams.get('to');
+            if (fromParam && toParam && !String(fromParam).startsWith('now')) {
+                var pFrom = isNaN(fromParam) ? new Date(fromParam).getTime() : parseFloat(fromParam);
+                var pTo = isNaN(toParam) ? new Date(toParam).getTime() : parseFloat(toParam);
+                if (!isNaN(pFrom) && !isNaN(pTo) && pTo > pFrom) {
+                    halfWindow = (pTo - pFrom) / 2;
+                }
+            }
+
+            currentUrl.searchParams.set('from', String(epochMs - halfWindow));
+            currentUrl.searchParams.set('to', String(epochMs + halfWindow));
+            currentUrl.searchParams.set('var-marker_time', String(epochMs));
+
+            newUrl = currentUrl.toString();
+
+            // Update the URL inside the iframe without causing a navigation/reload.
+            // replaceState changes the URL silently; the popstate event signals
+            // Grafana's React Router so it picks up the new from/to/var-* params
+            // and re-fetches panel data in-place.
+            grafanaPanel.contentWindow.history.replaceState(
+                grafanaPanel.contentWindow.history.state, '', currentUrl.pathname + currentUrl.search
+            );
+            grafanaPanel.contentWindow.dispatchEvent(new PopStateEvent('popstate', { bubbles: false }));
+        } catch (e) {
+            // Fallback: navigate the iframe (causes a reload but still works)
+            console.warn('Grafana in-place sync failed, falling back to navigate:', e);
+            try {
+                if (newUrl) grafanaPanel.contentWindow.location.replace(newUrl);
+            } catch (_) {
+                if (newUrl) grafanaPanel.src = newUrl;
+            }
+        }
+    }
+
+
+    // Draw a grey shaded band over the Grafana panel showing the 6 h coloring window.
+    // Uses same-origin access to read uPlot's .u-over element for exact chart-area bounds.
+    // Create/update a Grafana stored region annotation showing the 6 h coloring
+    // window. Uses the existing /grafana/ proxy (auth handled server-side via
+    // X-WEBAUTH-USER), so no CSRF issues. After the annotation is stored, a
+    // second popstate triggers Grafana to re-fetch its annotation layer.
+    function updateColoringAnnotation(epochSec) {
+        if (annotationAbortCtrl) { annotationAbortCtrl.abort(); annotationAbortCtrl = null; }
+
+        if (epochSec === null) {
+            if (coloringAnnotationId !== null) {
+                var delId = coloringAnnotationId;
+                coloringAnnotationId = null;
+                fetch('/api/coloring-annotation', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: delId })
+                }).catch(function () { });
+            }
+            return;
+        }
+
+        annotationAbortCtrl = new AbortController();
+        var signal = annotationAbortCtrl.signal;
+        var reqBody = { epochSec: epochSec };
+        if (coloringAnnotationId !== null) reqBody.id = coloringAnnotationId;
+
+        fetch('/api/coloring-annotation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(reqBody),
+            signal: signal
+        }).then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (d.id) coloringAnnotationId = d.id;
+                // Trigger Grafana to re-fetch its annotation layer
+                clearTimeout(annotationRefreshTimer);
+                annotationRefreshTimer = setTimeout(function () {
+                    var gp = document.getElementById('grafana-panel');
+                    try { gp.contentWindow.dispatchEvent(new PopStateEvent('popstate', { bubbles: false })); }
+                    catch (e) { }
+                }, 200);
+            }).catch(function (e) {
+                if (e.name !== 'AbortError') console.warn('Annotation update failed:', e);
+            });
+    }
+
+    // Remove any stale annotations left by a previous session
+    function cleanupColoringAnnotations() {
+        fetch('/api/coloring-annotation-cleanup', { method: 'POST' })
+            .catch(function () { });
+    }
+
+    // Initialize time slider
+    function initTimeSlider() {
+        fetch('/api/cml-stats-time-range')
+            .then(function (r) { return r.json(); })
+            .then(function (range) {
+                if (!range.min || !range.max) {
+                    document.getElementById('timeDisplay').textContent = 'No history';
+                    return;
+                }
+                var minEpoch = Math.floor(new Date(range.min).getTime() / 1000);
+                var maxEpoch = Math.floor(new Date(range.max).getTime() / 1000);
+                var slider = document.getElementById('timeSlider');
+                slider.min = minEpoch;
+                slider.max = maxEpoch;
+                slider.step = 3600;   // 1-hour steps
+                slider.value = maxEpoch;
+                slider.disabled = false;
+                document.getElementById('timeDisplay').textContent = 'Live';
+            })
+            .catch(function () {
+                document.getElementById('timeDisplay').textContent = 'Unavailable';
+            });
+    }
+
+    // Start live refresh timer
+    function startLiveRefresh() {
+        stopLiveRefresh();
+        statsRefreshTimer = setInterval(function () { fetchAndApplyStats(null); }, LIVE_REFRESH_MS);
+    }
+
+    // Stop live refresh timer
+    function stopLiveRefresh() {
+        if (statsRefreshTimer) clearInterval(statsRefreshTimer);
+        statsRefreshTimer = null;
+    }
     // Select CML and update Grafana dashboard
     function selectCml(cmlId) {
         selectedCmlId = cmlId;
@@ -438,6 +743,7 @@
     document.addEventListener('DOMContentLoaded', function () {
         initializeMap();
         initializeResizer();
+        cleanupColoringAnnotations();
     });
 
     // Initialize resizer for adjustable dashboard height

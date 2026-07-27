@@ -9,7 +9,7 @@
                 },
                 "enable": true,
                 "hide": true,
-                "iconColor": "rgba(0, 211, 255, 1)",
+                "iconColor": "rgba(120, 120, 120, 0.6)",
                 "name": "Annotations & Alerts",
                 "type": "dashboard"
             }
@@ -1002,6 +1002,15 @@
                 "queryValue": "",
                 "skipUrlSync": true,
                 "type": "custom"
+            },
+            {
+                "name": "marker_time",
+                "type": "textbox",
+                "label": "Marker time (epoch ms)",
+                "hide": 2,
+                "current": {
+                    "value": "0"
+                }
             }
         ]
     },
@@ -1010,7 +1019,7 @@
         "to": "now"
     },
     "timepicker": {},
-    "timezone": "",
+    "timezone": "utc",
     "title": "CML Real-Time Data",
     "uid": "cml-realtime",
     "version": 1,
