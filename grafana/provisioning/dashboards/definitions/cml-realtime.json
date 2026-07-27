@@ -9,21 +9,9 @@
                 },
                 "enable": true,
                 "hide": true,
-                "iconColor": "rgba(0, 211, 255, 1)",
+                "iconColor": "rgba(120, 120, 120, 0.6)",
                 "name": "Annotations & Alerts",
                 "type": "dashboard"
-            },
-            {
-                "name":       "Selected time",
-                "enable":     true,
-                "hide":       false,
-                "iconColor":  "red",
-                "type":       "dashboard",
-                "builtIn":    0,
-                "datasource": { "type": "grafana", "uid": "-- Grafana --" },
-                "rawQuery":   true,
-                "query":      "SELECT $marker_time AS time, 'selected' AS text",
-                "timeField":  "time"
             }
         ]
     },
@@ -1016,11 +1004,13 @@
                 "type": "custom"
             },
             {
-                "name":  "marker_time",
-                "type":  "textbox",
+                "name": "marker_time",
+                "type": "textbox",
                 "label": "Marker time (epoch ms)",
-                "hide":  2,
-                "current": { "value": "" }
+                "hide": 2,
+                "current": {
+                    "value": "0"
+                }
             }
         ]
     },
@@ -1029,7 +1019,7 @@
         "to": "now"
     },
     "timepicker": {},
-    "timezone": "",
+    "timezone": "utc",
     "title": "CML Real-Time Data",
     "uid": "cml-realtime",
     "version": 1,
