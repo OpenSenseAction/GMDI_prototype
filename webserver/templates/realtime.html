@@ -341,14 +341,16 @@
                 var slider = document.getElementById('timeSlider');
                 if (slider && slider.max) {
                     slider.value = slider.max;
-                    // Manually trigger input event to update map colors and Grafana
-                    slider.dispatchEvent(new Event('input', { bubbles: true }));
                 }
                 
                 document.getElementById('timeDisplay').textContent = 'Live';
                 this.style.background = '#22c55e';
                 clearTimeout(sliderDebounce);
-                fetchAndApplyStats(null);
+                
+                // Fetch live stats AND force immediate map color update
+                fetchAndApplyStats(null).then(function() {
+                    updateMapColors();
+                });
                 startLiveRefresh();
                 syncGrafanaTime(null);
                 updateColoringAnnotation(null);
