@@ -123,6 +123,8 @@
     let selectedTime = null;      // null = live mode
     let statsRefreshTimer = null; // auto-refresh handle
     const LIVE_REFRESH_MS = 30000;
+    let sliderDebounce = null;    // debounce timer for slider input
+    let sliderFetchCtrl = null;   // AbortController for in-flight slider requests
 
     // Grafana annotation state
     var coloringAnnotationId = null;
@@ -336,23 +338,34 @@
         if (liveBtn) {
             liveBtn.addEventListener('click', function () {
                 selectedTime = null;
-                
+
                 // Reset slider to rightmost position (max = most recent)
                 var slider = document.getElementById('timeSlider');
                 if (slider && slider.max) {
                     slider.value = slider.max;
                 }
-                
+
+                // Update display label to "Live"
                 document.getElementById('timeDisplay').textContent = 'Live';
                 this.style.background = '#22c55e';
                 clearTimeout(sliderDebounce);
+
+                // Cancel any in-flight slider requests
+                if (sliderFetchCtrl) {
+                    sliderFetchCtrl.abort();
+                    sliderFetchCtrl = null;
+                }
+
+                console.log('[LIVE] Fetching live stats...');
+                fetchAndApplyStats(null);
                 
-                // Fetch live stats AND force immediate map color update
-                fetchAndApplyStats(null).then(function() {
-                    updateMapColors();
-                });
+                console.log('[LIVE] Starting live refresh timer...');
                 startLiveRefresh();
+                
+                console.log('[LIVE] Resetting Grafana to live mode...');
                 syncGrafanaTime(null);
+                
+                console.log('[LIVE] Removing coloring annotation...');
                 updateColoringAnnotation(null);
             });
         }
@@ -533,9 +546,14 @@
         var url = '/api/cml-stats';
         if (atIso) url += '?at=' + encodeURIComponent(atIso);
         var opts = signal ? { signal: signal } : {};
+        console.log('[fetchAndApplyStats] Calling', url, atIso === null ? '(LIVE)' : '(historical)');
         fetch(url, opts)
-            .then(function (r) { return r.json(); })
+            .then(function (r) { 
+                console.log('[fetchAndApplyStats] Response status:', r.status);
+                return r.json(); 
+            })
             .then(function (stats) {
+                console.log('[fetchAndApplyStats] Received', stats.length, 'CML stats');
                 // Surface provisional state in the time display label
                 var anyProvisional = stats.some(function (s) { return s.is_provisional; });
                 var disp = document.getElementById('timeDisplay');
@@ -546,9 +564,10 @@
                     cmlStats[stat.cml_id] = stat;
                     applyStatsToLine(stat.cml_id, stat);
                 });
+                console.log('[fetchAndApplyStats] Applied stats to all lines');
             })
             .catch(function (err) {
-                if (err.name !== 'AbortError') console.error('Stats fetch error:', err);
+                if (err.name !== 'AbortError') console.error('[fetchAndApplyStats] Error:', err);
             });
     }
 

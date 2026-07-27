@@ -16,6 +16,7 @@ from flask import (
     redirect,
     url_for,
     flash,
+    make_response,
 )
 from flask_login import (
     LoginManager,
@@ -395,13 +396,18 @@ def realtime():
     cmls = get_available_cmls(current_user.id)
     default_cml = cmls[0] if cmls else None
 
-    return render_template(
+    resp = make_response(render_template(
         "realtime.html",
         map_html=map_html,
         cmls=cmls,
         selected_cml=default_cml,
         grafana_org_id=current_user.grafana_org_id,
-    )
+    ))
+    # Prevent browser caching so users always get latest JS on deploy
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 @app.route("/grafana")
