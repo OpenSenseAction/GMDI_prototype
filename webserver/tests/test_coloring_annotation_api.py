@@ -36,30 +36,36 @@ class TestColoringAnnotationAPI:
         """Test POST /api/coloring-annotation creates annotation via Grafana API."""
         epoch_sec = 1753632000  # 2026-07-27 16:00:00 UTC
         
-        # Mock requests.post response
-        mock_resp = Mock()
-        mock_resp.json.return_value = {"id": 42, "message": "Annotation added"}
-        mock_resp.status_code = 200
+        # Mock requests.get for duplicate cleanup (returns empty list)
+        mock_get_resp = Mock()
+        mock_get_resp.json.return_value = []
+        mock_get_resp.ok = True
         
-        with patch('main.requests.post', return_value=mock_resp) as mock_post:
-            resp = auth_client.post(
-                "/api/coloring-annotation",
-                data=json.dumps({"epochSec": epoch_sec}),
-                content_type="application/json"
-            )
-            
-            assert resp.status_code == 200
-            data = resp.get_json()
-            assert data["status"] == "created"
-            assert data["id"] == 42
-            
-            # Verify request payload
-            assert mock_post.called
-            call_kwargs = mock_post.call_args.kwargs
-            body = call_kwargs["json"]
-            assert body["time"] == (epoch_sec - 3600) * 1000
-            assert body["timeEnd"] == epoch_sec * 1000
-            assert body["tags"] == ["cml-coloring-window"]
+        # Mock requests.post response
+        mock_post_resp = Mock()
+        mock_post_resp.json.return_value = {"id": 42, "message": "Annotation added"}
+        mock_post_resp.status_code = 200
+        
+        with patch('main.requests.get', return_value=mock_get_resp):
+            with patch('main.requests.post', return_value=mock_post_resp) as mock_post:
+                resp = auth_client.post(
+                    "/api/coloring-annotation",
+                    data=json.dumps({"epochSec": epoch_sec}),
+                    content_type="application/json"
+                )
+                
+                assert resp.status_code == 200
+                data = resp.get_json()
+                assert data["status"] == "created"
+                assert data["id"] == 42
+                
+                # Verify request payload
+                assert mock_post.called
+                call_kwargs = mock_post.call_args.kwargs
+                body = call_kwargs["json"]
+                assert body["time"] == (epoch_sec - 3600) * 1000
+                assert body["timeEnd"] == epoch_sec * 1000
+                assert body["tags"] == ["cml-coloring-window"]
 
     def test_update_annotation_success(self, auth_client, monkeypatch):
         """Test POST /api/coloring-annotation updates existing annotation."""
