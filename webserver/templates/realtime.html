@@ -149,13 +149,15 @@
             return '#ef4444'; // red
         },
         std_dev: function (stat) {
-            if (!stat) return '#0066cc';
+            if (!stat) return '#94a3b8'; // slate gray for missing
             const stddev = stat.stddev_last_60min;
-            if (stddev === null) return '#808080'; // gray for missing data
-            if (stddev <= 1) return '#22c55e'; // green (very stable)
-            if (stddev <= 2) return '#eab308'; // yellow (moderate)
-            if (stddev <= 3) return '#f97316'; // orange (variable)
-            return '#ef4444'; // red (very unstable)
+            if (stddev === null) return '#94a3b8'; // gray for missing data
+            // Fixed 0-10+ dBm scale with colorblind-friendly progression
+            if (stddev <= 2) return '#3b82f6'; // blue (very stable)
+            if (stddev <= 4) return '#fbbf24'; // yellow/amber (stable)
+            if (stddev <= 6) return '#f97316'; // orange (moderate)
+            if (stddev <= 8) return '#ea580c'; // deep orange (variable)
+            return '#dc2626'; // red (unstable, 8+ dBm)
         }
     };
 
