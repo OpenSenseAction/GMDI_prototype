@@ -569,7 +569,7 @@
             var epochMs = epochSec * 1000;
 
             // Preserve the current zoom window (Grafana rewrites epoch-ms to ISO in URL)
-            var halfWindow = 30 * 60 * 1000;   // default ±30 min
+            var halfWindow = 3 * 60 * 60 * 1000;   // default ±3h (6h total)
             var fromParam = currentUrl.searchParams.get('from');
             var toParam = currentUrl.searchParams.get('to');
             if (fromParam && toParam && !String(fromParam).startsWith('now')) {
