@@ -24,8 +24,8 @@ def test_api_cml_stats_returns_cached_stats(monkeypatch):
     mock_cursor = Mock()
     mock_conn.cursor.return_value = mock_cursor
 
-    # Row fields: cml_id, completeness_percent_6h, total_records_6h, valid_records_6h,
-    # mean_rsl_6h, stddev_rsl_6h, completeness_percent_1h, stddev_rsl_1h, last_rsl
+    # Row fields (11 columns): cml_id, completeness_percent_6h, total_records_6h, valid_records_6h,
+    # mean_rsl_6h, stddev_rsl_6h, completeness_percent_1h, mean_rsl_1h, stddev_rsl_1h, last_rsl, is_provisional
     mock_cursor.fetchall.return_value = [
         (
             "10001",
@@ -35,8 +35,10 @@ def test_api_cml_stats_returns_cached_stats(monkeypatch):
             -50.0,  # mean_rsl_6h
             3.0,    # stddev_rsl_6h
             90.0,   # completeness_percent_1h
+            -48.5,  # mean_rsl_1h
             1.3,    # stddev_rsl_1h
             -45.0,  # last_rsl
+            False,  # is_provisional
         )
     ]
 
@@ -44,8 +46,7 @@ def test_api_cml_stats_returns_cached_stats(monkeypatch):
     mock_cursor.close = Mock()
     mock_conn.close = Mock()
 
-    # The route now uses user_db_scope(current_user.id) instead of get_db_connection().
-    # Mock user_db_scope to yield the mock connection, and disable login enforcement.
+    # The route uses user_db_scope(current_user.id). Mock it and disable login.
     @contextmanager
     def mock_user_db_scope(user_id):
         yield mock_conn
@@ -69,3 +70,4 @@ def test_api_cml_stats_returns_cached_stats(monkeypatch):
     assert row["completeness_percent_1h"] == 90.0
     assert row["stddev_last_60min"] == 1.3
     assert row["last_rsl"] == -45.0
+    assert row["is_provisional"] == False
