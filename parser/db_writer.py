@@ -486,11 +486,8 @@ class DBWriter:
         )
         cur = self.conn.cursor()
         try:
-            # First refresh the 6h rolling view so we have fresh stats
-            cur.execute(
-                "CALL refresh_continuous_aggregate('cml_stats', NOW() - INTERVAL '6 hours', NOW())"
-            )
-            self.conn.commit()
+            # cml_stats is a regular table (not a CAGG), so no refresh needed.
+            # It's updated continuously by update_cml_stats().
 
             cur.execute(
                 """
