@@ -418,11 +418,34 @@ class DBWriter:
         Returns the number of rows upserted.
         """
         from datetime import timezone
+
         at_hour = at_time.replace(minute=0, second=0, microsecond=0)
         # Ensure timezone-aware if naive
         if at_hour.tzinfo is None:
             at_hour = at_hour.replace(tzinfo=timezone.utc)
-        
+
+        cur = self.conn.cursor()
+        try:
+            # Refresh the continuous aggregate for the relevant window so the 1h
+            # subquery inside materialize_cml_stats_snapshot() finds current data.
+            cur.execute(
+                "CALL refresh_continuous_aggregate('cml_data_1h', %s::timestamptz - INTERVAL '2 hours', %s::timestamptz)",
+                (at_hour, at_hour),
+            )
+            self.conn.commit()
+        except Exception:
+            try:
+                self.conn.rollback()
+            except Exception:
+                pass
+            logger.warning(
+                "Could not refresh cml_data_1h before snapshot at %s; 1h stats may be null",
+                at_hour,
+            )
+        finally:
+            if cur and not cur.closed:
+                cur.close()
+
         cur = self.conn.cursor()
         try:
             cur.execute(
@@ -431,7 +454,9 @@ class DBWriter:
             )
             rows = cur.fetchone()[0]
             self.conn.commit()
-            logger.info("Materialized cml_stats_history snapshot at %s (%d rows)", at_hour, rows)
+            logger.info(
+                "Materialized cml_stats_history snapshot at %s (%d rows)", at_hour, rows
+            )
             return rows
         except Exception:
             try:
@@ -455,7 +480,10 @@ class DBWriter:
         (is_provisional=FALSE) that permanently replaces this one.
         """
         from datetime import timezone
-        current_hour = datetime.now(tz=timezone.utc).replace(minute=0, second=0, microsecond=0)
+
+        current_hour = datetime.now(tz=timezone.utc).replace(
+            minute=0, second=0, microsecond=0
+        )
         cur = self.conn.cursor()
         try:
             cur.execute(
@@ -492,7 +520,9 @@ class DBWriter:
             )
             rows = cur.rowcount
             self.conn.commit()
-            logger.debug("Wrote provisional snapshot at %s (%d rows)", current_hour, rows)
+            logger.debug(
+                "Wrote provisional snapshot at %s (%d rows)", current_hour, rows
+            )
             return rows
         except Exception:
             try:

@@ -558,25 +558,29 @@ BEGIN
         ROUND(h1.rsl_stddev::numeric, 2)         AS stddev_rsl_1h,
         h1.rsl_max                               AS last_rsl,
         FALSE                                    AS is_provisional
-    FROM cml_metadata m
+    FROM (SELECT DISTINCT ON (cml_id) * FROM cml_metadata WHERE user_id = p_user_id) m
     -- 6h subquery from the 1h continuous aggregate
     LEFT JOIN LATERAL (
         SELECT
-            SUM(record_count)                          AS record_count,
-            SUM(CASE WHEN rsl_max IS NOT NULL THEN record_count ELSE 0 END) AS rsl_count,
-            AVG(rsl_avg)                               AS rsl_avg,
-            AVG(rsl_max - rsl_min)                     AS rsl_stddev
+            SUM(record_count)                                                              AS record_count,
+            SUM(CASE WHEN rsl_max IS NOT NULL AND rsl_max::text != 'NaN' THEN record_count ELSE 0 END) AS rsl_count,
+            AVG(NULLIF(rsl_avg, 'NaN'::float))                                             AS rsl_avg,
+            AVG(NULLIF(rsl_max, 'NaN'::float) - NULLIF(rsl_min, 'NaN'::float))            AS rsl_stddev
         FROM cml_data_1h
         WHERE user_id    = p_user_id
           AND cml_id     = m.cml_id
           AND bucket     >= p_at_time - INTERVAL '6 hours'
           AND bucket     <  p_at_time
     ) h6 ON TRUE
-    -- 1h subquery: the bucket immediately before p_at_time
+    -- 1h subquery: aggregate across all sublinks for the bucket immediately before p_at_time
     LEFT JOIN LATERAL (
-        SELECT record_count, rsl_avg, rsl_max, rsl_min,
-               CASE WHEN rsl_max IS NOT NULL THEN record_count ELSE 0 END AS rsl_count,
-               (rsl_max - rsl_min) AS rsl_stddev
+        SELECT
+            SUM(record_count)                                                              AS record_count,
+            SUM(CASE WHEN rsl_max IS NOT NULL AND rsl_max::text != 'NaN' THEN record_count ELSE 0 END) AS rsl_count,
+            AVG(NULLIF(rsl_avg, 'NaN'::float))                                             AS rsl_avg,
+            MAX(NULLIF(rsl_max, 'NaN'::float))                                             AS rsl_max,
+            MIN(NULLIF(rsl_min, 'NaN'::float))                                             AS rsl_min,
+            AVG(NULLIF(rsl_max, 'NaN'::float) - NULLIF(rsl_min, 'NaN'::float))            AS rsl_stddev
         FROM cml_data_1h
         WHERE user_id = p_user_id
           AND cml_id  = m.cml_id
