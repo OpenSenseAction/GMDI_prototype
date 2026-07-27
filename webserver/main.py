@@ -522,7 +522,7 @@ def api_cml_map():
 @login_required
 def api_cml_stats():
     """API endpoint for fetching per-CML statistics for data quality visualization"""
-    at_param = request.args.get("at")   # ISO 8601 string or absent
+    at_param = request.args.get("at")  # ISO 8601 string or absent
 
     at_ts = None
     if at_param:
@@ -544,13 +544,21 @@ def api_cml_stats():
                     (at_ts, current_user.id),
                 )
             else:
-                # Live: existing query from cml_stats (windowed, pre-computed)
+                # Live: query cml_stats (windowed, pre-computed)
                 cur.execute(
                     """
-                    SELECT cml_id::text,
-                           completeness_percent_6h, total_records_6h, valid_records_6h,
-                           mean_rsl_6h, stddev_rsl_6h,
-                           completeness_percent_1h, stddev_rsl_1h, last_rsl
+                    SELECT 
+                        cml_id::text,
+                        completeness_percent_6h,
+                        total_records_6h,
+                        valid_records_6h,
+                        mean_rsl_6h,
+                        stddev_rsl_6h,
+                        completeness_percent_1h,
+                        mean_rsl_1h,
+                        stddev_rsl_1h,
+                        last_rsl,
+                        FALSE as is_provisional
                     FROM cml_stats
                     ORDER BY cml_id
                     """
@@ -559,22 +567,26 @@ def api_cml_stats():
             data = cur.fetchall()
             cur.close()
 
-        # Response shape is identical in both branches; is_provisional only present for ?at= path
-        stats = [
-            {
-                "cml_id":                   str(row[0]),
-                "completeness_percent":     safe_float(row[1]),
-                "total_records":            int(row[2] or 0),
-                "valid_records":            int(row[3] or 0),
-                "mean_rsl":                 safe_float(row[4]),
-                "stddev_rsl":               safe_float(row[5]),
-                "completeness_percent_1h":  safe_float(row[6]),
-                "stddev_last_60min":        safe_float(row[7]),
-                "last_rsl":                 safe_float(row[8]),
-                "is_provisional":           bool(row[9]) if at_param and len(row) > 9 else False,
-            }
-            for row in data
-        ]
+        # Build stats array with consistent field names
+        # Column order (both live and historical): cml_id(0), completeness_pct_6h(1),
+        # total_records_6h(2), valid_records_6h(3), mean_rsl_6h(4), stddev_rsl_6h(5),
+        # completeness_pct_1h(6), mean_rsl_1h(7), stddev_rsl_1h(8), last_rsl(9), is_provisional(10)
+        stats = []
+        for row in data:
+            stats.append(
+                {
+                    "cml_id": str(row[0]),
+                    "completeness_percent": safe_float(row[1]),
+                    "total_records": int(row[2] or 0),
+                    "valid_records": int(row[3] or 0),
+                    "mean_rsl": safe_float(row[4]),
+                    "stddev_rsl": safe_float(row[5]),
+                    "completeness_percent_1h": safe_float(row[6]),
+                    "stddev_last_60min": safe_float(row[8]),  # stddev_rsl_1h
+                    "last_rsl": safe_float(row[9]),
+                    "is_provisional": bool(row[10]) if len(row) > 10 else False,
+                }
+            )
         return jsonify(stats)
     except Exception as e:
         print(f"Error fetching CML stats: {e}")
@@ -601,6 +613,89 @@ def api_cml_stats_time_range():
     except Exception as e:
         print(f"Error fetching stats time range: {e}")
         return jsonify({"min": None, "max": current_hour.isoformat()})
+
+
+@app.route("/api/coloring-annotation", methods=["POST", "DELETE"])
+@login_required
+def api_coloring_annotation():
+    """Create/update or delete the 1-h coloring-window annotation in Grafana.
+
+    Uses admin credentials so Viewer-role users can drive annotations.
+    When creating, stale duplicates are cleaned up first so rapid slider
+    dragging (AbortController may leave orphaned annotations) never
+    accumulates multiple markers.
+    """
+    grafana_base = "http://grafana:3000/grafana"
+    auth = ("admin", os.environ.get("GF_SECURITY_ADMIN_PASSWORD", "admin"))
+
+    if request.method == "DELETE":
+        data = request.get_json(silent=True) or {}
+        ann_id = data.get("id")
+        if ann_id:
+            requests.delete(
+                f"{grafana_base}/api/annotations/{ann_id}", auth=auth, timeout=5
+            )
+        return jsonify({"status": "deleted"})
+
+    data = request.get_json(silent=True) or {}
+    epoch_sec = data.get("epochSec")
+    if not epoch_sec:
+        return jsonify({"error": "missing epochSec"}), 400
+
+    body = {
+        "time": (epoch_sec - 3600) * 1000,
+        "timeEnd": epoch_sec * 1000,
+        "text": "1 h coloring window",
+        "tags": ["cml-coloring-window"],
+        "dashboardUID": "cml-realtime",
+        "panelId": 2,
+        "color": "rgba(120, 120, 120, 0.35)",
+    }
+
+    ann_id = data.get("id")
+    if ann_id:
+        r = requests.patch(
+            f"{grafana_base}/api/annotations/{ann_id}", json=body, auth=auth, timeout=5
+        )
+        if r.ok:
+            return jsonify({"status": "updated", "id": ann_id})
+        # Fall through: annotation was deleted externally, recreate below
+
+    # Purge any orphaned duplicates before creating a fresh one
+    existing = requests.get(
+        f"{grafana_base}/api/annotations",
+        params={"tags": "cml-coloring-window"},
+        auth=auth,
+        timeout=5,
+    )
+    for ann in existing.json() if existing.ok else []:
+        requests.delete(
+            f"{grafana_base}/api/annotations/{ann['id']}", auth=auth, timeout=5
+        )
+
+    r = requests.post(
+        f"{grafana_base}/api/annotations", json=body, auth=auth, timeout=5
+    )
+    return jsonify({"status": "created", "id": r.json().get("id")})
+
+
+@app.route("/api/coloring-annotation-cleanup", methods=["POST"])
+@login_required
+def api_coloring_annotation_cleanup():
+    """Delete all stale coloring-window annotations (e.g. from a previous session)."""
+    grafana_base = "http://grafana:3000/grafana"
+    auth = ("admin", os.environ.get("GF_SECURITY_ADMIN_PASSWORD", "admin"))
+    r = requests.get(
+        f"{grafana_base}/api/annotations",
+        params={"tags": "cml-coloring-window"},
+        auth=auth,
+        timeout=5,
+    )
+    for ann in r.json() if r.ok else []:
+        requests.delete(
+            f"{grafana_base}/api/annotations/{ann['id']}", auth=auth, timeout=5
+        )
+    return jsonify({"status": "ok"})
 
 
 @app.route("/api/data-time-range")
