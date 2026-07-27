@@ -336,6 +336,13 @@
         if (liveBtn) {
             liveBtn.addEventListener('click', function () {
                 selectedTime = null;
+                
+                // Reset slider to rightmost position (max = most recent)
+                var slider = document.getElementById('timeSlider');
+                if (slider && slider.max) {
+                    slider.value = slider.max;
+                }
+                
                 document.getElementById('timeDisplay').textContent = 'Live';
                 this.style.background = '#22c55e';
                 clearTimeout(sliderDebounce);

@@ -486,6 +486,12 @@ class DBWriter:
         )
         cur = self.conn.cursor()
         try:
+            # First refresh the 6h rolling view so we have fresh stats
+            cur.execute(
+                "CALL refresh_continuous_aggregate('cml_stats', NOW() - INTERVAL '6 hours', NOW())"
+            )
+            self.conn.commit()
+
             cur.execute(
                 """
                 INSERT INTO cml_stats_history (
