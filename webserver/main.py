@@ -26,6 +26,8 @@ from flask_login import (
     login_required,
     current_user,
 )
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta, timezone
@@ -49,6 +51,17 @@ except FileNotFoundError:
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 login_manager.login_message = "Please log in to access this page."
+
+# ── Rate Limiting ───────────────────────────────────────────────────────────
+limiter_storage_uri = os.getenv("RATE_LIMIT_STORAGE_URI", "memory://")
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    default_limits=[],
+    storage_uri=limiter_storage_uri,
+    strategy="fixed-window",
+)
+
 
 
 class User(UserMixin):
@@ -142,6 +155,10 @@ def user_db_scope(user_id: str):
 
 
 @app.route("/login", methods=["GET", "POST"])
+@limiter.limit(
+    "5 per minute",
+    error_message="Too many login attempts. Please try again later.",
+)
 def login():
     if current_user.is_authenticated:
         return redirect(url_for("overview"))
@@ -882,6 +899,10 @@ def get_file_size_mb(filepath):
 
 
 @app.route("/api/upload", methods=["POST"])
+@limiter.limit(
+    "10 per minute",
+    error_message="Too many upload attempts. Please slow down.",
+)
 @login_required
 def upload_file():
     """Handle file upload via drag and drop"""
@@ -946,6 +967,10 @@ def upload_file():
 
 
 @app.route("/api/files", methods=["GET"])
+@limiter.limit(
+    "30 per minute",
+    error_message="Too many requests. Please slow down.",
+)
 @login_required
 def get_files():
     """Get list of files in data_incoming and data_staged_for_parsing directories"""
@@ -1002,6 +1027,20 @@ def get_files():
 
 
 # ==================== ERROR HANDLERS ====================
+
+
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    """Handle rate limit exceeded errors."""
+    return (
+        jsonify(
+            {
+                "error": "Rate limit exceeded",
+                "message": str(e.description),
+            }
+        ),
+        429,
+    )
 
 
 @app.errorhandler(404)
