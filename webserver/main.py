@@ -28,6 +28,7 @@ from flask_login import (
 )
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta, timezone
@@ -38,6 +39,11 @@ import uuid
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", os.urandom(32))
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # WSGI-level enforcement
+
+# Trust X-Forwarded-For from this many upstream proxies (set to 1 when behind nginx)
+_proxy_count = int(os.getenv("PROXY_COUNT", "0"))
+if _proxy_count > 0:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=_proxy_count)
 
 # ── User store (loaded from file at startup) ──────────────────────────────────
 _users_config_path = os.getenv("USERS_CONFIG_PATH", "/app/configs/users.json")

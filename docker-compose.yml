@@ -164,6 +164,7 @@ services:
       - STORAGE_BACKEND=local  # Options: local, s3, minio
       - STORAGE_BASE_PATH=/app/data
       - RATE_LIMIT_STORAGE_URI=memory://
+      - PROXY_COUNT=0  # Set to 1 when running behind a reverse proxy (nginx)
     volumes:
       - webserver_data_staged:/app/data/staged
       - webserver_data_archived:/app/data/archived
