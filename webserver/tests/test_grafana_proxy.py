@@ -23,10 +23,10 @@ def _make_grafana_response(status=200, content=b"ok", headers=None):
 
 @pytest.fixture
 def logged_in_client(monkeypatch):
-    """Test client with demo_openmrg actually logged in via the login route.
+    """Test client with login bypassed and current_user mocked.
 
-    Uses a real session so flask_login's current_user proxy resolves correctly
-    inside the grafana_proxy route handler.
+    Uses LOGIN_DISABLED to skip auth checks and mocks current_user
+    so flask_login's proxy resolves correctly inside grafana_proxy.
     """
     monkeypatch.setitem(
         wm.USERS,
@@ -36,10 +36,13 @@ def logged_in_client(monkeypatch):
             "display_name": "OpenMRG",
         },
     )
+    mock_user = Mock()
+    mock_user.id = "demo_openmrg"
+    mock_user.display_name = "OpenMRG"
+    monkeypatch.setattr(wm, "current_user", mock_user)
+    monkeypatch.setitem(wm.app.config, "LOGIN_DISABLED", True)
     wm.app.config["TESTING"] = True
-    client = wm.app.test_client()
-    client.post("/login", data={"username": "demo_openmrg", "password": "testpass"})
-    return client
+    return wm.app.test_client()
 
 
 def test_grafana_proxy_injects_webauth_user_header(logged_in_client, monkeypatch):
