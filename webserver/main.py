@@ -26,6 +26,9 @@ from flask_login import (
     login_required,
     current_user,
 )
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta, timezone
@@ -36,6 +39,11 @@ import uuid
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", os.urandom(32))
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # WSGI-level enforcement
+
+# Trust X-Forwarded-For from this many upstream proxies (set to 1 when behind nginx)
+_proxy_count = int(os.getenv("PROXY_COUNT", "0"))
+if _proxy_count > 0:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=_proxy_count)
 
 # ── User store (loaded from file at startup) ──────────────────────────────────
 _users_config_path = os.getenv("USERS_CONFIG_PATH", "/app/configs/users.json")
@@ -49,6 +57,17 @@ except FileNotFoundError:
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 login_manager.login_message = "Please log in to access this page."
+
+# ── Rate Limiting ───────────────────────────────────────────────────────────
+limiter_storage_uri = os.getenv("RATE_LIMIT_STORAGE_URI", "memory://")
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    default_limits=[],
+    storage_uri=limiter_storage_uri,
+    strategy="fixed-window",
+)
+
 
 
 class User(UserMixin):
@@ -142,6 +161,10 @@ def user_db_scope(user_id: str):
 
 
 @app.route("/login", methods=["GET", "POST"])
+@limiter.limit(
+    "5 per minute",
+    error_message="Too many login attempts. Please try again later.",
+)
 def login():
     if current_user.is_authenticated:
         return redirect(url_for("overview"))
@@ -882,6 +905,10 @@ def get_file_size_mb(filepath):
 
 
 @app.route("/api/upload", methods=["POST"])
+@limiter.limit(
+    "10 per minute",
+    error_message="Too many upload attempts. Please slow down.",
+)
 @login_required
 def upload_file():
     """Handle file upload via drag and drop"""
@@ -946,6 +973,10 @@ def upload_file():
 
 
 @app.route("/api/files", methods=["GET"])
+@limiter.limit(
+    "30 per minute",
+    error_message="Too many requests. Please slow down.",
+)
 @login_required
 def get_files():
     """Get list of files in data_incoming and data_staged_for_parsing directories"""
@@ -1002,6 +1033,20 @@ def get_files():
 
 
 # ==================== ERROR HANDLERS ====================
+
+
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    """Handle rate limit exceeded errors."""
+    return (
+        jsonify(
+            {
+                "error": "Rate limit exceeded",
+                "message": str(e.description),
+            }
+        ),
+        429,
+    )
 
 
 @app.errorhandler(404)
