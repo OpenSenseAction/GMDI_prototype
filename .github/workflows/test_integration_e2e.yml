@@ -26,7 +26,14 @@ on:
 jobs:
   e2e-integration-tests:
     runs-on: ubuntu-latest
-    
+    env:
+      # Use the small 12-hour file (committed to the repo) to avoid a large
+      # download in CI. The 3-month file is only needed for production.
+      # Job-level so every `docker compose` call sees the same config and
+      # does not recreate the running services.
+      OPENMRG_NETCDF_FILE: /app/example_data/openMRG_cmls_20150827_12hours.nc
+      OPENMRG_NETCDF_FILE_URL: ""
+
     steps:
     - uses: actions/checkout@v4
     
@@ -69,11 +76,6 @@ jobs:
         cat ssh_keys/known_hosts
     
     - name: Start services
-      env:
-        # Use the small 12-hour file (committed to the repo) to avoid a large
-        # download in CI. The 3-month file is only needed for production.
-        OPENMRG_NETCDF_FILE: /app/example_data/openMRG_cmls_20150827_12hours.nc
-        OPENMRG_NETCDF_FILE_URL: ""
       run: |
         docker compose up -d database sftp_receiver parser_demo_openmrg_main webserver mno_simulator_openmrg
         sleep 10
@@ -118,7 +120,8 @@ jobs:
     
     - name: Run E2E integration tests
       run: |
-        docker compose --profile testing run --rm integration_tests
+        # --no-deps: services are already running; don't let compose recreate them
+        docker compose --profile testing run --rm --no-deps integration_tests
     
     - name: Show logs on failure
       if: failure()
