@@ -104,7 +104,7 @@
     <div class="resizer" id="resizer"></div>
     <div class="chart-container">
         <iframe class="grafana-container" id="grafana-panel"
-            src="/grafana/d/cml-realtime/cml-real-time-data?orgId={{ grafana_org_id }}&var-cml_id=10001&refresh=10s&theme=light&viewPanel=2&kiosk"
+            src="/grafana/d/cml-realtime/cml-real-time-data?orgId={{ grafana_org_id }}&var-cml_id=10001&refresh=1m&theme=light&viewPanel=2&kiosk"
             allowfullscreen></iframe>
     </div>
 </div>
@@ -116,6 +116,7 @@
     let map;
     let cmlLayers = {};
     let cmlStats = {};
+    let cmlMeta = {};
     let selectedCmlId = '10001';
     let currentColoringOption = 'std_dev';
 
@@ -181,8 +182,26 @@
         };
     }
 
+    function escapeHtml(s) {
+        var d = document.createElement('div');
+        d.textContent = String(s);
+        return d.innerHTML;
+    }
+
     function buildPopupText(cmlId, stats) {
-        var popupText = '<strong>CML ' + cmlId + '</strong><br>';
+        var popupText = '<strong>CML ' + escapeHtml(cmlId) + '</strong><br>';
+        var meta = cmlMeta[cmlId];
+        if (meta) {
+            if (meta.length !== null) {
+                popupText += 'Length: ' + (meta.length / 1000).toFixed(2) + ' km<br>';
+            }
+            meta.sublinks.forEach(function (s) {
+                var parts = [];
+                if (s.frequency !== null) parts.push((s.frequency / 1000).toFixed(1) + ' GHz');
+                if (s.polarization) parts.push(escapeHtml(s.polarization.toUpperCase()));
+                if (parts.length) popupText += 'Sublink: ' + parts.join(' ') + '<br>';
+            });
+        }
         if (stats) {
             popupText += 'Completeness (6h): ' + stats.completeness_percent + '%<br>';
             popupText += 'Valid records (6h): ' + stats.valid_records + '/' + stats.total_records + '<br>';
@@ -215,7 +234,9 @@
     function initializeMap() {
         console.log('Initializing map...');
         try {
-            map = L.map('cml-map').setView([57.705, 11.97], 11);
+            // Canvas renderer with tolerance makes thin CML lines easier to hit
+            map = L.map('cml-map', { renderer: L.canvas({ tolerance: 8 }) }).setView([57.705, 11.97], 11);
+            L.control.scale({ metric: true, imperial: false }).addTo(map);
             // Use Carto Positron - clean, minimal light basemap
             L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
                 attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
@@ -492,6 +513,7 @@
         var cmlId = cml.cml_id;
         var stats = cmlStats[cmlId];
         var color = getColor(stats, currentColoringOption);
+        cmlMeta[cmlId] = { length: cml.length, sublinks: cml.sublinks || [] };
 
         var latlngs = [
             [cml.site_0.lat, cml.site_0.lon],
