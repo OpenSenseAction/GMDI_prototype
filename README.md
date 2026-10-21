@@ -222,12 +222,12 @@ that see **all providers** at once:
 
 ```yaml
 admins:
-  - id: admin
+  - id: gmdi_admin
     display_name: Administrator
 ```
 
 After running the generator, set a password with
-`python scripts/set_password.py admin`. Admin accounts get two extra pages
+`python scripts/set_password.py gmdi_admin`. Admin accounts get two extra pages
 (they have no tenant data of their own):
 
 - `/admin/realtime` — map of every CML, coloured per provider, with per-provider toggles,
@@ -239,9 +239,8 @@ Admin views query as `webserver_role` (read-only session), which already has
 read access across tenants; no database migration is needed. All admins share
 one extra Grafana org (created by `init_grafana` when `admins:` is set) with a
 `webserver_role` datasource and the dashboard in `grafana/admin_dashboards/`.
-Auth-proxy logins map to Grafana users by login name, so an admin id of `admin`
-resolves to Grafana's built-in `admin` account; prefer another id (e.g.
-`gmdi_admin`). Admin routes are
+Auth-proxy logins map to Grafana users by login name, so do not use `admin` as
+an admin id: it resolves to Grafana's built-in `admin` account. Admin routes are
 guarded by `@admin_required` in `webserver/main.py` — use it on any new
 cross-tenant route.
 
