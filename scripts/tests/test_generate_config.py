@@ -55,7 +55,6 @@ def test_custom_ssh_keys_dir_written_verbatim():
     assert "../ssh_keys/alice/authorized_keys" in output
 
 
-
 def test_absolute_ssh_keys_dir_written_verbatim(tmp_path):
     """An absolute path is also written verbatim."""
     abs_path = str(tmp_path / "keys")
@@ -106,8 +105,14 @@ def test_main_ssh_keys_dir_override_uses_external_dir(tmp_path, monkeypatch):
     """
     # Build a minimal repo layout inside tmp_path
     repo_root = tmp_path / "repo"
-    for subdir in ("sftp_receiver", "webserver/configs", "database/migrations",
-                   "grafana/provisioning/datasources", "grafana", "ssh_keys"):
+    for subdir in (
+        "sftp_receiver",
+        "webserver/configs",
+        "database/migrations",
+        "grafana/provisioning/datasources",
+        "grafana",
+        "ssh_keys",
+    ):
         (repo_root / subdir).mkdir(parents=True, exist_ok=True)
 
     # Minimal users.yml (deployment-level, one real user)
@@ -115,19 +120,22 @@ def test_main_ssh_keys_dir_override_uses_external_dir(tmp_path, monkeypatch):
 
     # Stub out files that main() reads/updates
     (repo_root / "webserver" / "configs" / "users.json").write_text("{}")
-    (repo_root / "grafana" / "init_grafana.py").write_text(
-        "ORGS = []\nUSERS = []\n"
-    )
+    (repo_root / "grafana" / "init_grafana.py").write_text("ORGS = []\nUSERS = []\n")
 
     # External ssh_keys dir lives next to the repo (simulating deployment layout)
     ext_keys_dir = tmp_path / "ssh_keys"
     ext_keys_dir.mkdir()
 
-    main([
-        "--users-file", str(tmp_path / "users.yml"),
-        "--repo-root", str(repo_root),
-        "--ssh-keys-dir", str(ext_keys_dir),
-    ])
+    main(
+        [
+            "--users-file",
+            str(tmp_path / "users.yml"),
+            "--repo-root",
+            str(repo_root),
+            "--ssh-keys-dir",
+            str(ext_keys_dir),
+        ]
+    )
 
     # 1. Compose override uses the external path
     override = (repo_root / "docker-compose.override.yml").read_text()
@@ -143,15 +151,19 @@ def test_main_ssh_keys_dir_override_uses_external_dir(tmp_path, monkeypatch):
 def test_main_default_ssh_keys_dir_stays_inside_repo(tmp_path):
     """Without --ssh-keys-dir, keys go into <repo-root>/ssh_keys as before."""
     repo_root = tmp_path / "repo"
-    for subdir in ("sftp_receiver", "webserver/configs", "database/migrations",
-                   "grafana/provisioning/datasources", "grafana", "ssh_keys"):
+    for subdir in (
+        "sftp_receiver",
+        "webserver/configs",
+        "database/migrations",
+        "grafana/provisioning/datasources",
+        "grafana",
+        "ssh_keys",
+    ):
         (repo_root / subdir).mkdir(parents=True, exist_ok=True)
 
     _make_users_yml(repo_root)
     (repo_root / "webserver" / "configs" / "users.json").write_text("{}")
-    (repo_root / "grafana" / "init_grafana.py").write_text(
-        "ORGS = []\nUSERS = []\n"
-    )
+    (repo_root / "grafana" / "init_grafana.py").write_text("ORGS = []\nUSERS = []\n")
 
     main(["--repo-root", str(repo_root)])
 
@@ -218,6 +230,23 @@ def test_admin_grafana_org_follows_tenant_orgs():
         {**USERS[0], "id": "b", "grafana_org_id": 4},
     ]
     assert admin_grafana_org_id(users) == 5
+
+
+def test_admin_grafana_org_is_stable_once_assigned():
+    from generate_config import admin_grafana_org_id
+
+    users = [{**USERS[0], "grafana_org_id": 1}, {**USERS[0], "id": "b", "grafana_org_id": 4}]
+    existing = {"boss": {"is_admin": True, "grafana_org_id": 3}}
+    assert admin_grafana_org_id(users, existing) == 3
+
+
+def test_tenant_cannot_take_the_admin_grafana_org():
+    from generate_config import admin_grafana_org_id
+
+    users = [{**USERS[0], "grafana_org_id": 1}, {**USERS[0], "id": "b", "grafana_org_id": 3}]
+    existing = {"boss": {"is_admin": True, "grafana_org_id": 3}}
+    with pytest.raises(ValueError, match="admin org"):
+        admin_grafana_org_id(users, existing)
 
 
 def test_admin_gets_shared_grafana_org_in_users_json():

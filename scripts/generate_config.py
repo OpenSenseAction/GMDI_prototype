@@ -262,9 +262,24 @@ def generate_entrypoint_sh(users: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def admin_grafana_org_id(users: list[dict]) -> int:
-    """Grafana org shared by all admins: the first id after the tenant orgs."""
-    return max((u["grafana_org_id"] for u in users), default=0) + 1
+def admin_grafana_org_id(users: list[dict], existing_json: dict | None = None) -> int:
+    """Grafana org shared by all admins.
+
+    Reuses the org already recorded for an admin in users.json.  A tenant must
+    never share it: that org's datasource reads every provider's data.
+    """
+    tenant_orgs = {u["grafana_org_id"] for u in users}
+    for uid, entry in (existing_json or {}).items():
+        org = entry.get("grafana_org_id")
+        if entry.get("is_admin") and org is not None:
+            if org in tenant_orgs:
+                clash = [u["id"] for u in users if u["grafana_org_id"] == org]
+                raise ValueError(
+                    f"grafana_org_id {org} is the admin org (admin {uid!r}); "
+                    f"choose another id for {clash}"
+                )
+            return org
+    return max(tenant_orgs, default=0) + 1
 
 
 def generate_users_json(
@@ -546,12 +561,16 @@ def update_init_grafana(
     users: list[dict],
     init_grafana_path: Path,
     admins: list[dict] | None = None,
+    admin_org_id: int | None = None,
 ) -> None:
     """
     Replace the ORGS, USERS and ADMIN_ORG definitions in init_grafana.py with
     versions derived from users.yml.  Everything else in the file is preserved.
     """
-    admin_org_id = admin_grafana_org_id(users) if admins else None
+    if not admins:
+        admin_org_id = None
+    elif admin_org_id is None:
+        admin_org_id = admin_grafana_org_id(users)
     src = init_grafana_path.read_text()
 
     # Replace ORGS block
@@ -711,12 +730,8 @@ def main(argv: list[str] | None = None) -> None:
     if users_json_path.exists():
         existing_json = json.loads(users_json_path.read_text())
     admins = load_admins(users_file, users)
-    new_json = generate_users_json(
-        users,
-        existing_json,
-        admins,
-        admin_grafana_org_id(users) if admins else None,
-    )
+    admin_org_id = admin_grafana_org_id(users, existing_json) if admins else None
+    new_json = generate_users_json(users, existing_json, admins, admin_org_id)
     users_json_path.write_text(json.dumps(new_json, indent=4) + "\n")
     print(f"  [webserver]  Written {users_json_path.relative_to(repo_root)}")
 
@@ -735,7 +750,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"  [grafana]    Updated {init_grafana_path.relative_to(repo_root)}")
 
     # 7. SSH keys
-    ensure_ssh_keys(users, ssh_keys_dir)
+    ensure_ssh_keys(users, ssh_keys_dir), admin_org_id
 
     print()
     print("Done. Commit the regenerated files:")

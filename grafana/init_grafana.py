@@ -61,6 +61,14 @@ def get_or_create_org(org_id, org_name):
     """Ensure an org with the given numeric id and name exists."""
     r = requests.get(f"{GRAFANA_URL}/api/orgs/{org_id}", auth=ADMIN_AUTH)
     if r.status_code == 200:
+        # A name mismatch means two configs claim one org id (tenant vs admin org).
+        if r.json().get("name") != org_name:
+            print(
+                f"ERROR: org {org_id} is named {r.json().get('name')!r}, expected "
+                f"{org_name!r}; refusing to share it.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         print(f"Org {org_id} ({org_name}) already exists.")
         return
     # Org id=1 always exists; for id>=2 we create by name.
@@ -69,9 +77,15 @@ def get_or_create_org(org_id, org_name):
         json={"name": org_name},
         auth=ADMIN_AUTH,
     )
-    if r.status_code not in (200, 409):
+    if r.status_code != 200:
         print(
             f"ERROR creating org {org_name}: {r.status_code} {r.text}", file=sys.stderr
+        )
+        sys.exit(1)
+    if r.json().get("orgId") != org_id:
+        print(
+            f"ERROR: org {org_name} got id {r.json().get('orgId')}, expected {org_id}.",
+            file=sys.stderr,
         )
         sys.exit(1)
     print(f"Created org {org_name}.")
