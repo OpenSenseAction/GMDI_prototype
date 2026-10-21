@@ -1,0 +1,373 @@
+{% extends "base.html" %}
+
+{% block title %}All Providers - Real-Time Data - GMDI Platform{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+    /* Full-screen layout below navbar (same as the tenant real-time page) */
+    html,
+    body {
+        height: 100vh;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+    }
+
+    main {
+        padding: 0 !important;
+        margin: 0 !important;
+        min-height: calc(100vh - 60px);
+        position: relative;
+    }
+
+    main .container {
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    footer {
+        display: none !important;
+    }
+
+    .realtime-wrapper {
+        width: 100%;
+        min-height: calc(100vh - 60px);
+        position: relative;
+    }
+
+    .map-container {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 1;
+    }
+
+    #admin-map {
+        width: 100%;
+        height: 100%;
+    }
+
+    .legend-panel {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        z-index: 500;
+        background: rgba(255, 255, 255, 0.92);
+        border-radius: 4px;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+        padding: 6px 10px;
+        max-width: 320px;
+    }
+
+    #legend {
+        max-height: 100px;
+        /* about five provider rows */
+        overflow-y: auto;
+    }
+
+    /* Styling the scrollbar disables macOS overlay mode, so it stays visible */
+    #legend::-webkit-scrollbar {
+        width: 8px;
+    }
+
+    #legend::-webkit-scrollbar-thumb {
+        background: #aaa;
+        border-radius: 4px;
+    }
+
+    #legend::-webkit-scrollbar-track {
+        background: #eee;
+        border-radius: 4px;
+    }
+
+    .legend-swatch {
+        display: inline-block;
+        width: 22px;
+        height: 4px;
+        border-radius: 2px;
+        vertical-align: middle;
+    }
+
+    .chart-container {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 400px;
+        min-height: 200px;
+        max-height: 80vh;
+        z-index: 100;
+        background: white;
+    }
+
+    .resizer {
+        position: absolute;
+        bottom: 400px;
+        left: 0;
+        right: 0;
+        height: 6px;
+        background: #ccc;
+        cursor: ns-resize;
+        z-index: 200;
+        transition: background-color 0.2s ease;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
+    .resizer:hover {
+        background: #aaa;
+    }
+
+    .resizer.active {
+        background: #888;
+    }
+
+    .grafana-container {
+        position: relative;
+        border: none;
+        width: 100%;
+        height: 100%;
+        display: block;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="realtime-wrapper">
+    <div class="map-container">
+        <div id="admin-map"></div>
+        <div class="legend-panel small">
+            <label class="d-flex align-items-center gap-1 mb-1"><strong>Color by:</strong>
+                <select id="color-option" class="form-select form-select-sm">
+                    <option value="std_dev" selected>RSL Std Dev (1h)</option>
+                    <option value="last_rsl">Last RSL Value</option>
+                    <option value="completeness">Completeness (6h)</option>
+                    <option value="provider">Provider</option>
+                </select>
+            </label>
+            <div id="legend" class="d-flex flex-column gap-1"></div>
+            <div id="map-status" class="text-muted mt-1">Loading&hellip;</div>
+        </div>
+    </div>
+    {% if grafana_org_id %}
+    <div class="resizer" id="resizer"></div>
+    <div class="chart-container">
+        <iframe class="grafana-container" id="grafana-panel"
+            src="/grafana/d/cml-admin-realtime/cml-real-time-data-all-providers?orgId={{ grafana_org_id }}&refresh=10s&theme=light&viewPanel=2&kiosk"
+            allowfullscreen></iframe>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+    const PROVIDERS = {{ providers | tojson }};
+    const PALETTE = ['#1f77b4', '#d62728', '#2ca02c', '#ff7f0e', '#9467bd', '#8c564b', '#e377c2', '#17becf'];
+    const colorOf = {};
+    const providerNames = {};
+    PROVIDERS.forEach((p, i) => {
+        colorOf[p.id] = PALETTE[i % PALETTE.length];
+        providerNames[p.id] = p.display_name;
+    });
+
+    const map = L.map('admin-map', { preferCanvas: true }).setView([50, 10], 5);
+    // Esri World Light Gray Canvas - keyless light basemap (tile order is z/y/x)
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri', maxZoom: 16
+    }).addTo(map);
+
+    const layers = {};   // provider id -> L.featureGroup
+    const counts = {};
+    const lines = {};    // "provider|cml" -> L.polyline
+    const stats = {};    // "provider|cml" -> stats row (absent = no data)
+    let selectedKey = null;
+    let colorOption = 'std_dev';
+    const STATS_REFRESH_MS = 30000;
+    const NO_DATA = '#94a3b8';
+
+    // Same scales as the tenant real-time page
+    const colorFunctions = {
+        completeness: s => {
+            if (!s || s.completeness_percent === null) return NO_DATA;
+            if (s.completeness_percent >= 90) return '#22c55e';
+            if (s.completeness_percent >= 70) return '#eab308';
+            if (s.completeness_percent >= 50) return '#f97316';
+            return '#ef4444';
+        },
+        last_rsl: s => {
+            if (!s || s.last_rsl === null) return NO_DATA;
+            if (s.last_rsl >= -40) return '#22c55e';
+            if (s.last_rsl >= -45) return '#eab308';
+            if (s.last_rsl >= -50) return '#f97316';
+            return '#ef4444';
+        },
+        std_dev: s => {
+            if (!s || s.stddev_last_60min === null) return NO_DATA;
+            if (s.stddev_last_60min <= 2) return '#3b82f6';
+            if (s.stddev_last_60min <= 4) return '#fbbf24';
+            if (s.stddev_last_60min <= 6) return '#f97316';
+            if (s.stddev_last_60min <= 8) return '#ea580c';
+            return '#dc2626';
+        }
+    };
+
+    function lineColor(providerId, key) {
+        if (colorOption === 'provider') return colorOf[providerId] || '#666';
+        return colorFunctions[colorOption](stats[key]);
+    }
+
+    function tooltipText(c) {
+        const s = stats[c.user_id + '|' + c.cml_id];
+        let t = esc(providerNames[c.user_id] || c.user_id) + ' &middot; CML ' + esc(c.cml_id);
+        if (!s) return t + '<br>no data';
+        t += '<br>Completeness (6h): ' + s.completeness_percent + '%';
+        if (s.last_rsl !== null) t += '<br>Last RSL: ' + s.last_rsl + ' dBm';
+        if (s.stddev_last_60min !== null) t += '<br>Std Dev (1h): ' + s.stddev_last_60min;
+        return t;
+    }
+
+    function applyColors() {
+        Object.keys(lines).forEach(key => {
+            const line = lines[key];
+            line.setStyle({ color: lineColor(line._provider, key) });
+            line.setTooltipContent(tooltipText(line._cml));
+        });
+    }
+
+    function loadStats() {
+        return fetch('/api/admin/cml-stats')
+            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(rows => {
+                Object.keys(stats).forEach(k => delete stats[k]);
+                rows.forEach(s => { stats[s.user_id + '|' + s.cml_id] = s; });
+                applyColors();
+            })
+            .catch(err => console.error('Failed to load CML stats', err));
+    }
+
+    function esc(s) {
+        const d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    function renderLegend() {
+        const legend = document.getElementById('legend');
+        legend.innerHTML = '';
+        PROVIDERS.forEach(p => {
+            const label = document.createElement('label');
+            label.className = 'd-flex align-items-center gap-1';
+            label.style.cursor = 'pointer';
+            label.innerHTML =
+                '<input type="checkbox"' + (layers[p.id] && !map.hasLayer(layers[p.id]) ? '' : ' checked') + '> ' +
+                (colorOption === 'provider'
+                    ? '<span class="legend-swatch" style="background:' + colorOf[p.id] + '"></span> '
+                    : '') +
+                esc(p.display_name) + ' (' + (counts[p.id] || 0) + ')';
+            label.querySelector('input').addEventListener('change', e => {
+                const g = layers[p.id];
+                if (!g) return;
+                if (e.target.checked) g.addTo(map); else map.removeLayer(g);
+            });
+            legend.appendChild(label);
+        });
+    }
+
+    // Select a CML and point the Grafana iframe at it
+    function selectCml(providerId, cmlId) {
+        const key = providerId + '|' + cmlId;
+        if (selectedKey && lines[selectedKey]) lines[selectedKey].setStyle({ weight: 2.5 });
+        selectedKey = key;
+        lines[key].setStyle({ weight: 6 }).bringToFront();
+
+        const panel = document.getElementById('grafana-panel');
+        if (!panel) return;
+        const win = panel.contentWindow;
+        const url = new URL(win.location.href);
+        url.searchParams.set('var-provider', providerId);
+        url.searchParams.set('var-cml_id', cmlId);
+        win.history.pushState(null, '', url.toString());
+        win.dispatchEvent(new PopStateEvent('popstate', { state: null }));
+    }
+
+    fetch('/api/admin/cml-map')
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(cmls => {
+            const bounds = L.latLngBounds();
+            cmls.forEach(c => {
+                const a = [c.site_0.lat, c.site_0.lon];
+                const b = [c.site_1.lat, c.site_1.lon];
+                if (!layers[c.user_id]) layers[c.user_id] = L.featureGroup().addTo(map);
+                counts[c.user_id] = (counts[c.user_id] || 0) + 1;
+                const line = L.polyline([a, b], { color: NO_DATA, weight: 2.5, opacity: 0.85 })
+                    .bindTooltip(tooltipText(c), { sticky: true })
+                    .on('click', () => selectCml(c.user_id, c.cml_id))
+                    .addTo(layers[c.user_id]);
+                line._provider = c.user_id;
+                line._cml = c;
+                lines[c.user_id + '|' + c.cml_id] = line;
+                bounds.extend(a);
+                bounds.extend(b);
+            });
+            if (bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30] });
+            document.getElementById('map-status').textContent = cmls.length + ' CMLs';
+            renderLegend();
+            loadStats();
+            setInterval(loadStats, STATS_REFRESH_MS);
+        })
+        .catch(err => {
+            document.getElementById('map-status').textContent = 'Failed to load CMLs (' + err.message + ')';
+            renderLegend();
+        });
+
+    document.getElementById('color-option').addEventListener('change', e => {
+        colorOption = e.target.value;
+        applyColors();
+        renderLegend();
+    });
+
+    // Adjustable dashboard height
+    (function initializeResizer() {
+        const resizer = document.getElementById('resizer');
+        const chartContainer = document.querySelector('.chart-container');
+        if (!resizer || !chartContainer) return;
+        let isResizing = false;
+        let startY, startHeight;
+
+        resizer.addEventListener('mousedown', e => {
+            isResizing = true;
+            startY = e.clientY;
+            startHeight = chartContainer.offsetHeight;
+            resizer.classList.add('active');
+            document.body.style.cursor = 'ns-resize';
+            document.body.style.userSelect = 'none';
+            // Keep the iframe from swallowing mouse events while dragging
+            document.getElementById('grafana-panel').style.pointerEvents = 'none';
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', e => {
+            if (!isResizing) return;
+            e.preventDefault();
+            const height = Math.max(200, Math.min(window.innerHeight * 0.8, startHeight + startY - e.clientY));
+            chartContainer.style.height = height + 'px';
+            resizer.style.bottom = height + 'px';
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (!isResizing) return;
+            isResizing = false;
+            resizer.classList.remove('active');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            document.getElementById('grafana-panel').style.pointerEvents = 'auto';
+            map.invalidateSize();
+        });
+    })();
+</script>
+{% endblock %}

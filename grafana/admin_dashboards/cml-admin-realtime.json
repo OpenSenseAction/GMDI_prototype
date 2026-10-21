@@ -1,0 +1,805 @@
+{
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "liveNow": false,
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": [
+    "cml",
+    "timeseries",
+    "realtime",
+    "admin"
+  ],
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "CML Real-Time Data (All Providers)",
+  "uid": "cml-admin-realtime",
+  "version": 1,
+  "weekStart": "",
+  "id": null,
+  "panels": [
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "RSL (dBm)",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "dBm"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sublink_1 min"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.pointSize",
+                "value": 0
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "tooltip": true,
+                  "viz": false,
+                  "legend": true
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sublink_2 min"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-orange",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.pointSize",
+                "value": 0
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "tooltip": true,
+                  "viz": false,
+                  "legend": true
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sublink_1 max"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 20
+              },
+              {
+                "id": "custom.fillBelowTo",
+                "value": "sublink_1 min"
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "tooltip": true,
+                  "viz": false,
+                  "legend": true
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sublink_2 max"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-orange",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 20
+              },
+              {
+                "id": "custom.fillBelowTo",
+                "value": "sublink_2 min"
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "tooltip": true,
+                  "viz": false,
+                  "legend": true
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sublink_1 avg"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sublink_2 avg"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-orange",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sublink_1"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sublink_2"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 2
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' min' AS metric,\n  rsl_min AS value\nFROM cml_data_1h\nWHERE user_id = '${provider}'\n  AND cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' max' AS metric,\n  rsl_max AS value\nFROM cml_data_1h\nWHERE user_id = '${provider}'\n  AND cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' avg' AS metric,\n  rsl_avg AS value\nFROM cml_data_1h\nWHERE user_id = '${provider}'\n  AND cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "WITH bucketed AS (\n  SELECT\n    time_bucket('$__interval', time) AS bucket,\n    sublink_id,\n    MIN(rsl) AS rsl_min,\n    MAX(rsl) AS rsl_max,\n    AVG(rsl) AS rsl_avg\n  FROM cml_data\n  WHERE cml_id = '${cml_id}'\n    AND user_id = '${provider}'\n    AND '${interval}' = 'auto'\n    AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) <= 259200\n    AND time >= $__timeFrom()::timestamptz\n    AND time <= $__timeTo()::timestamptz\n  GROUP BY 1, 2\n)\nSELECT bucket AS \"time\", sublink_id || ' min' AS metric, rsl_min AS value FROM bucketed\nUNION ALL\nSELECT bucket AS \"time\", sublink_id || ' max' AS metric, rsl_max AS value FROM bucketed\nUNION ALL\nSELECT bucket AS \"time\", sublink_id || ' avg' AS metric, rsl_avg AS value FROM bucketed\nORDER BY 1 ASC",
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  time AS \"time\",\n  sublink_id AS metric,\n  rsl AS value\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND user_id = '${provider}'\n  AND '${interval}' = 'raw'\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+          "refId": "E"
+        }
+      ],
+      "title": "CML Time Series - Received Signal Level",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "TSL (dB)",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "dB"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sublink_1 min"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.pointSize",
+                "value": 0
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "tooltip": true,
+                  "viz": false,
+                  "legend": true
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sublink_2 min"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-orange",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.pointSize",
+                "value": 0
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "tooltip": true,
+                  "viz": false,
+                  "legend": true
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sublink_1 max"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 20
+              },
+              {
+                "id": "custom.fillBelowTo",
+                "value": "sublink_1 min"
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "tooltip": true,
+                  "viz": false,
+                  "legend": true
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sublink_2 max"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-orange",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 20
+              },
+              {
+                "id": "custom.fillBelowTo",
+                "value": "sublink_2 min"
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "tooltip": true,
+                  "viz": false,
+                  "legend": true
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sublink_1 avg"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sublink_2 avg"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-orange",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sublink_1"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sublink_2"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' min' AS metric,\n  tsl_min AS value\nFROM cml_data_1h\nWHERE user_id = '${provider}'\n  AND cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' max' AS metric,\n  tsl_max AS value\nFROM cml_data_1h\nWHERE user_id = '${provider}'\n  AND cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  bucket AS \"time\",\n  sublink_id || ' avg' AS metric,\n  tsl_avg AS value\nFROM cml_data_1h\nWHERE user_id = '${provider}'\n  AND cml_id = '${cml_id}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) > 259200\n  AND bucket >= $__timeFrom()::timestamptz\n  AND bucket <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  time_bucket('$__interval', time) AS \"time\",\n  sublink_id AS metric,\n  AVG(tsl) AS value\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND user_id = '${provider}'\n  AND '${interval}' = 'auto'\n  AND EXTRACT(EPOCH FROM ($__timeTo()::timestamptz - $__timeFrom()::timestamptz)) <= 259200\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nGROUP BY 1, 2\nORDER BY 1 ASC",
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${datasource}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  time AS \"time\",\n  sublink_id AS metric,\n  tsl AS value\nFROM cml_data\nWHERE cml_id = '${cml_id}'\n  AND user_id = '${provider}'\n  AND '${interval}' = 'raw'\n  AND time >= $__timeFrom()::timestamptz\n  AND time <= $__timeTo()::timestamptz\nORDER BY 1 ASC",
+          "refId": "E"
+        }
+      ],
+      "title": "CML Time Series - Transmitted Signal Level",
+      "type": "timeseries"
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 2,
+        "includeAll": false,
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "grafana-postgresql-datasource",
+        "refresh": 1,
+        "type": "datasource",
+        "label": "Datasource"
+      },
+      {
+        "name": "provider",
+        "label": "Provider",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT DISTINCT user_id FROM cml_metadata ORDER BY 1",
+        "query": "SELECT DISTINCT user_id FROM cml_metadata ORDER BY 1",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "hide": 0,
+        "sort": 0,
+        "current": {},
+        "options": [],
+        "regex": ""
+      },
+      {
+        "name": "cml_id",
+        "label": "CML ID",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT DISTINCT cml_id::text FROM cml_metadata WHERE user_id = '${provider}' ORDER BY 1",
+        "query": "SELECT DISTINCT cml_id::text FROM cml_metadata WHERE user_id = '${provider}' ORDER BY 1",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "hide": 0,
+        "sort": 0,
+        "current": {},
+        "options": [],
+        "regex": ""
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "Auto",
+          "value": "auto"
+        },
+        "description": "Time aggregation interval for downsampling data",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Interval",
+        "multi": false,
+        "name": "interval",
+        "options": [
+          {
+            "selected": true,
+            "text": "Auto",
+            "value": "auto"
+          },
+          {
+            "selected": false,
+            "text": "Raw",
+            "value": "raw"
+          }
+        ],
+        "query": "Auto : auto,Raw : raw",
+        "queryValue": "",
+        "skipUrlSync": true,
+        "type": "custom"
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  }
+}

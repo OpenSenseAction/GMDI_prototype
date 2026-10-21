@@ -59,6 +59,19 @@
 # All sources of one user share the same user_id, so Grafana sees their
 # data unified.  Each source gets its own named Docker volume and parser
 # service (parser_<user_id>_<source_id>).
+#
+# Optional top-level `admins:` list — web-login accounts that can see all
+# providers (map + archive overview at /admin/realtime and /admin/archive).
+# Admins have no DB role, SFTP account or parser.  They share one extra Grafana
+# org ("admin") whose datasource connects as webserver_role, so the real-time
+# page can plot every provider.  Set a password with
+# scripts/set_password.py <admin_id>.
+#   id            — login name (must not equal any user id).
+#   display_name  — label shown in the webserver UI.
+#
+#admins:
+#  - id: admin
+#    display_name: Administrator
 
 users:
   - id: demo_openmrg

@@ -55,7 +55,6 @@ def test_custom_ssh_keys_dir_written_verbatim():
     assert "../ssh_keys/alice/authorized_keys" in output
 
 
-
 def test_absolute_ssh_keys_dir_written_verbatim(tmp_path):
     """An absolute path is also written verbatim."""
     abs_path = str(tmp_path / "keys")
@@ -106,8 +105,14 @@ def test_main_ssh_keys_dir_override_uses_external_dir(tmp_path, monkeypatch):
     """
     # Build a minimal repo layout inside tmp_path
     repo_root = tmp_path / "repo"
-    for subdir in ("sftp_receiver", "webserver/configs", "database/migrations",
-                   "grafana/provisioning/datasources", "grafana", "ssh_keys"):
+    for subdir in (
+        "sftp_receiver",
+        "webserver/configs",
+        "database/migrations",
+        "grafana/provisioning/datasources",
+        "grafana",
+        "ssh_keys",
+    ):
         (repo_root / subdir).mkdir(parents=True, exist_ok=True)
 
     # Minimal users.yml (deployment-level, one real user)
@@ -115,19 +120,22 @@ def test_main_ssh_keys_dir_override_uses_external_dir(tmp_path, monkeypatch):
 
     # Stub out files that main() reads/updates
     (repo_root / "webserver" / "configs" / "users.json").write_text("{}")
-    (repo_root / "grafana" / "init_grafana.py").write_text(
-        "ORGS = []\nUSERS = []\n"
-    )
+    (repo_root / "grafana" / "init_grafana.py").write_text("ORGS = []\nUSERS = []\n")
 
     # External ssh_keys dir lives next to the repo (simulating deployment layout)
     ext_keys_dir = tmp_path / "ssh_keys"
     ext_keys_dir.mkdir()
 
-    main([
-        "--users-file", str(tmp_path / "users.yml"),
-        "--repo-root", str(repo_root),
-        "--ssh-keys-dir", str(ext_keys_dir),
-    ])
+    main(
+        [
+            "--users-file",
+            str(tmp_path / "users.yml"),
+            "--repo-root",
+            str(repo_root),
+            "--ssh-keys-dir",
+            str(ext_keys_dir),
+        ]
+    )
 
     # 1. Compose override uses the external path
     override = (repo_root / "docker-compose.override.yml").read_text()
@@ -143,18 +151,130 @@ def test_main_ssh_keys_dir_override_uses_external_dir(tmp_path, monkeypatch):
 def test_main_default_ssh_keys_dir_stays_inside_repo(tmp_path):
     """Without --ssh-keys-dir, keys go into <repo-root>/ssh_keys as before."""
     repo_root = tmp_path / "repo"
-    for subdir in ("sftp_receiver", "webserver/configs", "database/migrations",
-                   "grafana/provisioning/datasources", "grafana", "ssh_keys"):
+    for subdir in (
+        "sftp_receiver",
+        "webserver/configs",
+        "database/migrations",
+        "grafana/provisioning/datasources",
+        "grafana",
+        "ssh_keys",
+    ):
         (repo_root / subdir).mkdir(parents=True, exist_ok=True)
 
     _make_users_yml(repo_root)
     (repo_root / "webserver" / "configs" / "users.json").write_text("{}")
-    (repo_root / "grafana" / "init_grafana.py").write_text(
-        "ORGS = []\nUSERS = []\n"
-    )
+    (repo_root / "grafana" / "init_grafana.py").write_text("ORGS = []\nUSERS = []\n")
 
     main(["--repo-root", str(repo_root)])
 
     override = (repo_root / "docker-compose.override.yml").read_text()
     assert "./ssh_keys/alice/authorized_keys" in override
     assert (repo_root / "ssh_keys" / "alice" / "id_ed25519").exists()
+
+
+# ---------------------------------------------------------------------------
+# admins: — web-login-only accounts
+# ---------------------------------------------------------------------------
+
+
+def test_admins_written_to_users_json_only(tmp_path):
+    from generate_config import generate_users_json, load_admins
+
+    users_file = tmp_path / "users.yml"
+    users_file.write_text(
+        yaml.dump({"users": USERS, "admins": [{"id": "boss", "display_name": "Boss"}]})
+    )
+    admins = load_admins(users_file, USERS)
+    existing = {"boss": {"password_hash": "keepme"}}
+
+    result = generate_users_json(USERS, existing, admins)
+
+    assert result["boss"] == {
+        "password_hash": "keepme",
+        "display_name": "Boss",
+        "is_admin": True,
+    }
+    assert "is_admin" not in result["alice"]
+
+
+@pytest.mark.parametrize(
+    "admins",
+    [[{"id": "alice"}], [{"id": "x"}, {"id": "x"}], [{"display_name": "no id"}]],
+)
+def test_load_admins_rejects_invalid_entries(tmp_path, admins):
+    from generate_config import load_admins
+
+    users_file = tmp_path / "users.yml"
+    users_file.write_text(yaml.dump({"users": USERS, "admins": admins}))
+    with pytest.raises(ValueError):
+        load_admins(users_file, USERS)
+
+
+def test_load_admins_absent_is_empty(tmp_path):
+    from generate_config import load_admins
+
+    users_file = _make_users_yml(tmp_path)
+    assert load_admins(users_file, USERS) == []
+
+
+# ---------------------------------------------------------------------------
+# admins: — shared Grafana org
+# ---------------------------------------------------------------------------
+
+
+def test_admin_grafana_org_follows_tenant_orgs():
+    from generate_config import admin_grafana_org_id
+
+    users = [
+        {**USERS[0], "grafana_org_id": 1},
+        {**USERS[0], "id": "b", "grafana_org_id": 4},
+    ]
+    assert admin_grafana_org_id(users) == 5
+
+
+def test_admin_grafana_org_is_stable_once_assigned():
+    from generate_config import admin_grafana_org_id
+
+    users = [{**USERS[0], "grafana_org_id": 1}, {**USERS[0], "id": "b", "grafana_org_id": 4}]
+    existing = {"boss": {"is_admin": True, "grafana_org_id": 3}}
+    assert admin_grafana_org_id(users, existing) == 3
+
+
+def test_tenant_cannot_take_the_admin_grafana_org():
+    from generate_config import admin_grafana_org_id
+
+    users = [{**USERS[0], "grafana_org_id": 1}, {**USERS[0], "id": "b", "grafana_org_id": 3}]
+    existing = {"boss": {"is_admin": True, "grafana_org_id": 3}}
+    with pytest.raises(ValueError, match="admin org"):
+        admin_grafana_org_id(users, existing)
+
+
+def test_admin_gets_shared_grafana_org_in_users_json():
+    from generate_config import generate_users_json
+
+    result = generate_users_json(USERS, {}, [{"id": "boss"}], admin_org_id=2)
+    assert result["boss"]["grafana_org_id"] == 2
+    assert result["alice"]["grafana_org_id"] == 1
+
+
+def test_update_init_grafana_adds_admin_org_and_users(tmp_path):
+    from generate_config import update_init_grafana
+
+    path = tmp_path / "init_grafana.py"
+    path.write_text("ORGS = []\nUSERS = []\nADMIN_ORG = None\nOTHER = 1\n")
+    update_init_grafana(USERS, path, [{"id": "boss"}])
+
+    ns: dict = {}
+    exec(path.read_text(), ns)
+    assert ns["ADMIN_ORG"] == {"id": 2, "name": "admin"}
+    assert {"login": "boss", "org_id": 2, "role": "Viewer"} in ns["USERS"]
+    assert ns["OTHER"] == 1
+
+
+def test_update_init_grafana_without_admins_clears_admin_org(tmp_path):
+    from generate_config import update_init_grafana
+
+    path = tmp_path / "init_grafana.py"
+    path.write_text('ORGS = []\nUSERS = []\nADMIN_ORG = {"id": 9, "name": "admin"}\n')
+    update_init_grafana(USERS, path)
+    assert "ADMIN_ORG = None" in path.read_text()

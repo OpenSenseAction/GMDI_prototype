@@ -9,6 +9,7 @@ import requests
 from markupsafe import escape
 from flask import (
     Flask,
+    abort,
     render_template,
     request,
     jsonify,
@@ -34,6 +35,7 @@ from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from contextlib import contextmanager
+from functools import wraps
 import uuid
 
 app = Flask(__name__)
@@ -74,7 +76,10 @@ class User(UserMixin):
     def __init__(self, user_id: str):
         self.id = user_id
         self.display_name = USERS[user_id].get("display_name", user_id)
-        self.grafana_org_id = USERS[user_id].get("grafana_org_id", 1)
+        self.is_admin = bool(USERS[user_id].get("is_admin", False))
+        # Admins only have a Grafana org once generate_config.py assigned one.
+        default_org = None if self.is_admin else 1
+        self.grafana_org_id = USERS[user_id].get("grafana_org_id", default_org)
 
 
 @login_manager.user_loader
@@ -141,6 +146,8 @@ def user_db_scope(user_id: str):
     """
     if user_id not in USERS:
         raise ValueError(f"Unknown user_id: {user_id!r}")
+    if USERS[user_id].get("is_admin"):
+        raise ValueError(f"Admin account {user_id!r} has no tenant data role")
 
     conn = psycopg2.connect(os.getenv("DATABASE_URL"))
     try:
@@ -198,6 +205,8 @@ def logout():
 @login_required
 def overview():
     """Landing page with overview and processing status"""
+    if getattr(current_user, "is_admin", False) is True:
+        return redirect(url_for("admin_realtime"))
     stats = {
         "total_cmls": 0,
         "total_records": 0,
@@ -794,6 +803,214 @@ def archive():
     return render_template(
         "archive.html", stats=stats, grafana_org_id=current_user.grafana_org_id
     )
+
+
+# ==================== ADMIN (ALL PROVIDERS) ROUTES ====================
+# Admin accounts (is_admin in users.json) have no tenant DB role.  These views
+# read across all tenants as webserver_role, which bypasses per-user isolation,
+# so every route here must be decorated with @admin_required.
+
+
+def admin_required(view):
+    """Restrict a view to accounts flagged is_admin in users.json."""
+
+    @wraps(view)
+    @login_required
+    def wrapper(*args, **kwargs):
+        if getattr(current_user, "is_admin", False) is not True:
+            abort(403)
+        return view(*args, **kwargs)
+
+    return wrapper
+
+
+@contextmanager
+def admin_db_scope():
+    """Read-only cross-tenant connection as webserver_role."""
+    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+    try:
+        conn.set_session(readonly=True)
+        yield conn
+    finally:
+        conn.close()
+
+
+def _provider_list():
+    return [
+        {"id": uid, "display_name": cfg.get("display_name", uid)}
+        for uid, cfg in USERS.items()
+        if not cfg.get("is_admin")
+    ]
+
+
+def get_admin_archive_summary():
+    """Per-provider CML count, record count and archived date range."""
+    with admin_db_scope() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT user_id, COUNT(DISTINCT cml_id) FROM cml_metadata GROUP BY user_id"
+        )
+        cml_counts = dict(cur.fetchall())
+        cur.execute(
+            "SELECT user_id, COALESCE(SUM(total_records), 0) FROM cml_stats GROUP BY user_id"
+        )
+        records = dict(cur.fetchall())
+        cur.execute(
+            "SELECT user_id, MIN(bucket), MAX(bucket) FROM cml_data_1h GROUP BY user_id"
+        )
+        ranges = {row[0]: (row[1], row[2]) for row in cur.fetchall()}
+        cur.close()
+
+    summary = {}
+    for uid, (start, end) in ranges.items():
+        summary[uid] = {"start": start, "end": end}
+    for uid in set(cml_counts) | set(records) | set(ranges):
+        entry = summary.setdefault(uid, {"start": None, "end": None})
+        entry["cml_count"] = cml_counts.get(uid, 0)
+        entry["total_records"] = int(records.get(uid, 0))
+    return summary
+
+
+@app.route("/admin/realtime")
+@admin_required
+def admin_realtime():
+    """Map of all CMLs from all providers plus the all-providers Grafana panel."""
+    resp = make_response(
+        render_template(
+            "admin_realtime.html",
+            providers=_provider_list(),
+            grafana_org_id=current_user.grafana_org_id,
+        )
+    )
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return resp
+
+
+@app.route("/admin/archive")
+@admin_required
+def admin_archive():
+    """Per-provider archive overview with time series."""
+    try:
+        summary = get_admin_archive_summary()
+    except Exception as e:
+        print(f"Error fetching admin archive summary: {e}")
+        flash("Could not load archive statistics.")
+        summary = {}
+    empty = {"start": None, "end": None, "cml_count": 0, "total_records": 0}
+    providers = [{**p, **summary.get(p["id"], empty)} for p in _provider_list()]
+    return render_template(
+        "admin_archive.html", providers=providers, day_options=_ADMIN_TS_DAYS
+    )
+
+
+@app.route("/api/admin/cml-map")
+@admin_required
+def api_admin_cml_map():
+    """CML endpoints of all providers, tagged with user_id."""
+    try:
+        with admin_db_scope() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """SELECT DISTINCT ON (user_id, cml_id)
+                          user_id, cml_id::text, site_0_lon, site_0_lat, site_1_lon, site_1_lat
+                   FROM cml_metadata
+                   WHERE site_0_lon IS NOT NULL AND site_0_lat IS NOT NULL
+                     AND site_1_lon IS NOT NULL AND site_1_lat IS NOT NULL
+                   ORDER BY user_id, cml_id"""
+            )
+            rows = cur.fetchall()
+            cur.close()
+    except Exception as e:
+        print(f"Error fetching admin CML map data: {e}")
+        return jsonify({"error": "Database error"}), 500
+
+    return jsonify(
+        [
+            {
+                "user_id": row[0],
+                "cml_id": str(row[1]),
+                "site_0": {"lon": float(row[2]), "lat": float(row[3])},
+                "site_1": {"lon": float(row[4]), "lat": float(row[5])},
+            }
+            for row in rows
+        ]
+    )
+
+
+@app.route("/api/admin/cml-stats")
+@admin_required
+def api_admin_cml_stats():
+    """Live per-CML stats of all providers (same fields as /api/cml-stats), tagged with user_id."""
+    try:
+        with admin_db_scope() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """SELECT user_id, cml_id::text, completeness_percent_6h,
+                          total_records_6h, valid_records_6h, stddev_rsl_1h, last_rsl
+                   FROM cml_stats
+                   ORDER BY user_id, cml_id"""
+            )
+            rows = cur.fetchall()
+            cur.close()
+    except Exception as e:
+        print(f"Error fetching admin CML stats: {e}")
+        return jsonify({"error": "Database error"}), 500
+
+    return jsonify(
+        [
+            {
+                "user_id": row[0],
+                "cml_id": str(row[1]),
+                "completeness_percent": safe_float(row[2]),
+                "total_records": int(row[3] or 0),
+                "valid_records": int(row[4] or 0),
+                "stddev_last_60min": safe_float(row[5]),
+                "last_rsl": safe_float(row[6]),
+            }
+            for row in rows
+        ]
+    )
+
+
+_ADMIN_TS_DAYS = (7, 30, 90, 365)
+
+
+@app.route("/api/admin/archive-timeseries")
+@admin_required
+def api_admin_archive_timeseries():
+    """Daily record count and mean RSL per provider from the 1 h aggregate."""
+    try:
+        days = int(request.args.get("days", 30))
+    except ValueError:
+        days = 30
+    if days not in _ADMIN_TS_DAYS:
+        days = 30
+
+    try:
+        with admin_db_scope() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """SELECT user_id, time_bucket('1 day', bucket) AS day,
+                          SUM(record_count), AVG(rsl_avg)
+                   FROM cml_data_1h
+                   WHERE bucket >= NOW() - make_interval(days => %s)
+                   GROUP BY user_id, day
+                   ORDER BY user_id, day""",
+                (days,),
+            )
+            rows = cur.fetchall()
+            cur.close()
+    except Exception as e:
+        print(f"Error fetching admin archive time series: {e}")
+        return jsonify({"error": "Database error"}), 500
+
+    series: dict = {}
+    for user_id, day, records, mean_rsl in rows:
+        s = series.setdefault(user_id, {"days": [], "records": [], "mean_rsl": []})
+        s["days"].append(day.strftime("%Y-%m-%d"))
+        s["records"].append(int(records or 0))
+        s["mean_rsl"].append(safe_float(mean_rsl))
+    return jsonify(series)
 
 
 # ==================== DATA UPLOADS ROUTES ====================
