@@ -51,6 +51,12 @@
         height: 100%;
     }
 
+    /* Place the scale bar beside the zoom buttons instead of below them */
+    .leaflet-top.leaflet-left .leaflet-control-scale {
+        clear: none;
+        margin-left: 8px;
+    }
+
     .chart-container {
         position: absolute;
         bottom: 0;
@@ -104,7 +110,7 @@
     <div class="resizer" id="resizer"></div>
     <div class="chart-container">
         <iframe class="grafana-container" id="grafana-panel"
-            src="/grafana/d/cml-realtime/cml-real-time-data?orgId={{ grafana_org_id }}&var-cml_id=10001&refresh=10s&theme=light&viewPanel=2&kiosk"
+            src="/grafana/d/cml-realtime/cml-real-time-data?orgId={{ grafana_org_id }}&var-cml_id=10001&refresh=1m&theme=light&viewPanel=2&kiosk"
             allowfullscreen></iframe>
     </div>
 </div>
@@ -116,7 +122,11 @@
     let map;
     let cmlLayers = {};
     let cmlStats = {};
+    let cmlMeta = {};
     let selectedCmlId = '10001';
+    let highlightedCmlId = null;
+    const DEFAULT_STYLE = { weight: 2, opacity: 0.7 };
+    const SELECTED_STYLE = { weight: 5, opacity: 1 };
     let currentColoringOption = 'std_dev';
 
     // Time slider state
@@ -181,8 +191,26 @@
         };
     }
 
+    function escapeHtml(s) {
+        var d = document.createElement('div');
+        d.textContent = String(s);
+        return d.innerHTML;
+    }
+
     function buildPopupText(cmlId, stats) {
-        var popupText = '<strong>CML ' + cmlId + '</strong><br>';
+        var popupText = '<strong>CML ' + escapeHtml(cmlId) + '</strong><br>';
+        var meta = cmlMeta[cmlId];
+        if (meta) {
+            if (meta.length !== null) {
+                popupText += 'Length: ' + (meta.length / 1000).toFixed(2) + ' km<br>';
+            }
+            meta.sublinks.forEach(function (s) {
+                var parts = [];
+                if (s.frequency !== null) parts.push((s.frequency / 1000).toFixed(1) + ' GHz');
+                if (s.polarization) parts.push(escapeHtml(s.polarization.toUpperCase()));
+                if (parts.length) popupText += 'Sublink: ' + parts.join(' ') + '<br>';
+            });
+        }
         if (stats) {
             popupText += 'Completeness (6h): ' + stats.completeness_percent + '%<br>';
             popupText += 'Valid records (6h): ' + stats.valid_records + '/' + stats.total_records + '<br>';
@@ -215,7 +243,10 @@
     function initializeMap() {
         console.log('Initializing map...');
         try {
-            map = L.map('cml-map').setView([57.705, 11.97], 11);
+            // Canvas renderer with tolerance makes thin CML lines easier to hit
+            map = L.map('cml-map', { renderer: L.canvas({ tolerance: 8 }) }).setView([57.705, 11.97], 11);
+            // Top-left: the default bottom-left spot is hidden behind the chart panel
+            L.control.scale({ position: 'topleft', metric: true, imperial: false }).addTo(map);
             // Use Carto Positron - clean, minimal light basemap
             L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
                 attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
@@ -492,6 +523,7 @@
         var cmlId = cml.cml_id;
         var stats = cmlStats[cmlId];
         var color = getColor(stats, currentColoringOption);
+        cmlMeta[cmlId] = { length: cml.length, sublinks: cml.sublinks || [] };
 
         var latlngs = [
             [cml.site_0.lat, cml.site_0.lon],
@@ -517,15 +549,31 @@
             selectCml(cmlId);
         });
 
-        // Add hover effects
+        // Add hover effects (the selected line keeps its highlight)
         polyline.on('mouseover', function () {
-            this.setStyle({ weight: 4, opacity: 1 });
+            this.setStyle({ weight: this._selected ? 6 : 4, opacity: 1 });
         });
         polyline.on('mouseout', function () {
-            this.setStyle({ weight: 2, opacity: 0.7 });
+            this.setStyle(this._selected ? SELECTED_STYLE : DEFAULT_STYLE);
         });
 
         cmlLayers[cmlId] = polyline;
+        if (cmlId === selectedCmlId) highlightCml(cmlId);
+    }
+
+    // Thicker, opaque line for the selected CML
+    function highlightCml(cmlId) {
+        var prev = cmlLayers[highlightedCmlId];
+        if (prev) {
+            prev._selected = false;
+            prev.setStyle(DEFAULT_STYLE);
+        }
+        var line = cmlLayers[cmlId];
+        if (!line) return;
+        line._selected = true;
+        line.setStyle(SELECTED_STYLE);
+        line.bringToFront();
+        highlightedCmlId = cmlId;
     }
 
     // Update all map line colors based on current coloring option
@@ -729,6 +777,7 @@
     // Select CML and update Grafana dashboard
     function selectCml(cmlId) {
         selectedCmlId = cmlId;
+        highlightCml(cmlId);
 
         var grafanaPanel = document.getElementById('grafana-panel');
         var iframeWindow = grafanaPanel.contentWindow;
@@ -739,11 +788,50 @@
         iframeWindow.dispatchEvent(new PopStateEvent('popstate', { state: null }));
     }
 
+    // Open the popup of a CML, first bringing it into the part of the map not covered by the chart
+    function showCmlPopup(cmlId) {
+        var line = cmlLayers[cmlId];
+        if (!line) return;
+
+        highlightCml(cmlId);
+        var pad = getMapViewportPadding();
+        var size = map.getSize();
+        var p = map.latLngToContainerPoint(line.getCenter());
+        var visible = p.x > 0 && p.x < size.x && p.y > 120 && p.y < size.y - pad.bottomRight[1];
+        if (!visible) {
+            map.fitBounds(line.getBounds(), {
+                paddingTopLeft: [60, 120],
+                paddingBottomRight: pad.bottomRight,
+                maxZoom: map.getZoom(),
+                animate: false
+            });
+        }
+        line.openPopup();
+    }
+
+    // The CML dropdown lives inside the Grafana iframe; poll its URL to react to changes
+    function watchGrafanaSelection() {
+        setInterval(function () {
+            var id;
+            try {
+                var panel = document.getElementById('grafana-panel');
+                id = new URL(panel.contentWindow.location.href).searchParams.get('var-cml_id');
+            } catch (e) {
+                return;
+            }
+            if (id && id !== selectedCmlId) {
+                selectedCmlId = id;
+                showCmlPopup(id);
+            }
+        }, 500);
+    }
+
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', function () {
         initializeMap();
         initializeResizer();
         cleanupColoringAnnotations();
+        watchGrafanaSelection();
     });
 
     // Initialize resizer for adjustable dashboard height

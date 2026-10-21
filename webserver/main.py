@@ -537,7 +537,17 @@ def api_cml_map():
         with user_db_scope(current_user.id) as conn:
             cur = conn.cursor()
             cur.execute(
-                "SELECT DISTINCT ON (cml_id) cml_id::text, site_0_lon, site_0_lat, site_1_lon, site_1_lat FROM cml_metadata ORDER BY cml_id"
+                """
+                SELECT cml_id::text,
+                       MIN(site_0_lon), MIN(site_0_lat), MIN(site_1_lon), MIN(site_1_lat),
+                       MIN(length),
+                       json_agg(json_build_object('frequency', frequency,
+                                                  'polarization', polarization)
+                                ORDER BY sublink_id)
+                FROM cml_metadata
+                GROUP BY cml_id
+                ORDER BY cml_id
+                """
             )
             data = cur.fetchall()
             cur.close()
@@ -547,6 +557,9 @@ def api_cml_map():
                 "cml_id": str(row[0]),
                 "site_0": {"lon": float(row[1]), "lat": float(row[2])},
                 "site_1": {"lon": float(row[3]), "lat": float(row[4])},
+                # length in metres, sublink frequency in MHz
+                "length": safe_float(row[5]),
+                "sublinks": row[6] or [],
             }
             for row in data
         ]
@@ -911,11 +924,16 @@ def api_admin_cml_map():
         with admin_db_scope() as conn:
             cur = conn.cursor()
             cur.execute(
-                """SELECT DISTINCT ON (user_id, cml_id)
-                          user_id, cml_id::text, site_0_lon, site_0_lat, site_1_lon, site_1_lat
+                """SELECT user_id, cml_id::text,
+                          MIN(site_0_lon), MIN(site_0_lat), MIN(site_1_lon), MIN(site_1_lat),
+                          MIN(length),
+                          json_agg(json_build_object('frequency', frequency,
+                                                     'polarization', polarization)
+                                   ORDER BY sublink_id)
                    FROM cml_metadata
                    WHERE site_0_lon IS NOT NULL AND site_0_lat IS NOT NULL
                      AND site_1_lon IS NOT NULL AND site_1_lat IS NOT NULL
+                   GROUP BY user_id, cml_id
                    ORDER BY user_id, cml_id"""
             )
             rows = cur.fetchall()
@@ -931,6 +949,9 @@ def api_admin_cml_map():
                 "cml_id": str(row[1]),
                 "site_0": {"lon": float(row[2]), "lat": float(row[3])},
                 "site_1": {"lon": float(row[4]), "lat": float(row[5])},
+                # length in metres, sublink frequency in MHz
+                "length": safe_float(row[6]),
+                "sublinks": row[7] or [],
             }
             for row in rows
         ]

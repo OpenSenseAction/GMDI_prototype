@@ -56,13 +56,16 @@ def test_api_cml_metadata_empty(auth_client):
 
 def test_api_cml_map_returns_list(auth_client):
     client, cursor = auth_client
-    cursor.fetchall.return_value = [("CML01", 10.0, 5.0, 10.5, 5.5)]
+    sublinks = [{"frequency": 28000.0, "polarization": "v"}]
+    cursor.fetchall.return_value = [("CML01", 10.0, 5.0, 10.5, 5.5, 691.4, sublinks)]
     resp = client.get("/api/cml-map")
     assert resp.status_code == 200
     data = resp.get_json()
     assert data[0]["cml_id"] == "CML01"
     assert data[0]["site_0"] == {"lon": 10.0, "lat": 5.0}
     assert data[0]["site_1"] == {"lon": 10.5, "lat": 5.5}
+    assert data[0]["length"] == 691.4
+    assert data[0]["sublinks"] == sublinks
 
 
 def test_api_data_time_range_with_data(auth_client):
