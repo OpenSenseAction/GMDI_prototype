@@ -158,3 +158,48 @@ def test_main_default_ssh_keys_dir_stays_inside_repo(tmp_path):
     override = (repo_root / "docker-compose.override.yml").read_text()
     assert "./ssh_keys/alice/authorized_keys" in override
     assert (repo_root / "ssh_keys" / "alice" / "id_ed25519").exists()
+
+
+# ---------------------------------------------------------------------------
+# admins: — web-login-only accounts
+# ---------------------------------------------------------------------------
+
+
+def test_admins_written_to_users_json_only(tmp_path):
+    from generate_config import generate_users_json, load_admins
+
+    users_file = tmp_path / "users.yml"
+    users_file.write_text(
+        yaml.dump({"users": USERS, "admins": [{"id": "boss", "display_name": "Boss"}]})
+    )
+    admins = load_admins(users_file, USERS)
+    existing = {"boss": {"password_hash": "keepme"}}
+
+    result = generate_users_json(USERS, existing, admins)
+
+    assert result["boss"] == {
+        "password_hash": "keepme",
+        "display_name": "Boss",
+        "is_admin": True,
+    }
+    assert "is_admin" not in result["alice"]
+
+
+@pytest.mark.parametrize(
+    "admins",
+    [[{"id": "alice"}], [{"id": "x"}, {"id": "x"}], [{"display_name": "no id"}]],
+)
+def test_load_admins_rejects_invalid_entries(tmp_path, admins):
+    from generate_config import load_admins
+
+    users_file = tmp_path / "users.yml"
+    users_file.write_text(yaml.dump({"users": USERS, "admins": admins}))
+    with pytest.raises(ValueError):
+        load_admins(users_file, USERS)
+
+
+def test_load_admins_absent_is_empty(tmp_path):
+    from generate_config import load_admins
+
+    users_file = _make_users_yml(tmp_path)
+    assert load_admins(users_file, USERS) == []

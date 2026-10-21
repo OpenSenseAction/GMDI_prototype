@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block title %}All Providers Archive - GMDI Platform{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap align-items-center gap-3 mb-4">
+    <h2 class="mb-0">Archive by Provider</h2>
+    <div class="ms-auto d-flex align-items-center gap-2">
+        <label for="days" class="small text-muted mb-0">Period</label>
+        <select id="days" class="form-select form-select-sm" style="width: auto;">
+            {% for d in day_options %}
+            <option value="{{ d }}" {% if d == 30 %}selected{% endif %}>Last {{ d }} days</option>
+            {% endfor %}
+        </select>
+    </div>
+</div>
+
+{% with messages = get_flashed_messages() %}
+{% for m in messages %}<div class="alert alert-warning">{{ m }}</div>{% endfor %}
+{% endwith %}
+
+{% for p in providers %}
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <div class="d-flex flex-wrap align-items-center gap-4 mb-3" style="font-size: 0.9rem; color: #555;">
+            <strong class="fs-5 text-dark">{{ p.display_name }}</strong>
+            <code>{{ p.id }}</code>
+            <span><i class="fas fa-broadcast-tower" style="color: #0066cc;"></i> <strong>{{ p.cml_count }}</strong>
+                CMLs</span>
+            <span><i class="fas fa-database" style="color: #0066cc;"></i> <strong>~{{ "{:,}".format(p.total_records)
+                    }}</strong> records</span>
+            {% if p.start and p.end %}
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">
+                {{ p.start.strftime('%Y-%m-%d') }} &rarr; {{ p.end.strftime('%Y-%m-%d') }}
+            </span>
+            {% else %}
+            <span class="text-muted">no data</span>
+            {% endif %}
+        </div>
+        <div style="height: 220px;"><canvas id="chart-{{ p.id }}"></canvas></div>
+    </div>
+</div>
+{% endfor %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+    const PROVIDER_IDS = {{ providers | map(attribute='id') | list | tojson }};
+    const charts = {};
+
+    function render(series) {
+        PROVIDER_IDS.forEach(id => {
+            const s = series[id] || { days: [], records: [], mean_rsl: [] };
+            if (charts[id]) charts[id].destroy();
+            charts[id] = new Chart(document.getElementById('chart-' + id), {
+                data: {
+                    labels: s.days,
+                    datasets: [
+                        { type: 'bar', label: 'Records / day', data: s.records, backgroundColor: '#9ec5f0', yAxisID: 'y' },
+                        { type: 'line', label: 'Mean RSL (dBm)', data: s.mean_rsl, borderColor: '#d62728', pointRadius: 0, spanGaps: false, yAxisID: 'y2' }
+                    ]
+                },
+                options: {
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        y: { position: 'left', beginAtZero: true, title: { display: true, text: 'Records' } },
+                        y2: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'RSL (dBm)' } }
+                    }
+                }
+            });
+        });
+    }
+
+    function load() {
+        const days = document.getElementById('days').value;
+        fetch('/api/admin/archive-timeseries?days=' + encodeURIComponent(days))
+            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(render)
+            .catch(err => console.error('Failed to load time series:', err));
+    }
+
+    document.getElementById('days').addEventListener('change', load);
+    load();
+</script>
+{% endblock %}

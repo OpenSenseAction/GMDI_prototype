@@ -12,7 +12,8 @@ The deployed system never runs this generator; it only reads the outputs.
 Outputs (all paths relative to the repository root):
   docker-compose.override.yml
   sftp_receiver/entrypoint.sh
-  webserver/configs/users.json          (existing password hashes preserved)
+  webserver/configs/users.json          (existing password hashes preserved;
+                                         also receives entries from `admins:`)
   grafana/provisioning/datasources/postgres.yml
   grafana/init_grafana.py               (ORGS/USERS lists replaced)
   database/migrations/NNN_add_<id>.sql  (only emitted for genuinely new users)
@@ -40,6 +41,23 @@ def load_users(users_file: Path) -> list[dict]:
     users = data.get("users", [])
     _validate(users)
     return users
+
+
+def load_admins(users_file: Path, users: list[dict]) -> list[dict]:
+    """Return the ``admins:`` entries of users.yml (web-login-only accounts)."""
+    with open(users_file) as f:
+        data = yaml.safe_load(f) or {}
+    admins = data.get("admins") or []
+    user_ids = {u["id"] for u in users}
+    seen: set[str] = set()
+    for a in admins:
+        aid = a.get("id")
+        if not aid:
+            raise ValueError("Admin entry missing 'id'")
+        if aid in user_ids or aid in seen:
+            raise ValueError(f"Admin id {aid!r} duplicates another user id")
+        seen.add(aid)
+    return admins
 
 
 def _validate(users: list[dict]) -> None:
@@ -244,15 +262,30 @@ def generate_entrypoint_sh(users: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def generate_users_json(users: list[dict], existing_json: dict) -> dict:
+def generate_users_json(
+    users: list[dict], existing_json: dict, admins: list[dict] | None = None
+) -> dict:
     """
     Merge users.yml into the existing users.json.
     - Existing password hashes and grafana_org_id are preserved.
     - New users get a skeleton entry (password must be set via set_password.py).
     - Users present in users.json but absent from users.yml are left intact
       (so manual removals require an explicit edit of users.json).
+    - Admin accounts get ``"is_admin": true`` and no grafana_org_id; they have
+      no DB role, parser or SFTP account.
     """
     result = dict(existing_json)
+    for a in admins or []:
+        aid = a["id"]
+        entry = result.get(aid, {"password_hash": ""})
+        entry["display_name"] = a.get("display_name", aid)
+        entry["is_admin"] = True
+        if aid not in result:
+            print(
+                f"  [users.json] Added skeleton entry for new admin {aid!r}. "
+                "Run scripts/set_password.py to set their password."
+            )
+        result[aid] = entry
     for u in users:
         uid = u["id"]
         if uid in result:
@@ -638,7 +671,8 @@ def main(argv: list[str] | None = None) -> None:
     existing_json: dict = {}
     if users_json_path.exists():
         existing_json = json.loads(users_json_path.read_text())
-    new_json = generate_users_json(users, existing_json)
+    admins = load_admins(users_file, users)
+    new_json = generate_users_json(users, existing_json, admins)
     users_json_path.write_text(json.dumps(new_json, indent=4) + "\n")
     print(f"  [webserver]  Written {users_json_path.relative_to(repo_root)}")
 

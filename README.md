@@ -215,3 +215,26 @@ users:
 A user with multiple independent CML subnetworks gets one parser per source;
 all sources share the same `user_id` so Grafana sees their data unified.
 
+### Admin accounts
+
+An optional top-level `admins:` list in `users.yml` defines web-login accounts
+that see **all providers** at once:
+
+```yaml
+admins:
+  - id: admin
+    display_name: Administrator
+```
+
+After running the generator, set a password with
+`python scripts/set_password.py admin`. Admin accounts get two extra pages
+(they have no tenant data of their own):
+
+- `/admin/realtime` — map of every CML, coloured per provider, with per-provider toggles
+- `/admin/archive` — per-provider summary and daily record-count / mean-RSL plots
+
+Admin views query as `webserver_role` (read-only session), which already has
+read access across tenants; no database migration is needed. Admin routes are
+guarded by `@admin_required` in `webserver/main.py` — use it on any new
+cross-tenant route.
+

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}All Providers Map - GMDI Platform{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+    #admin-map {
+        width: 100%;
+        height: calc(100vh - 190px);
+        min-height: 400px;
+        border-radius: 4px;
+    }
+
+    .legend-swatch {
+        display: inline-block;
+        width: 22px;
+        height: 4px;
+        border-radius: 2px;
+        vertical-align: middle;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap align-items-center gap-3 mb-3">
+    <h2 class="mb-0">All Providers</h2>
+    <div id="legend" class="d-flex flex-wrap gap-3 small"></div>
+    <span id="map-status" class="ms-auto small text-muted">Loading&hellip;</span>
+</div>
+<div id="admin-map"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+    const PROVIDERS = {{ providers | tojson }};
+    const PALETTE = ['#1f77b4', '#d62728', '#2ca02c', '#ff7f0e', '#9467bd', '#8c564b', '#e377c2', '#17becf'];
+    const colorOf = {};
+    PROVIDERS.forEach((p, i) => { colorOf[p.id] = PALETTE[i % PALETTE.length]; });
+
+    const map = L.map('admin-map', { preferCanvas: true }).setView([50, 10], 5);
+    // Esri World Light Gray Canvas - keyless light basemap (tile order is z/y/x)
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri', maxZoom: 16
+    }).addTo(map);
+
+    const layers = {};   // provider id -> L.featureGroup
+    const counts = {};
+
+    function esc(s) {
+        const d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    function renderLegend() {
+        const legend = document.getElementById('legend');
+        legend.innerHTML = '';
+        PROVIDERS.forEach(p => {
+            const label = document.createElement('label');
+            label.className = 'd-flex align-items-center gap-1';
+            label.style.cursor = 'pointer';
+            label.innerHTML =
+                '<input type="checkbox" checked> ' +
+                '<span class="legend-swatch" style="background:' + colorOf[p.id] + '"></span> ' +
+                esc(p.display_name) + ' (' + (counts[p.id] || 0) + ')';
+            label.querySelector('input').addEventListener('change', e => {
+                const g = layers[p.id];
+                if (!g) return;
+                if (e.target.checked) g.addTo(map); else map.removeLayer(g);
+            });
+            legend.appendChild(label);
+        });
+    }
+
+    fetch('/api/admin/cml-map')
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(cmls => {
+            const names = {};
+            PROVIDERS.forEach(p => { names[p.id] = p.display_name; });
+            const bounds = L.latLngBounds();
+            cmls.forEach(c => {
+                const a = [c.site_0.lat, c.site_0.lon];
+                const b = [c.site_1.lat, c.site_1.lon];
+                if (!layers[c.user_id]) layers[c.user_id] = L.featureGroup().addTo(map);
+                counts[c.user_id] = (counts[c.user_id] || 0) + 1;
+                L.polyline([a, b], { color: colorOf[c.user_id] || '#666', weight: 2.5, opacity: 0.85 })
+                    .bindPopup('<strong>' + esc(names[c.user_id] || c.user_id) + '</strong><br>CML ' + esc(c.cml_id))
+                    .addTo(layers[c.user_id]);
+                bounds.extend(a);
+                bounds.extend(b);
+            });
+            if (bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30] });
+            document.getElementById('map-status').textContent = cmls.length + ' CMLs';
+            renderLegend();
+        })
+        .catch(err => {
+            document.getElementById('map-status').textContent = 'Failed to load CMLs (' + err.message + ')';
+            renderLegend();
+        });
+</script>
+{% endblock %}
