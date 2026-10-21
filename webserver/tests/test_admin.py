@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import main as wm  # noqa: E402
 
 _ADMIN_PAGES = ["/admin/realtime", "/admin/archive"]
-_ADMIN_APIS = ["/api/admin/cml-map", "/api/admin/archive-timeseries"]
+_ADMIN_APIS = ["/api/admin/cml-map", "/api/admin/cml-stats", "/api/admin/archive-timeseries"]
 
 
 @pytest.fixture
@@ -125,6 +125,20 @@ def test_admin_cml_map_returns_all_providers(users, cursor):
     data = resp.get_json()
     assert [d["user_id"] for d in data] == ["tenant_a", "tenant_b"]
     assert data[0]["site_0"] == {"lon": 10.0, "lat": 50.0}
+
+
+def test_admin_cml_stats_returns_all_providers(users, cursor):
+    cursor.fetchall.return_value = [
+        ("tenant_a", "C1", 95.0, 360, 342, 1.5, -42.0),
+        ("tenant_b", "C1", None, None, None, float("nan"), None),
+    ]
+    resp = _login("boss").get("/api/admin/cml-stats")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert [d["user_id"] for d in data] == ["tenant_a", "tenant_b"]
+    assert data[0]["stddev_last_60min"] == 1.5
+    assert data[1]["stddev_last_60min"] is None
+    assert data[1]["total_records"] == 0
 
 
 def test_admin_cml_map_db_error(users, monkeypatch):

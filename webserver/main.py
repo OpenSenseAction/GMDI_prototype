@@ -937,6 +937,41 @@ def api_admin_cml_map():
     )
 
 
+@app.route("/api/admin/cml-stats")
+@admin_required
+def api_admin_cml_stats():
+    """Live per-CML stats of all providers (same fields as /api/cml-stats), tagged with user_id."""
+    try:
+        with admin_db_scope() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """SELECT user_id, cml_id::text, completeness_percent_6h,
+                          total_records_6h, valid_records_6h, stddev_rsl_1h, last_rsl
+                   FROM cml_stats
+                   ORDER BY user_id, cml_id"""
+            )
+            rows = cur.fetchall()
+            cur.close()
+    except Exception as e:
+        print(f"Error fetching admin CML stats: {e}")
+        return jsonify({"error": "Database error"}), 500
+
+    return jsonify(
+        [
+            {
+                "user_id": row[0],
+                "cml_id": str(row[1]),
+                "completeness_percent": safe_float(row[2]),
+                "total_records": int(row[3] or 0),
+                "valid_records": int(row[4] or 0),
+                "stddev_last_60min": safe_float(row[5]),
+                "last_rsl": safe_float(row[6]),
+            }
+            for row in rows
+        ]
+    )
+
+
 _ADMIN_TS_DAYS = (7, 30, 90, 365)
 
 
