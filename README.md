@@ -60,7 +60,7 @@ The webserver provides an intuitive interface with four main pages:
    
    - **Webserver (Main UI)**: http://localhost:5000
    - **Grafana Dashboards**: http://localhost:3000
-   - **Database**: localhost:5432
+   - **Database**: localhost:5432 (bound to the loopback interface only; not reachable from other hosts)
    - **SFTP Server**: localhost:2222
    
    *Note: The processor service (port 5002) is currently a minimal stub implementation.*

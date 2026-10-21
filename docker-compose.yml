@@ -116,7 +116,7 @@ services:
   database:
     build: ./database
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     # Tune PostgreSQL memory for an 8 GB VM.
     # shared_buffers: keep recently-used chunks in RAM (default is only 128 MB).
     # effective_cache_size: hints to the planner how much OS page cache is available.
