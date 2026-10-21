@@ -12,18 +12,14 @@ Effort scale: **S** = small, **M** = medium, **L** = large.
 | user1 #6 | Map scale bar |
 | user1 #3 (map part), user2 | Length, frequency and polarization in the map popup |
 | user2 | Default Grafana refresh set to 1 min |
+| user1 #2 (partly) | Choosing a CML in the Grafana dropdown opens its map popup (user and admin map) and highlights the line; the map pans only if the line is out of view |
+| user1 #3, user2 | Metadata in the admin map popup (replaces the hover tooltip) |
 
 ## Open
 
-### 1. Zoom to and highlight the CML chosen in the dropdown (user1 #2)
+### 1. Always zoom to the CML chosen in the dropdown (user1 #2)
 
-- **Done:** choosing a CML in the dropdown opens its map popup (with metadata), panning the map only if the line is out of view. The iframe URL is polled every 500 ms in `watchGrafanaSelection()`.
-- **Remaining:** a stronger highlight of the selected line, always zooming to it, and the same behaviour in `admin_realtime.html` (key is `provider|cml_id`).
-- **Problem:** the CML list is the Grafana `cml_id` variable inside the iframe, so the parent page is never told when it changes.
-- **To do (remaining part):**
-  - Give the selected polyline a thicker or highlighted style and reset the previous one.
-  - Optionally zoom with `map.fitBounds()` instead of only panning.
-  - Mirror in the admin page.
+- **Remaining:** the map only pans when the selected line is out of view; optionally zoom with `map.fitBounds()` instead.
 - **Effort:** S.
 
 ### 2. Show length and frequency band above the graph (user1 #3)
@@ -81,4 +77,3 @@ Effort scale: **S** = small, **M** = medium, **L** = large.
 ## Follow-ups on done items
 
 - Confirm units in `cml_metadata`: the popup assumes `length` in metres and `frequency` in MHz (as in the archive CSV). The `other_mno_csv` parser maps `length_km` straight into `length`, so that source may be stored in km. Normalize in the parser if so. Effort: S.
-- Show the same metadata in the admin map tooltip (`admin_realtime.html`, `/api/admin/cml-map`). Effort: S.

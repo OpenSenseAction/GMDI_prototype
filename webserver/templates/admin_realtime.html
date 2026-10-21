@@ -51,6 +51,12 @@
         height: 100%;
     }
 
+    /* Place the scale bar beside the zoom buttons instead of below them */
+    .leaflet-top.leaflet-left .leaflet-control-scale {
+        clear: none;
+        margin-left: 8px;
+    }
+
     .legend-panel {
         position: absolute;
         top: 10px;
@@ -176,6 +182,7 @@
     });
 
     const map = L.map('admin-map', { preferCanvas: true }).setView([50, 10], 5);
+    L.control.scale({ position: 'topleft', metric: true, imperial: false }).addTo(map);
     // Esri World Light Gray Canvas - keyless light basemap (tile order is z/y/x)
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
         attribution: 'Tiles &copy; Esri', maxZoom: 16
@@ -223,9 +230,16 @@
 
     function tooltipText(c) {
         const s = stats[c.user_id + '|' + c.cml_id];
-        let t = esc(providerNames[c.user_id] || c.user_id) + ' &middot; CML ' + esc(c.cml_id);
-        if (!s) return t + '<br>no data';
-        t += '<br>Completeness (6h): ' + s.completeness_percent + '%';
+        let t = '<strong>' + esc(providerNames[c.user_id] || c.user_id) + ' &middot; CML ' + esc(c.cml_id) + '</strong><br>';
+        if (c.length !== null) t += 'Length: ' + (c.length / 1000).toFixed(2) + ' km<br>';
+        c.sublinks.forEach(sl => {
+            const parts = [];
+            if (sl.frequency !== null) parts.push((sl.frequency / 1000).toFixed(1) + ' GHz');
+            if (sl.polarization) parts.push(esc(sl.polarization.toUpperCase()));
+            if (parts.length) t += 'Sublink: ' + parts.join(' ') + '<br>';
+        });
+        if (!s) return t + 'no data';
+        t += 'Completeness (6h): ' + s.completeness_percent + '%';
         if (s.last_rsl !== null) t += '<br>Last RSL: ' + s.last_rsl + ' dBm';
         if (s.stddev_last_60min !== null) t += '<br>Std Dev (1h): ' + s.stddev_last_60min;
         return t;
@@ -235,7 +249,7 @@
         Object.keys(lines).forEach(key => {
             const line = lines[key];
             line.setStyle({ color: lineColor(line._provider, key) });
-            line.setTooltipContent(tooltipText(line._cml));
+            line.setPopupContent(tooltipText(line._cml));
         });
     }
 
@@ -278,12 +292,17 @@
         });
     }
 
-    // Select a CML and point the Grafana iframe at it
-    function selectCml(providerId, cmlId) {
-        const key = providerId + '|' + cmlId;
+    // Highlight a CML on the map
+    function highlightCml(key) {
         if (selectedKey && lines[selectedKey]) lines[selectedKey].setStyle({ weight: 2.5 });
         selectedKey = key;
         lines[key].setStyle({ weight: 6 }).bringToFront();
+    }
+
+    // Select a CML and point the Grafana iframe at it
+    function selectCml(providerId, cmlId) {
+        const key = providerId + '|' + cmlId;
+        highlightCml(key);
 
         const panel = document.getElementById('grafana-panel');
         if (!panel) return;
@@ -293,6 +312,49 @@
         url.searchParams.set('var-cml_id', cmlId);
         win.history.pushState(null, '', url.toString());
         win.dispatchEvent(new PopStateEvent('popstate', { state: null }));
+    }
+
+    // Open the popup of a CML, first bringing it into the part of the map not covered by the chart
+    function showCmlPopup(key) {
+        const line = lines[key];
+        if (!line || !line._map) return;
+
+        const chart = document.querySelector('.chart-container');
+        const chartHeight = chart ? chart.offsetHeight : 0;
+        const size = map.getSize();
+        const p = map.latLngToContainerPoint(line.getCenter());
+        const visible = p.x > 0 && p.x < size.x && p.y > 120 && p.y < size.y - chartHeight - 40;
+        if (!visible) {
+            map.fitBounds(line.getBounds(), {
+                paddingTopLeft: [60, 120],
+                paddingBottomRight: [60, Math.max(60, chartHeight + 40)],
+                maxZoom: map.getZoom(),
+                animate: false
+            });
+        }
+        line.openPopup();
+    }
+
+    // The provider/CML dropdowns live inside the Grafana iframe; poll its URL to react to changes
+    function watchGrafanaSelection() {
+        const panel = document.getElementById('grafana-panel');
+        if (!panel) return;
+        let primed = false;
+        setInterval(() => {
+            let params;
+            try {
+                params = new URL(panel.contentWindow.location.href).searchParams;
+            } catch (e) {
+                return;
+            }
+            const key = params.get('var-provider') + '|' + params.get('var-cml_id');
+            // Skip until both variables match a CML on the map (cml_id lags behind a provider change)
+            if (key === selectedKey || !lines[key]) return;
+            highlightCml(key);
+            // The first match is the dashboard's initial selection: highlight only, no popup
+            if (primed) showCmlPopup(key);
+            primed = true;
+        }, 500);
     }
 
     fetch('/api/admin/cml-map')
@@ -305,7 +367,7 @@
                 if (!layers[c.user_id]) layers[c.user_id] = L.featureGroup().addTo(map);
                 counts[c.user_id] = (counts[c.user_id] || 0) + 1;
                 const line = L.polyline([a, b], { color: NO_DATA, weight: 2.5, opacity: 0.85 })
-                    .bindTooltip(tooltipText(c), { sticky: true })
+                    .bindPopup(tooltipText(c), { autoPan: false })
                     .on('click', () => selectCml(c.user_id, c.cml_id))
                     .addTo(layers[c.user_id]);
                 line._provider = c.user_id;
@@ -319,6 +381,7 @@
             renderLegend();
             loadStats();
             setInterval(loadStats, STATS_REFRESH_MS);
+            watchGrafanaSelection();
         })
         .catch(err => {
             document.getElementById('map-status').textContent = 'Failed to load CMLs (' + err.message + ')';

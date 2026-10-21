@@ -120,15 +120,20 @@ def test_admin_realtime_without_grafana_org_has_map_only(users):
 
 
 def test_admin_cml_map_returns_all_providers(users, cursor):
+    sublinks = [{"frequency": 28000.0, "polarization": "v"}]
     cursor.fetchall.return_value = [
-        ("tenant_a", "C1", 10.0, 50.0, 10.1, 50.1),
-        ("tenant_b", "C1", 11.0, 51.0, 11.1, 51.1),
+        ("tenant_a", "C1", 10.0, 50.0, 10.1, 50.1, 691.4, sublinks),
+        ("tenant_b", "C1", 11.0, 51.0, 11.1, 51.1, None, None),
     ]
     resp = _login("boss").get("/api/admin/cml-map")
     assert resp.status_code == 200
     data = resp.get_json()
     assert [d["user_id"] for d in data] == ["tenant_a", "tenant_b"]
     assert data[0]["site_0"] == {"lon": 10.0, "lat": 50.0}
+    assert data[0]["length"] == 691.4
+    assert data[0]["sublinks"] == sublinks
+    assert data[1]["length"] is None
+    assert data[1]["sublinks"] == []
 
 
 def test_admin_cml_stats_returns_all_providers(users, cursor):

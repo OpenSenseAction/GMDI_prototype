@@ -51,6 +51,12 @@
         height: 100%;
     }
 
+    /* Place the scale bar beside the zoom buttons instead of below them */
+    .leaflet-top.leaflet-left .leaflet-control-scale {
+        clear: none;
+        margin-left: 8px;
+    }
+
     .chart-container {
         position: absolute;
         bottom: 0;
@@ -118,6 +124,9 @@
     let cmlStats = {};
     let cmlMeta = {};
     let selectedCmlId = '10001';
+    let highlightedCmlId = null;
+    const DEFAULT_STYLE = { weight: 2, opacity: 0.7 };
+    const SELECTED_STYLE = { weight: 5, opacity: 1 };
     let currentColoringOption = 'std_dev';
 
     // Time slider state
@@ -236,7 +245,8 @@
         try {
             // Canvas renderer with tolerance makes thin CML lines easier to hit
             map = L.map('cml-map', { renderer: L.canvas({ tolerance: 8 }) }).setView([57.705, 11.97], 11);
-            L.control.scale({ metric: true, imperial: false }).addTo(map);
+            // Top-left: the default bottom-left spot is hidden behind the chart panel
+            L.control.scale({ position: 'topleft', metric: true, imperial: false }).addTo(map);
             // Use Carto Positron - clean, minimal light basemap
             L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
                 attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
@@ -539,15 +549,31 @@
             selectCml(cmlId);
         });
 
-        // Add hover effects
+        // Add hover effects (the selected line keeps its highlight)
         polyline.on('mouseover', function () {
-            this.setStyle({ weight: 4, opacity: 1 });
+            this.setStyle({ weight: this._selected ? 6 : 4, opacity: 1 });
         });
         polyline.on('mouseout', function () {
-            this.setStyle({ weight: 2, opacity: 0.7 });
+            this.setStyle(this._selected ? SELECTED_STYLE : DEFAULT_STYLE);
         });
 
         cmlLayers[cmlId] = polyline;
+        if (cmlId === selectedCmlId) highlightCml(cmlId);
+    }
+
+    // Thicker, opaque line for the selected CML
+    function highlightCml(cmlId) {
+        var prev = cmlLayers[highlightedCmlId];
+        if (prev) {
+            prev._selected = false;
+            prev.setStyle(DEFAULT_STYLE);
+        }
+        var line = cmlLayers[cmlId];
+        if (!line) return;
+        line._selected = true;
+        line.setStyle(SELECTED_STYLE);
+        line.bringToFront();
+        highlightedCmlId = cmlId;
     }
 
     // Update all map line colors based on current coloring option
@@ -751,6 +777,7 @@
     // Select CML and update Grafana dashboard
     function selectCml(cmlId) {
         selectedCmlId = cmlId;
+        highlightCml(cmlId);
 
         var grafanaPanel = document.getElementById('grafana-panel');
         var iframeWindow = grafanaPanel.contentWindow;
@@ -766,6 +793,7 @@
         var line = cmlLayers[cmlId];
         if (!line) return;
 
+        highlightCml(cmlId);
         var pad = getMapViewportPadding();
         var size = map.getSize();
         var p = map.latLngToContainerPoint(line.getCenter());
