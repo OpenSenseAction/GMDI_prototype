@@ -14,7 +14,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import main as wm  # noqa: E402
 
 _ADMIN_PAGES = ["/admin/realtime", "/admin/archive"]
-_ADMIN_APIS = ["/api/admin/cml-map", "/api/admin/cml-stats", "/api/admin/archive-timeseries"]
+_ADMIN_APIS = [
+    "/api/admin/cml-map",
+    "/api/admin/cml-stats",
+    "/api/admin/archive-timeseries",
+]
 
 
 @pytest.fixture
