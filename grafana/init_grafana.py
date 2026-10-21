@@ -12,8 +12,11 @@ Datasources for additional orgs are created via the Grafana API by this script
 (those orgs do not exist when Grafana starts, so provisioning cannot cover them).
 """
 
+import json
 import sys
 import time
+from pathlib import Path
+
 import requests
 
 GRAFANA_URL = "http://grafana:3000"
@@ -28,6 +31,14 @@ USERS = [
     {"login": "demo_openmrg", "org_id": 1, "role": "Viewer"},
     {"login": "demo_orange_cameroun", "org_id": 2, "role": "Viewer"},
 ]
+
+ADMIN_ORG = None
+
+# Dashboards imported only into the admin org (they query across all tenants).
+ADMIN_DASHBOARD_DIR = Path("/admin_dashboards")
+# Read-all DB role behind the admin org's datasource (see database/init.sql).
+ADMIN_DB_USER = "webserver_role"
+ADMIN_DB_PASSWORD = "webserverpassword"
 
 
 def wait_for_grafana(timeout=120):
@@ -246,6 +257,23 @@ def copy_dashboards_to_org(target_org_id, source_org_id=1):
             print(f"Copied dashboard {uid} to org {target_org_id}.")
 
 
+def import_admin_dashboards(org_id):
+    """Import the cross-tenant dashboards into the admin org only."""
+    for path in sorted(ADMIN_DASHBOARD_DIR.glob("*.json")):
+        dashboard = json.loads(path.read_text())
+        dashboard["id"] = None
+        r = requests.post(
+            f"{GRAFANA_URL}/api/dashboards/db",
+            json={"dashboard": dashboard, "overwrite": True, "folderId": 0},
+            auth=ADMIN_AUTH,
+            headers={"X-Grafana-Org-Id": str(org_id)},
+        )
+        if r.status_code != 200:
+            print(f"WARN: could not import {path.name}: {r.status_code} {r.text}")
+        else:
+            print(f"Imported {path.name} into org {org_id}.")
+
+
 if __name__ == "__main__":
     wait_for_grafana()
     rename_default_org()
@@ -270,6 +298,16 @@ if __name__ == "__main__":
     time.sleep(2)
     for org in ORGS[1:]:
         copy_dashboards_to_org(target_org_id=org["id"], source_org_id=1)
+    if ADMIN_ORG:
+        get_or_create_org(ADMIN_ORG["id"], ADMIN_ORG["name"])
+        create_datasource_for_org(
+            org_id=ADMIN_ORG["id"],
+            name="PostgreSQL",
+            uid="ds_admin",
+            user=ADMIN_DB_USER,
+            password=ADMIN_DB_PASSWORD,
+        )
+        import_admin_dashboards(ADMIN_ORG["id"])
     for user in USERS:
         get_or_create_user(user["login"], user["org_id"], user["role"])
     print("Grafana bootstrap complete.")

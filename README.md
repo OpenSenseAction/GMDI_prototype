@@ -230,11 +230,18 @@ After running the generator, set a password with
 `python scripts/set_password.py admin`. Admin accounts get two extra pages
 (they have no tenant data of their own):
 
-- `/admin/realtime` — map of every CML, coloured per provider, with per-provider toggles
+- `/admin/realtime` — map of every CML, coloured per provider, with per-provider toggles,
+  and an embedded Grafana time series (RSL / TSL) below it; clicking a link on the map
+  selects that provider and CML in the panel
 - `/admin/archive` — per-provider summary and daily record-count / mean-RSL plots
 
 Admin views query as `webserver_role` (read-only session), which already has
-read access across tenants; no database migration is needed. Admin routes are
+read access across tenants; no database migration is needed. All admins share
+one extra Grafana org (created by `init_grafana` when `admins:` is set) with a
+`webserver_role` datasource and the dashboard in `grafana/admin_dashboards/`.
+Auth-proxy logins map to Grafana users by login name, so an admin id of `admin`
+resolves to Grafana's built-in `admin` account; prefer another id (e.g.
+`gmdi_admin`). Admin routes are
 guarded by `@admin_required` in `webserver/main.py` — use it on any new
 cross-tenant route.
 

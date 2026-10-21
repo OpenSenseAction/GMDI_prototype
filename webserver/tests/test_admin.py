@@ -103,6 +103,18 @@ def test_admin_realtime_page_lists_providers_not_admins(users):
     assert '"boss"' not in html
 
 
+def test_admin_realtime_embeds_grafana_when_org_assigned(users, monkeypatch):
+    monkeypatch.setitem(wm.USERS["boss"], "grafana_org_id", 3)
+    html = _login("boss").get("/admin/realtime").get_data(as_text=True)
+    assert "/grafana/d/cml-admin-realtime/" in html
+    assert "orgId=3" in html
+
+
+def test_admin_realtime_without_grafana_org_has_map_only(users):
+    html = _login("boss").get("/admin/realtime").get_data(as_text=True)
+    assert 'id="grafana-panel"' not in html
+
+
 def test_admin_cml_map_returns_all_providers(users, cursor):
     cursor.fetchall.return_value = [
         ("tenant_a", "C1", 10.0, 50.0, 10.1, 50.1),

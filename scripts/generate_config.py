@@ -262,8 +262,16 @@ def generate_entrypoint_sh(users: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def admin_grafana_org_id(users: list[dict]) -> int:
+    """Grafana org shared by all admins: the first id after the tenant orgs."""
+    return max((u["grafana_org_id"] for u in users), default=0) + 1
+
+
 def generate_users_json(
-    users: list[dict], existing_json: dict, admins: list[dict] | None = None
+    users: list[dict],
+    existing_json: dict,
+    admins: list[dict] | None = None,
+    admin_org_id: int | None = None,
 ) -> dict:
     """
     Merge users.yml into the existing users.json.
@@ -271,8 +279,9 @@ def generate_users_json(
     - New users get a skeleton entry (password must be set via set_password.py).
     - Users present in users.json but absent from users.yml are left intact
       (so manual removals require an explicit edit of users.json).
-    - Admin accounts get ``"is_admin": true`` and no grafana_org_id; they have
-      no DB role, parser or SFTP account.
+    - Admin accounts get ``"is_admin": true`` and, when ``admin_org_id`` is
+      given, that shared Grafana org; they have no DB role, parser or SFTP
+      account.
     """
     result = dict(existing_json)
     for a in admins or []:
@@ -280,6 +289,8 @@ def generate_users_json(
         entry = result.get(aid, {"password_hash": ""})
         entry["display_name"] = a.get("display_name", aid)
         entry["is_admin"] = True
+        if admin_org_id is not None:
+            entry["grafana_org_id"] = admin_org_id
         if aid not in result:
             print(
                 f"  [users.json] Added skeleton entry for new admin {aid!r}. "
@@ -506,22 +517,41 @@ def _orgs_list_literal(users: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _users_list_literal(users: list[dict]) -> str:
-    """Render the USERS list as a Python literal."""
+def _users_list_literal(
+    users: list[dict],
+    admins: list[dict] | None = None,
+    admin_org_id: int | None = None,
+) -> str:
+    """Render the USERS list as a Python literal (admins join the admin org)."""
     lines = ["USERS = ["]
     for u in users:
         lines.append(
             f'    {{"login": "{u["id"]}", "org_id": {u["grafana_org_id"]}, "role": "Viewer"}},',
         )
+    for a in admins or []:
+        lines.append(
+            f'    {{"login": "{a["id"]}", "org_id": {admin_org_id}, "role": "Viewer"}},',
+        )
     lines.append("]")
     return "\n".join(lines)
 
 
-def update_init_grafana(users: list[dict], init_grafana_path: Path) -> None:
+def _admin_org_literal(admin_org_id: int | None) -> str:
+    if admin_org_id is None:
+        return "ADMIN_ORG = None"
+    return f'ADMIN_ORG = {{"id": {admin_org_id}, "name": "admin"}}'
+
+
+def update_init_grafana(
+    users: list[dict],
+    init_grafana_path: Path,
+    admins: list[dict] | None = None,
+) -> None:
     """
-    Replace the ORGS = [...] and USERS = [...] blocks in init_grafana.py with
+    Replace the ORGS, USERS and ADMIN_ORG definitions in init_grafana.py with
     versions derived from users.yml.  Everything else in the file is preserved.
     """
+    admin_org_id = admin_grafana_org_id(users) if admins else None
     src = init_grafana_path.read_text()
 
     # Replace ORGS block
@@ -540,11 +570,20 @@ def update_init_grafana(users: list[dict], init_grafana_path: Path) -> None:
         r"^USERS\s*=\s*\[.*?\]",
         re.MULTILINE | re.DOTALL,
     )
-    new_users = _users_list_literal(users)
+    new_users = _users_list_literal(users, admins, admin_org_id)
     if users_pattern.search(src):
         src = users_pattern.sub(new_users, src, count=1)
     else:
         raise RuntimeError("Could not locate USERS = [...] in init_grafana.py")
+
+    # Replace ADMIN_ORG line (one-line literal)
+    admin_pattern = re.compile(r"^ADMIN_ORG\s*=.*$", re.MULTILINE)
+    if admin_pattern.search(src):
+        src = admin_pattern.sub(
+            lambda _: _admin_org_literal(admin_org_id), src, count=1
+        )
+    elif admins:
+        raise RuntimeError("Could not locate ADMIN_ORG = ... in init_grafana.py")
 
     init_grafana_path.write_text(src)
 
@@ -672,7 +711,12 @@ def main(argv: list[str] | None = None) -> None:
     if users_json_path.exists():
         existing_json = json.loads(users_json_path.read_text())
     admins = load_admins(users_file, users)
-    new_json = generate_users_json(users, existing_json, admins)
+    new_json = generate_users_json(
+        users,
+        existing_json,
+        admins,
+        admin_grafana_org_id(users) if admins else None,
+    )
     users_json_path.write_text(json.dumps(new_json, indent=4) + "\n")
     print(f"  [webserver]  Written {users_json_path.relative_to(repo_root)}")
 
@@ -687,7 +731,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # 6. Update init_grafana.py ORGS/USERS lists
     init_grafana_path = repo_root / "grafana" / "init_grafana.py"
-    update_init_grafana(users, init_grafana_path)
+    update_init_grafana(users, init_grafana_path, admins)
     print(f"  [grafana]    Updated {init_grafana_path.relative_to(repo_root)}")
 
     # 7. SSH keys

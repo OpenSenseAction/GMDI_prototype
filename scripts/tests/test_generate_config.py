@@ -203,3 +203,49 @@ def test_load_admins_absent_is_empty(tmp_path):
 
     users_file = _make_users_yml(tmp_path)
     assert load_admins(users_file, USERS) == []
+
+
+# ---------------------------------------------------------------------------
+# admins: — shared Grafana org
+# ---------------------------------------------------------------------------
+
+
+def test_admin_grafana_org_follows_tenant_orgs():
+    from generate_config import admin_grafana_org_id
+
+    users = [
+        {**USERS[0], "grafana_org_id": 1},
+        {**USERS[0], "id": "b", "grafana_org_id": 4},
+    ]
+    assert admin_grafana_org_id(users) == 5
+
+
+def test_admin_gets_shared_grafana_org_in_users_json():
+    from generate_config import generate_users_json
+
+    result = generate_users_json(USERS, {}, [{"id": "boss"}], admin_org_id=2)
+    assert result["boss"]["grafana_org_id"] == 2
+    assert result["alice"]["grafana_org_id"] == 1
+
+
+def test_update_init_grafana_adds_admin_org_and_users(tmp_path):
+    from generate_config import update_init_grafana
+
+    path = tmp_path / "init_grafana.py"
+    path.write_text("ORGS = []\nUSERS = []\nADMIN_ORG = None\nOTHER = 1\n")
+    update_init_grafana(USERS, path, [{"id": "boss"}])
+
+    ns: dict = {}
+    exec(path.read_text(), ns)
+    assert ns["ADMIN_ORG"] == {"id": 2, "name": "admin"}
+    assert {"login": "boss", "org_id": 2, "role": "Viewer"} in ns["USERS"]
+    assert ns["OTHER"] == 1
+
+
+def test_update_init_grafana_without_admins_clears_admin_org(tmp_path):
+    from generate_config import update_init_grafana
+
+    path = tmp_path / "init_grafana.py"
+    path.write_text('ORGS = []\nUSERS = []\nADMIN_ORG = {"id": 9, "name": "admin"}\n')
+    update_init_grafana(USERS, path)
+    assert "ADMIN_ORG = None" in path.read_text()

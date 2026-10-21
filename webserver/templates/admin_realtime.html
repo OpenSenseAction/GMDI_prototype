@@ -1,15 +1,66 @@
 {% extends "base.html" %}
 
-{% block title %}All Providers Map - GMDI Platform{% endblock %}
+{% block title %}All Providers - Real-Time Data - GMDI Platform{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
+    /* Full-screen layout below navbar (same as the tenant real-time page) */
+    html,
+    body {
+        height: 100vh;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+    }
+
+    main {
+        padding: 0 !important;
+        margin: 0 !important;
+        min-height: calc(100vh - 60px);
+        position: relative;
+    }
+
+    main .container {
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    footer {
+        display: none !important;
+    }
+
+    .realtime-wrapper {
+        width: 100%;
+        min-height: calc(100vh - 60px);
+        position: relative;
+    }
+
+    .map-container {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 1;
+    }
+
     #admin-map {
         width: 100%;
-        height: calc(100vh - 190px);
-        min-height: 400px;
+        height: 100%;
+    }
+
+    .legend-panel {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        z-index: 500;
+        background: rgba(255, 255, 255, 0.92);
         border-radius: 4px;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+        padding: 6px 10px;
+        max-width: 320px;
     }
 
     .legend-swatch {
@@ -19,16 +70,68 @@
         border-radius: 2px;
         vertical-align: middle;
     }
+
+    .chart-container {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 400px;
+        min-height: 200px;
+        max-height: 80vh;
+        z-index: 100;
+        background: white;
+    }
+
+    .resizer {
+        position: absolute;
+        bottom: 400px;
+        left: 0;
+        right: 0;
+        height: 6px;
+        background: #ccc;
+        cursor: ns-resize;
+        z-index: 200;
+        transition: background-color 0.2s ease;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+
+    .resizer:hover {
+        background: #aaa;
+    }
+
+    .resizer.active {
+        background: #888;
+    }
+
+    .grafana-container {
+        position: relative;
+        border: none;
+        width: 100%;
+        height: 100%;
+        display: block;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="d-flex flex-wrap align-items-center gap-3 mb-3">
-    <h2 class="mb-0">All Providers</h2>
-    <div id="legend" class="d-flex flex-wrap gap-3 small"></div>
-    <span id="map-status" class="ms-auto small text-muted">Loading&hellip;</span>
+<div class="realtime-wrapper">
+    <div class="map-container">
+        <div id="admin-map"></div>
+        <div class="legend-panel small">
+            <div id="legend" class="d-flex flex-column gap-1"></div>
+            <div id="map-status" class="text-muted mt-1">Loading&hellip;</div>
+        </div>
+    </div>
+    {% if grafana_org_id %}
+    <div class="resizer" id="resizer"></div>
+    <div class="chart-container">
+        <iframe class="grafana-container" id="grafana-panel"
+            src="/grafana/d/cml-admin-realtime/cml-real-time-data-all-providers?orgId={{ grafana_org_id }}&refresh=10s&theme=light&viewPanel=2&kiosk"
+            allowfullscreen></iframe>
+    </div>
+    {% endif %}
 </div>
-<div id="admin-map"></div>
 {% endblock %}
 
 {% block extra_js %}
@@ -47,6 +150,8 @@
 
     const layers = {};   // provider id -> L.featureGroup
     const counts = {};
+    const lines = {};    // "provider|cml" -> L.polyline
+    let selectedKey = null;
 
     function esc(s) {
         const d = document.createElement('div');
@@ -74,6 +179,23 @@
         });
     }
 
+    // Select a CML and point the Grafana iframe at it
+    function selectCml(providerId, cmlId) {
+        const key = providerId + '|' + cmlId;
+        if (selectedKey && lines[selectedKey]) lines[selectedKey].setStyle({ weight: 2.5 });
+        selectedKey = key;
+        lines[key].setStyle({ weight: 6 }).bringToFront();
+
+        const panel = document.getElementById('grafana-panel');
+        if (!panel) return;
+        const win = panel.contentWindow;
+        const url = new URL(win.location.href);
+        url.searchParams.set('var-provider', providerId);
+        url.searchParams.set('var-cml_id', cmlId);
+        win.history.pushState(null, '', url.toString());
+        win.dispatchEvent(new PopStateEvent('popstate', { state: null }));
+    }
+
     fetch('/api/admin/cml-map')
         .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
         .then(cmls => {
@@ -85,9 +207,11 @@
                 const b = [c.site_1.lat, c.site_1.lon];
                 if (!layers[c.user_id]) layers[c.user_id] = L.featureGroup().addTo(map);
                 counts[c.user_id] = (counts[c.user_id] || 0) + 1;
-                L.polyline([a, b], { color: colorOf[c.user_id] || '#666', weight: 2.5, opacity: 0.85 })
-                    .bindPopup('<strong>' + esc(names[c.user_id] || c.user_id) + '</strong><br>CML ' + esc(c.cml_id))
+                const line = L.polyline([a, b], { color: colorOf[c.user_id] || '#666', weight: 2.5, opacity: 0.85 })
+                    .bindTooltip(esc(names[c.user_id] || c.user_id) + ' &middot; CML ' + esc(c.cml_id), { sticky: true })
+                    .on('click', () => selectCml(c.user_id, c.cml_id))
                     .addTo(layers[c.user_id]);
+                lines[c.user_id + '|' + c.cml_id] = line;
                 bounds.extend(a);
                 bounds.extend(b);
             });
@@ -99,5 +223,44 @@
             document.getElementById('map-status').textContent = 'Failed to load CMLs (' + err.message + ')';
             renderLegend();
         });
+
+    // Adjustable dashboard height
+    (function initializeResizer() {
+        const resizer = document.getElementById('resizer');
+        const chartContainer = document.querySelector('.chart-container');
+        if (!resizer || !chartContainer) return;
+        let isResizing = false;
+        let startY, startHeight;
+
+        resizer.addEventListener('mousedown', e => {
+            isResizing = true;
+            startY = e.clientY;
+            startHeight = chartContainer.offsetHeight;
+            resizer.classList.add('active');
+            document.body.style.cursor = 'ns-resize';
+            document.body.style.userSelect = 'none';
+            // Keep the iframe from swallowing mouse events while dragging
+            document.getElementById('grafana-panel').style.pointerEvents = 'none';
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', e => {
+            if (!isResizing) return;
+            e.preventDefault();
+            const height = Math.max(200, Math.min(window.innerHeight * 0.8, startHeight + startY - e.clientY));
+            chartContainer.style.height = height + 'px';
+            resizer.style.bottom = height + 'px';
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (!isResizing) return;
+            isResizing = false;
+            resizer.classList.remove('active');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            document.getElementById('grafana-panel').style.pointerEvents = 'auto';
+            map.invalidateSize();
+        });
+    })();
 </script>
 {% endblock %}

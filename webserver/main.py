@@ -76,8 +76,10 @@ class User(UserMixin):
     def __init__(self, user_id: str):
         self.id = user_id
         self.display_name = USERS[user_id].get("display_name", user_id)
-        self.grafana_org_id = USERS[user_id].get("grafana_org_id", 1)
         self.is_admin = bool(USERS[user_id].get("is_admin", False))
+        # Admins only have a Grafana org once generate_config.py assigned one.
+        default_org = None if self.is_admin else 1
+        self.grafana_org_id = USERS[user_id].get("grafana_org_id", default_org)
 
 
 @login_manager.user_loader
@@ -872,8 +874,16 @@ def get_admin_archive_summary():
 @app.route("/admin/realtime")
 @admin_required
 def admin_realtime():
-    """Map of all CMLs from all providers."""
-    return render_template("admin_realtime.html", providers=_provider_list())
+    """Map of all CMLs from all providers plus the all-providers Grafana panel."""
+    resp = make_response(
+        render_template(
+            "admin_realtime.html",
+            providers=_provider_list(),
+            grafana_org_id=current_user.grafana_org_id,
+        )
+    )
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return resp
 
 
 @app.route("/admin/archive")

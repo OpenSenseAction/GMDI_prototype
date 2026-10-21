@@ -62,8 +62,9 @@
 #
 # Optional top-level `admins:` list — web-login accounts that can see all
 # providers (map + archive overview at /admin/realtime and /admin/archive).
-# Admins have no DB role, SFTP account, parser or Grafana org; they are only
-# written to webserver/configs/users.json.  Set a password with
+# Admins have no DB role, SFTP account or parser.  They share one extra Grafana
+# org ("admin") whose datasource connects as webserver_role, so the real-time
+# page can plot every provider.  Set a password with
 # scripts/set_password.py <admin_id>.
 #   id            — login name (must not equal any user id).
 #   display_name  — label shown in the webserver UI.
