@@ -17,13 +17,14 @@ Effort scale: **S** = small, **M** = medium, **L** = large.
 
 ### 1. Zoom to and highlight the CML chosen in the dropdown (user1 #2)
 
+- **Done:** choosing a CML in the dropdown opens its map popup (with metadata), panning the map only if the line is out of view. The iframe URL is polled every 500 ms in `watchGrafanaSelection()`.
+- **Remaining:** a stronger highlight of the selected line, always zooming to it, and the same behaviour in `admin_realtime.html` (key is `provider|cml_id`).
 - **Problem:** the CML list is the Grafana `cml_id` variable inside the iframe, so the parent page is never told when it changes.
-- **To do:**
-  - Detect changes of `var-cml_id` in the iframe URL (same-origin via the `/grafana/` proxy). Poll `iframe.contentWindow.location.search` every ~500 ms, or hook `popstate` / `history.pushState` in the iframe.
-  - On change, call `map.fitBounds()` on the selected polyline with the existing viewport padding (`getMapViewportPadding()`), and give it a thicker or highlighted style. Reset the style of the previous selection.
-  - Reuse the same logic from `selectCml()` so map clicks and dropdown changes behave identically.
-  - Mirror in `admin_realtime.html` (key is `provider|cml_id`).
-- **Effort:** S-M. Frontend only. The main risk is the fragility of watching Grafana's URL.
+- **To do (remaining part):**
+  - Give the selected polyline a thicker or highlighted style and reset the previous one.
+  - Optionally zoom with `map.fitBounds()` instead of only panning.
+  - Mirror in the admin page.
+- **Effort:** S.
 
 ### 2. Show length and frequency band above the graph (user1 #3)
 

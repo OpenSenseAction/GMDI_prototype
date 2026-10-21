@@ -761,11 +761,49 @@
         iframeWindow.dispatchEvent(new PopStateEvent('popstate', { state: null }));
     }
 
+    // Open the popup of a CML, first bringing it into the part of the map not covered by the chart
+    function showCmlPopup(cmlId) {
+        var line = cmlLayers[cmlId];
+        if (!line) return;
+
+        var pad = getMapViewportPadding();
+        var size = map.getSize();
+        var p = map.latLngToContainerPoint(line.getCenter());
+        var visible = p.x > 0 && p.x < size.x && p.y > 120 && p.y < size.y - pad.bottomRight[1];
+        if (!visible) {
+            map.fitBounds(line.getBounds(), {
+                paddingTopLeft: [60, 120],
+                paddingBottomRight: pad.bottomRight,
+                maxZoom: map.getZoom(),
+                animate: false
+            });
+        }
+        line.openPopup();
+    }
+
+    // The CML dropdown lives inside the Grafana iframe; poll its URL to react to changes
+    function watchGrafanaSelection() {
+        setInterval(function () {
+            var id;
+            try {
+                var panel = document.getElementById('grafana-panel');
+                id = new URL(panel.contentWindow.location.href).searchParams.get('var-cml_id');
+            } catch (e) {
+                return;
+            }
+            if (id && id !== selectedCmlId) {
+                selectedCmlId = id;
+                showCmlPopup(id);
+            }
+        }, 500);
+    }
+
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', function () {
         initializeMap();
         initializeResizer();
         cleanupColoringAnnotations();
+        watchGrafanaSelection();
     });
 
     // Initialize resizer for adjustable dashboard height
